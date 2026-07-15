@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Helvetic Freight",
+  "version": "1.1.38",
+  "identifier": "ch.helveticfreight.desktop",
+  "build": {
+    "frontendDist": "..",
+    "devUrl": "http://localhost:1420/Helvetic_Freight_v1.1.38_CleanApp.html"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "title": "Helvetic Freight 1.1.38",
+        "url": "Helvetic_Freight_v1.1.38_CleanApp.html",
+        "width": 1280,
+        "height": 860,
+        "minWidth": 1024,
+        "minHeight": 700,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' asset: http://asset.localhost https://unpkg.com; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' asset: http://asset.localhost data: https://unpkg.com; connect-src 'self' https://unpkg.com"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Game",
+    "shortDescription": "Versorgungslogistik-Spiel für Desktop",
+    "longDescription": "Helvetic Freight als Tauri-Desktop-App."
+  }
+}
