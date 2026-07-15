@@ -14,14 +14,26 @@
     return `<div class="list">${depots.map(d=>`<div class="list-item hf-depot-card"><div class="hf-depot-icon">🏬</div><div><div class="row"><div><b>${d.name||'Verteildepot'}</b><div class="sub">${(d.cities||[]).length} Städte · ${(d.goods||[]).length} Waren · ${Object.values(d.fleet||{}).reduce((n,x)=>n+(Number(x)||0),0)} Fahrzeuge</div></div><span class="pill ${d.active!==false?'live':'locked'}">${d.active!==false?'AUTO':'PAUSE'}</span></div><div class="sub" style="margin-top:6px">${d.lastStatus||'Bereit'}</div><div class="fleet-actions"><button class="btn sm primary" onclick="window.HF.hfOpenDepot('${d.id}')">📅 Disponieren</button><button class="btn sm secondary" onclick="window.HF.hfOpenDepotSupply('${d.id}')">📦 Direkt beliefern</button></div></div></div>`).join('')}</div>`;
   }
   function injectDepotMenu(root){
-    if(!root||root.querySelector('.hf-depot-card,#hfDepotMenuFallback'))return false;
-    root.insertAdjacentHTML('beforeend',`<section class="card" id="hfDepotMenuFallback"><div class="row"><div><h2 style="margin:0">Depots & Nahverteilung</h2><div class="sub">Depots versorgen ausgewählte Städte automatisch mit deren Tagesbedarf.</div></div><button class="btn sm primary" onclick="window.HF.hfOpenDepotBuild()">+ Depot</button></div><div class="compact-note" style="margin:10px 0">Deine Aufgabe verschiebt sich zur Warenversorgung der Depots. Depotfahrzeuge disponieren die letzte Meile selbstständig.</div>${depotRowsMarkup()}</section>`);
+    if(!root)return false;
+    const existing=root.querySelector('#hfDepotMenuFallback,[data-hf-depot-menu]');
+    if(existing)return false;
+    root.insertAdjacentHTML('beforeend',`<section class="card" id="hfDepotMenuFallback" data-hf-depot-menu="1"><div class="row"><div><h2 style="margin:0">Depots & Nahverteilung</h2><div class="sub">Depots versorgen ausgewählte Städte automatisch mit deren Tagesbedarf.</div></div><button class="btn sm primary" onclick="window.HF.hfOpenDepotBuild()">+ Depot</button></div><div class="compact-note" style="margin:10px 0">Deine Aufgabe verschiebt sich zur Warenversorgung der Depots. Depotfahrzeuge disponieren die letzte Meile selbstständig.</div>${depotRowsMarkup()}</section>`);
     return true;
+  }
+
+  function ensureLogisticsDepotQuickAction(){
+    try{
+      const root=document.getElementById('content');
+      if(root?.dataset?.tab!=='logistics'||!window.HF?.hfOpenDepotBuild)return;
+      const actions=root.querySelector('.quick-actions');
+      if(!actions||actions.querySelector('[data-hf-depot-quick-action]'))return;
+      actions.insertAdjacentHTML('beforeend','<button class="btn secondary" data-hf-depot-quick-action="1" onclick="window.HF.hfOpenDepotBuild()">🏬 Depot</button>');
+    }catch(err){console.error('Depot-Schnellaktion konnte nicht ergänzt werden',err)}
   }
   function injectCurrentDepotMenu(){
     try{
       const root=document.getElementById('content');
-      if(root?.dataset?.tab==='logistics'&&window.HF?.hfOpenDepotBuild)injectDepotMenu(root);
+      if(root?.dataset?.tab==='logistics'&&window.HF?.hfOpenDepotBuild){ensureLogisticsDepotQuickAction();injectDepotMenu(root)}
     }catch(err){console.error('Depot-Menü konnte nicht direkt ergänzt werden',err)}
   }
   function depotMenuCardMarkup(){
@@ -31,7 +43,7 @@
         const baseRenderLogistics=renderLogistics;
         renderLogistics=function(root){
           const result=baseRenderLogistics(root);
-          try{injectDepotMenu(root)}catch(err){console.error('Depot-Menü konnte nicht ergänzt werden',err)}
+          try{ensureLogisticsDepotQuickAction();injectDepotMenu(root)}catch(err){console.error('Depot-Menü konnte nicht ergänzt werden',err)}
           return result;
         };
         renderLogistics.__hfDepotMenuGuard=true;
