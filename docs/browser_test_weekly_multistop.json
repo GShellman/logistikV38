@@ -1,0 +1,273 @@
+{
+  "build": "1.1.38",
+  "boot_audit": {
+    "ok": true,
+    "build": "1.1.38",
+    "schema": 138,
+    "contracts": 0,
+    "plannedRows": 0,
+    "cityFleetSources": 1,
+    "errors": [],
+    "warnings": []
+  },
+  "contract": {
+    "id": "sissach::apples",
+    "destinationCityId": "sissach",
+    "goodId": "apples",
+    "primarySource": {
+      "type": "city",
+      "id": "zurich"
+    },
+    "frequency": "weekly",
+    "weekday": 4,
+    "targetStockDays": 7,
+    "allowFallback": true,
+    "enabled": true,
+    "openQuantity": 0,
+    "lastStatus": "448 kg für heute geplant"
+  },
+  "candidates": [
+    {
+      "type": "city",
+      "id": "zurich",
+      "ready": true,
+      "reachable": true,
+      "fleet": 1
+    }
+  ],
+  "plan": {
+    "generatedDay": 5,
+    "generatedMinute": 480,
+    "rows": [
+      {
+        "id": "sc138_5_city_zurich_0_ge36",
+        "absoluteDay": 5,
+        "weekday": 4,
+        "sourceType": "city",
+        "sourceId": "zurich",
+        "startMinute": 480,
+        "endMinute": 621,
+        "vehicleType": "lightTruck",
+        "vehicleNo": 1,
+        "stops": [
+          {
+            "cityId": "sissach",
+            "dailyDemand": false,
+            "unloads": [
+              {
+                "good": "apples",
+                "amount": 448,
+                "contractId": "sissach::apples"
+              },
+              {
+                "good": "pears",
+                "amount": 420,
+                "contractId": "sissach::pears"
+              }
+            ]
+          },
+          {
+            "cityId": "liestal",
+            "dailyDemand": false,
+            "unloads": [
+              {
+                "good": "apples",
+                "amount": 840,
+                "contractId": "liestal::apples"
+              }
+            ]
+          }
+        ],
+        "cargo": [
+          {
+            "good": "apples",
+            "amount": 1288
+          },
+          {
+            "good": "pears",
+            "amount": 420
+          }
+        ],
+        "cost": 1054,
+        "distance": 170,
+        "status": "Geplant",
+        "shipmentId": null
+      }
+    ],
+    "unresolved": []
+  },
+  "audit_after": {
+    "ok": true,
+    "build": "1.1.38",
+    "schema": 138,
+    "contracts": 3,
+    "plannedRows": 1,
+    "cityFleetSources": 1,
+    "errors": [],
+    "warnings": []
+  },
+  "commitments": {
+    "zurich": {
+      "apples": 1288,
+      "pears": 420
+    }
+  },
+  "dispatch": {
+    "sent": 1708,
+    "blocked": 0
+  },
+  "plan_after_dispatch": {
+    "id": "sc138_5_city_zurich_0_ge36",
+    "absoluteDay": 5,
+    "weekday": 4,
+    "sourceType": "city",
+    "sourceId": "zurich",
+    "startMinute": 480,
+    "endMinute": 621,
+    "vehicleType": "lightTruck",
+    "vehicleNo": 1,
+    "stops": [
+      {
+        "cityId": "sissach",
+        "dailyDemand": false,
+        "unloads": [
+          {
+            "good": "apples",
+            "amount": 448,
+            "contractId": "sissach::apples"
+          },
+          {
+            "good": "pears",
+            "amount": 420,
+            "contractId": "sissach::pears"
+          }
+        ]
+      },
+      {
+        "cityId": "liestal",
+        "dailyDemand": false,
+        "unloads": [
+          {
+            "good": "apples",
+            "amount": 840,
+            "contractId": "liestal::apples"
+          }
+        ]
+      }
+    ],
+    "cargo": [
+      {
+        "good": "apples",
+        "amount": 1288
+      },
+      {
+        "good": "pears",
+        "amount": 420
+      }
+    ],
+    "cost": 1054,
+    "distance": 170,
+    "status": "Unterwegs",
+    "shipmentId": "sc138_17841061742805b724efc174578"
+  },
+  "plan_after_arrival": {
+    "id": "sc138_5_city_zurich_0_ge36",
+    "absoluteDay": 5,
+    "weekday": 4,
+    "sourceType": "city",
+    "sourceId": "zurich",
+    "startMinute": 480,
+    "endMinute": 621,
+    "vehicleType": "lightTruck",
+    "vehicleNo": 1,
+    "stops": [
+      {
+        "cityId": "sissach",
+        "dailyDemand": false,
+        "unloads": [
+          {
+            "good": "apples",
+            "amount": 448,
+            "contractId": "sissach::apples"
+          },
+          {
+            "good": "pears",
+            "amount": 420,
+            "contractId": "sissach::pears"
+          }
+        ]
+      },
+      {
+        "cityId": "liestal",
+        "dailyDemand": false,
+        "unloads": [
+          {
+            "good": "apples",
+            "amount": 840,
+            "contractId": "liestal::apples"
+          }
+        ]
+      }
+    ],
+    "cargo": [
+      {
+        "good": "apples",
+        "amount": 1288
+      },
+      {
+        "good": "pears",
+        "amount": 420
+      }
+    ],
+    "cost": 1054,
+    "distance": 170,
+    "status": "Erledigt",
+    "shipmentId": "sc138_17841061742805b724efc174578"
+  },
+  "contracts_after_arrival": {
+    "apples": {
+      "id": "sissach::apples",
+      "destinationCityId": "sissach",
+      "goodId": "apples",
+      "primarySource": {
+        "type": "city",
+        "id": "zurich"
+      },
+      "frequency": "weekly",
+      "weekday": 4,
+      "targetStockDays": 7,
+      "allowFallback": true,
+      "enabled": true,
+      "openQuantity": 0,
+      "lastStatus": "448 kg geliefert · Zürich",
+      "lastDeliveryDay": 5,
+      "lastDelivered": 448
+    },
+    "pears": {
+      "id": "sissach::pears",
+      "destinationCityId": "sissach",
+      "goodId": "pears",
+      "primarySource": {
+        "type": "city",
+        "id": "zurich"
+      },
+      "frequency": "weekly",
+      "weekday": 4,
+      "targetStockDays": 7,
+      "allowFallback": true,
+      "enabled": true,
+      "openQuantity": 0,
+      "lastStatus": "420 kg geliefert · Zürich",
+      "lastDeliveryDay": 5,
+      "lastDelivered": 420
+    }
+  },
+  "supply_section": 1,
+  "sissach_contract_cards": 20,
+  "source_modal": 1,
+  "fleet_rows": 8,
+  "week_days": 7,
+  "tour_rows": 1,
+  "errors": [],
+  "console_errors": []
+}
