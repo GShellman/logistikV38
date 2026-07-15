@@ -23,6 +23,8 @@
         return result;
       };
       renderLogistics.__hfDepotMenuGuard=true;
+      const content=document.getElementById('content');
+      if(content?.dataset?.tab==='logistics'&&typeof renderAll==='function')requestAnimationFrame(()=>renderAll());
     }catch(err){console.error('HF Depot menu guard',err)}
   }
 
