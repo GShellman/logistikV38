@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "tauri": "tauri",
-    "serve": "python3 -m http.server 1420 --bind 127.0.0.1",
-    "dev": "node scripts/dev-tauri.mjs",
+    "dev": "tauri dev",
     "build": "tauri build"
   },
   "devDependencies": {
