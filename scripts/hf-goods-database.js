@@ -64,7 +64,6 @@
     pigs: good('pigs', 'Schweine', '🐖', 'animal_products', {rawMaterial: true}, demandOff(), ['livestock'], 2.4),
     pork: good('pork', 'Schweinefleisch', '🥩', 'animal_products', {perishable: true, refrigeratedRequired: true}, demandCanonical('fresh_food', 0.22, ['fish'], 0.22, {baseDemandPer100kKg: 85, wealthElasticity: 0.18, priceWealthSensitivity: 0.25, regionalVariance: 0.14}), ['refrigerated'], 4.1),
 
-    food: good('food', 'Lebensmittel', '🥫', 'processed_food', {}, demandConsumer('consumer_good', 310, 0.1, 0.1), ['general'], 3200),
     tomato_cans: good('tomato_cans', 'Tomatenkonserven', '🍅', 'processed_food', {}, demandCanonical('canned_food', 0.14, ['food'], 0.14, {baseDemandPer100kKg: 7, wealthElasticity: 0.05, priceWealthSensitivity: 0.08, regionalVariance: 0.16}), ['general'], 2.4),
     canned_corn: good('canned_corn', 'Maiskonserven', '🌽', 'processed_food', {}, demandCanonical('canned_food', 0.14, ['food'], 0.14, {baseDemandPer100kKg: 6, wealthElasticity: 0.03, priceWealthSensitivity: 0.06, regionalVariance: 0.16}), ['general'], 2.4),
     canned_peas: good('canned_peas', 'Erbsenkonserven', '🫛', 'processed_food', {}, demandCanonical('canned_food', 0.14, ['food'], 0.14, {baseDemandPer100kKg: 6, wealthElasticity: 0.03, priceWealthSensitivity: 0.06, regionalVariance: 0.16}), ['general'], 2.4),
@@ -74,8 +73,7 @@
     furniture: good('furniture', 'Möbel', '🪑', 'consumer_goods', {}, demandConsumer('consumer_good', 18, 0.35, 0.35), ['general'], 4300),
     tools: good('tools', 'Werkzeuge', '🔧', 'consumer_goods', {}, demandConsumer('consumer_good', 16, 0.25, 0.25), ['general'], 4700),
     electronics: good('electronics', 'Elektronik', '💻', 'consumer_goods', {}, demandConsumer('consumer_good', 10, 0.8, 0.6), ['general'], 6500),
-    medicine: good('medicine', 'Medizin', '💊', 'consumer_goods', {}, demandConsumer('consumer_good', 12, 0.35, 0.35), ['general'], 6900),
-    clothing: good('clothing', 'Kleidung', '🧥', 'consumer_goods', {}, demandConsumer('consumer_good', 22, 0.25, 0.25), ['general'], 4100)
+    medicine: good('medicine', 'Medizin', '💊', 'consumer_goods', {}, demandConsumer('consumer_good', 12, 0.35, 0.35), ['general'], 6900)
   });
 
   const facilities = Object.freeze({
@@ -103,8 +101,7 @@
     furniture: facility('furniture', 'Möbelfabrik', '🪑', 92000, 'industry', {wood: 3}, {furniture: 3}),
     toolworks: facility('toolworks', 'Werkzeugfabrik', '🔧', 105000, 'industry', {ore: 2, wood: 1}, {tools: 3}),
     electronics: facility('electronics', 'Elektronikwerk', '💻', 142000, 'tech', {ore: 2, chemicals: 1}, {electronics: 3}),
-    pharma: facility('pharma', 'Pharmawerk', '💊', 155000, 'tech', {chemicals: 2}, {medicine: 3}),
-    textile: facility('textile', 'Textilfabrik', '🧥', 88000, 'industry', {chemicals: 1, grain: 1}, {clothing: 4})
+    pharma: facility('pharma', 'Pharmawerk', '💊', 155000, 'tech', {chemicals: 2}, {medicine: 3})
   });
 
   const recipes = Object.freeze({
@@ -130,7 +127,6 @@
     facility_toolworks: recipe('facility_toolworks', 'toolworks', 'Werkzeugproduktion', {ore: 2, wood: 1}, {tools: 3}),
     facility_electronics: recipe('facility_electronics', 'electronics', 'Elektronikproduktion', {ore: 2, chemicals: 1}, {electronics: 3}),
     facility_pharma: recipe('facility_pharma', 'pharma', 'Medizinproduktion', {chemicals: 2}, {medicine: 3}),
-    facility_textile: recipe('facility_textile', 'textile', 'Kleidungsproduktion', {chemicals: 1, grain: 1}, {clothing: 4}),
 
     foodfactory_meat: recipe('foodfactory_meat', 'foodfactory', 'Ravioli mit Fleisch', {pork: 900, tomatoes: 400, cans: 1700, grain: 165}, {ravioli_meat: 1700}, 'meatPct'),
     foodfactory_veg: recipe('foodfactory_veg', 'foodfactory', 'Ravioli ohne Fleisch', {tomatoes: 800, zucchini: 500, cans: 1700, grain: 180}, {ravioli_veg: 1700}, 'vegPct'),
@@ -146,7 +142,8 @@
     facilities,
     recipes,
     demandProfiles,
-    vehicleGroups
+    vehicleGroups,
+    deprecations: Object.freeze({goods: ['food', 'clothing'], facilities: ['textile']})
   });
 
   global.HF_GOODS_DATABASE = database;
@@ -157,7 +154,8 @@
     facilities: Object.values(facilities),
     recipes: Object.values(recipes),
     demandProfiles: Object.values(demandProfiles),
-    vehicleGroups: Object.values(vehicleGroups)
+    vehicleGroups: Object.values(vehicleGroups),
+    deprecations: database.deprecations
   });
 
   function good(id, name, icon, category, properties, demand, allowedVehicleGroups, price = 0) {
