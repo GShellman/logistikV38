@@ -6,9 +6,10 @@ Helvetic Freight can be started as a desktop app through Tauri without changing 
 
 - Node.js 20 or newer
 - Rust toolchain with Cargo
+- Python 3 for the local development web server used by the helper script
 - Tauri system dependencies for the target platform
 
-## Development
+## First setup
 
 Install JavaScript dependencies once:
 
@@ -16,13 +17,29 @@ Install JavaScript dependencies once:
 npm install
 ```
 
-Start the desktop app in development mode:
+## Start the desktop app for development
+
+Start everything with one command from the repository root:
 
 ```bash
 npm run dev
 ```
 
-The Tauri window opens `Helvetic_Freight_v1.1.38_CleanApp.html` directly from the repository root.
+The `dev` script starts a local static file server on `127.0.0.1:1420`, waits until `Helvetic_Freight_v1.1.38_CleanApp.html` is reachable, and then opens the Tauri desktop window.
+
+## Optional manual startup
+
+If you want to run the static server yourself, use:
+
+```bash
+npm run serve
+```
+
+Then start Tauri in a second terminal with:
+
+```bash
+npm run tauri -- dev
+```
 
 ## Production build
 
