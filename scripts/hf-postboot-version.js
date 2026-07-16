@@ -11,21 +11,17 @@
   function depotBuildAction(){
     return 'window.HF.hfPostbootOpenDepotBuild()';
   }
-  function depotFeatureStatusMarkup(){
-    if(window.HF?.hfOpenDepotBuild)return '';
+  function depotFallbackMarkup(){
     const detail=window.__HF_DEPOT_MODULE_ERROR__?` · ${String(window.__HF_DEPOT_MODULE_ERROR__).slice(0,140)}`:'';
-    return `<div class="compact-note" style="margin:10px 0">Depot-Funktionen werden geladen. Falls der Button noch nicht reagiert, bitte die Ansicht erneut öffnen${detail}.</div>`;
-  }
-  function depotRowsMarkup(){
-    const depots=Array.isArray(state?.depots)?state.depots:[];
-    if(!depots.length)return `${depotFeatureStatusMarkup()}<div class="empty"><div class="big">🏬</div>Noch kein Depot gebaut. Depots automatisieren die letzte Meile, benötigen aber regelmäßige Warenzufuhr.</div>`;
-    return `<div class="list">${depots.map(d=>`<div class="list-item hf-depot-card"><div class="hf-depot-icon">🏬</div><div><div class="row"><div><b>${d.name||'Verteildepot'}</b><div class="sub">${(d.cities||[]).length} Städte · ${(d.goods||[]).length} Waren · ${Object.values(d.fleet||{}).reduce((n,x)=>n+(Number(x)||0),0)} Fahrzeuge</div></div><span class="pill ${d.active!==false?'live':'locked'}">${d.active!==false?'AUTO':'PAUSE'}</span></div><div class="sub" style="margin-top:6px">${d.lastStatus||'Bereit'}</div><div class="fleet-actions"><button class="btn sm primary" onclick="window.HF.hfOpenDepot('${d.id}')">📅 Disponieren</button><button class="btn sm secondary" onclick="window.HF.hfOpenDepotSupply('${d.id}')">📦 Direkt beliefern</button></div></div></div>`).join('')}</div>`;
+    const count=Array.isArray(state?.depots)?state.depots.length:0;
+    return `<div class="compact-note" style="margin:10px 0">Depot-Funktionen werden geladen. Falls der Button noch nicht reagiert, bitte die Ansicht erneut öffnen${detail}.</div><div class="empty"><div class="big">🏬</div>${count?`${count} Depot${count===1?'':'s'} im Spielstand gefunden. Verwaltung wird nachgeladen.`:'Noch kein Depot gebaut. Depots automatisieren die letzte Meile, benötigen aber regelmäßige Warenzufuhr.'}</div>`;
   }
   function injectDepotMenu(root){
     if(!root)return false;
     const existing=root.querySelector('#hfDepotMenuFallback,[data-hf-depot-menu]');
     if(existing)return false;
-    root.insertAdjacentHTML('beforeend',`<section class="card" id="hfDepotMenuFallback" data-hf-depot-menu="1"><div class="row"><div><h2 style="margin:0">Depots & Nahverteilung</h2><div class="sub">Depots versorgen ausgewählte Städte automatisch mit deren Tagesbedarf.</div></div><button class="btn sm primary" onclick="${depotBuildAction()}">+ Depot</button></div><div class="compact-note" style="margin:10px 0">Deine Aufgabe verschiebt sich zur Warenversorgung der Depots. Depotfahrzeuge disponieren die letzte Meile selbstständig.</div>${depotRowsMarkup()}</section>`);
+    if(window.HF?.hfRenderDepotLogisticsSection)return window.HF.hfRenderDepotLogisticsSection(root);
+    root.insertAdjacentHTML('beforeend',`<section class="card" id="hfDepotMenuFallback" data-hf-depot-menu="1"><div class="row"><div><h2 style="margin:0">Depots & Nahverteilung</h2><div class="sub">Depots versorgen ausgewählte Städte automatisch mit deren Tagesbedarf.</div></div><button class="btn sm primary" onclick="${depotBuildAction()}">+ Depot</button></div><div class="compact-note" style="margin:10px 0">Deine Aufgabe verschiebt sich zur Warenversorgung der Depots. Depotfahrzeuge disponieren die letzte Meile selbstständig.</div>${depotFallbackMarkup()}</section>`);
     return true;
   }
 
