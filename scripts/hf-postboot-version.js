@@ -8,71 +8,6 @@
       if(document.body)document.body.dataset.hfBuild='1.1.38';
     }catch(err){console.error('HF 1.1.29 postboot demand repair',err)}
   }
-  function depotBuildAction(){
-    return 'window.HF.hfPostbootOpenDepotBuild()';
-  }
-  function depotFallbackMarkup(){
-    const detail=window.__HF_DEPOT_MODULE_ERROR__?` · ${String(window.__HF_DEPOT_MODULE_ERROR__).slice(0,140)}`:'';
-    const appState=typeof state==='object'&&state?state:null;
-    const count=Array.isArray(appState?.depots)?appState.depots.length:0;
-    return `<div class="compact-note" style="margin:10px 0">Depot-Funktionen werden geladen. Falls der Button noch nicht reagiert, bitte die Ansicht erneut öffnen${detail}.</div><div class="empty"><div class="big">🏬</div>${count?`${count} Depot${count===1?'':'s'} im Spielstand gefunden. Verwaltung wird nachgeladen.`:'Noch kein Depot gebaut. Depots automatisieren die letzte Meile, benötigen aber regelmäßige Warenzufuhr.'}</div>`;
-  }
-  function injectDepotMenu(root){
-    if(!root)return false;
-    const existing=root.querySelector('#hfDepotMenuFallback,[data-hf-depot-menu]');
-    if(existing)return false;
-    if(window.HF?.hfRenderDepotLogisticsSection)return window.HF.hfRenderDepotLogisticsSection(root);
-    root.insertAdjacentHTML('beforeend',`<section class="card" id="hfDepotMenuFallback" data-hf-depot-menu="1"><div class="row"><div><h2 style="margin:0">Depots & Nahverteilung</h2><div class="sub">Depots versorgen ausgewählte Städte automatisch mit deren Tagesbedarf.</div></div><button class="btn sm primary" onclick="${depotBuildAction()}">+ Depot</button></div><div class="compact-note" style="margin:10px 0">Deine Aufgabe verschiebt sich zur Warenversorgung der Depots. Depotfahrzeuge disponieren die letzte Meile selbstständig.</div>${depotFallbackMarkup()}</section>`);
-    return true;
-  }
-
-  function ensureLogisticsDepotQuickAction(){
-    try{
-      const root=document.getElementById('content');
-      if(root?.dataset?.tab!=='depot')return;
-      const actions=root.querySelector('.quick-actions');
-      if(!actions||actions.querySelector('[data-hf-depot-quick-action]'))return;
-      actions.insertAdjacentHTML('beforeend',`<button class="btn secondary" data-hf-depot-quick-action="1" onclick="${depotBuildAction()}">🏬 Depot</button>`);
-    }catch(err){console.error('Depot-Schnellaktion konnte nicht ergänzt werden',err)}
-  }
-  function injectCurrentDepotMenu(){
-    try{
-      const root=document.getElementById('content');
-      if(root?.dataset?.tab==='depot'){ensureLogisticsDepotQuickAction();injectDepotMenu(root)}
-    }catch(err){console.error('Depot-Menü konnte nicht direkt ergänzt werden',err)}
-  }
-  function depotMenuCardMarkup(){
-    try{
-      if(typeof renderDepot!=='function')return;
-      if(!renderDepot.__hfDepotMenuGuard){
-        const baseRenderDepot=renderDepot;
-        renderDepot=function(root){
-          const result=baseRenderDepot(root);
-          try{ensureLogisticsDepotQuickAction();injectDepotMenu(root)}catch(err){console.error('Depot-Menü konnte nicht ergänzt werden',err)}
-          return result;
-        };
-        renderDepot.__hfDepotMenuGuard=true;
-      }
-      injectCurrentDepotMenu();
-      const content=document.getElementById('content');
-      if(content?.dataset?.tab==='depot'&&typeof renderAll==='function')requestAnimationFrame(()=>{renderAll();setTimeout(injectCurrentDepotMenu,0)});
-    }catch(err){console.error('HF Depot menu guard',err)}
-  }
-  function postbootOpenDepotBuild(){
-    try{
-      if(window.HF?.hfOpenDepotBuild)return window.HF.hfOpenDepotBuild();
-      ensureDepotModule();
-      setTimeout(()=>{if(window.HF?.hfOpenDepotBuild)window.HF.hfOpenDepotBuild();else if(typeof toast==='function')toast('Depot-Modul ist noch nicht verfügbar. Logistik neu öffnen oder Spiel neu laden.','bad')},160);
-    }catch(err){console.error('Depot-Aufruf fehlgeschlagen',err);try{toast('Depot konnte nicht geöffnet werden.','bad')}catch(_){}}
-  }
-  function ensureDepotModule(){
-    try{
-      if(window.HF?.hfOpenDepotBuild)return true;
-      window.__HF_DEPOT_MODULE_ERROR__=window.__HF_DEPOT_MODULE_ERROR__||'Depot-Modul wurde nicht im Hauptspiel-Scope geladen.';
-      console.warn('Depot feature module fallback deaktiviert: scripts/hf-depot-extensions.js benötigt lokale App-Variablen aus dem Haupt-IIFE-Scope.');
-      return false;
-    }catch(err){console.error('Depot feature module fallback',err);return false}
-  }
   function uiAction(name){return function(){try{const fn=window.HF&&window.HF[name];if(typeof fn==='function')fn();else console.warn('Spielstand-Aktion nicht verfügbar',name)}catch(err){console.warn('Spielstand-Aktion fehlgeschlagen',name,err)}}}
   function ensureSaveTools(){
     try{
@@ -96,6 +31,6 @@
       }
     }catch(err){console.error('Save-/Export-/Import-Werkzeuge konnten nicht gesichert werden',err)}
   }
-  function reinforce(){enforce();window.HF={...window.HF,hfPostbootOpenDepotBuild:postbootOpenDepotBuild};ensureDepotModule();depotMenuCardMarkup();ensureSaveTools()}
+  function reinforce(){enforce();ensureSaveTools()}
   reinforce();setTimeout(reinforce,120);setTimeout(reinforce,700);setTimeout(reinforce,1800);
 })();
