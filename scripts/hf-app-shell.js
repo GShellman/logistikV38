@@ -26,7 +26,7 @@
         <div class="stats"><div class="stat"><span>Konto</span><b id="cash">CHF 0</b></div><div class="stat"><span>Zeit</span><b id="day">1</b></div><div class="stat"><span>Netz</span><b id="networkStat">1 Ort</b></div></div>
       </header>
       <nav class="tabs">
-        <button class="tab active" data-tab="city">ORT</button><button class="tab" data-tab="network">NETZ</button><button class="tab" data-tab="logistics">LOGISTIK</button><button class="tab" data-tab="company">FIRMA</button>
+        <button class="tab active" data-tab="city">ORT</button><button class="tab" data-tab="network">NETZ</button><button class="tab" data-tab="logistics">LOGISTIK</button><button class="tab" data-tab="depot">DEPOT</button><button class="tab" data-tab="company">FIRMA</button>
       </nav>
       <main class="content" id="content"></main>
       <footer class="footer"><button class="btn secondary" id="saveBtn">Speichern</button><button class="btn orange" id="playBtn">▶ Play</button><button class="btn blue" id="nextHourBtn">+1 Std.</button><button class="btn primary" id="nextDayBtn">Tag beenden</button></footer>
