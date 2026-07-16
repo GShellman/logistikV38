@@ -183,8 +183,8 @@
     root.insertAdjacentHTML('beforeend',hfDepotLogisticsSectionMarkup());
     return true
   }
-  const hfBaseRenderLogistics=renderLogistics;
-  renderLogistics=function(root){const result=hfBaseRenderLogistics(root);hfRenderDepotLogisticsSection(root);return result};
+  const hfBaseRenderDepot=typeof renderDepot==='function'?renderDepot:null;
+  renderDepot=function(root){const result=hfBaseRenderDepot?hfBaseRenderDepot(root):undefined;hfRenderDepotLogisticsSection(root);return result};
   const hfBaseRenderCompany=renderCompany;
   renderCompany=function(root){hfBaseRenderCompany(root);const fixed=(state.depots||[]).length*HF_DEPOT_DAILY_COST,fleet=(state.depots||[]).reduce((n,d)=>n+hfDepotFleetMaintenance(d),0);root.innerHTML+=`<section class="card"><div class="compact-head"><h3>Depotkosten</h3><span class="pill">${state.depots?.length||0} Depots</span></div><div class="finance-grid"><div class="finance-tile"><span>Gebäude</span><b>${money(fixed)}/Tag</b></div><div class="finance-tile"><span>Depot-Fuhrpark</span><b>${money(fleet)}/Tag</b></div><div class="finance-tile"><span>Gesamt</span><b>${money(fixed+fleet)}/Tag</b></div></div></section>`};
 
@@ -823,7 +823,7 @@ save(false);
   document.body.dataset.hfBuild='1.0.40';
   document.body.dataset.hfHardReset='1';
   state.cleanStartVersion='1.0.40';
-  state.tab=['city','network','logistics','company'].includes(state.tab)?state.tab:'city';
+  state.tab=['city','network','logistics','depot','company'].includes(state.tab)?state.tab:'city';
   if(!state.selected||!CITY[state.selected])state.selected='zurich';
   save(false);
   try{renderAll()}catch(err){
@@ -1163,7 +1163,7 @@ save(false);
   const hfV142BaseOpen=window.HF?.hfOpenDepot;if(hfV142BaseOpen)window.HF.hfOpenDepot=function(id){const r=hfV142BaseOpen(id);requestAnimationFrame(()=>hfV142EnhanceDepot(id));return r};
   for(const name of ['hfSaveDepotConfig','hfDepotBuyVehicle','hfDepotSellVehicle','hfRunDepotNow']){const base=window.HF?.[name];if(!base)continue;window.HF[name]=function(id,...args){const r=base(id,...args);setTimeout(()=>hfV142EnhanceDepot(id),0);return r}}
 
-  const hfV142BaseRenderLogistics=renderLogistics;renderLogistics=function(root){const result=hfV142BaseRenderLogistics(root);window.HF?.hfRenderDepotLogisticsSection?.(root);root.querySelectorAll('button[onclick*="hfOpenDepot("]').forEach(btn=>btn.textContent='📅 Disponieren');root.querySelectorAll('button[onclick*="hfOpenDepotSupply"]').forEach(btn=>{if(btn.closest('.hf-depot-card'))btn.textContent='📦 Direkt beliefern'});return result};
+  const hfV142BaseRenderDepot=typeof renderDepot==='function'?renderDepot:null;renderDepot=function(root){const result=hfV142BaseRenderDepot?hfV142BaseRenderDepot(root):undefined;window.HF?.hfRenderDepotLogisticsSection?.(root);root.querySelectorAll('button[onclick*="hfOpenDepot("]').forEach(btn=>btn.textContent='📅 Disponieren');root.querySelectorAll('button[onclick*="hfOpenDepotSupply"]').forEach(btn=>{if(btn.closest('.hf-depot-card'))btn.textContent='📦 Direkt beliefern'});return result};
   const hfV142BaseRefresh=refreshLiveTimeUi;refreshLiveTimeUi=function(...args){const r=hfV142BaseRefresh(...args);const panel=document.querySelector('#hfV138SchedulePanel[data-depot-id]');if(panel){const id=panel.dataset.depotId;requestAnimationFrame(()=>{hfV142CropCalendar(id);const d=hfV142Depot(id);if(d)hfV142RenderOrderPanel(id)})}return r};
 
   if(!document.getElementById('hf-v142-style')){const style=document.createElement('style');style.id='hf-v142-style';style.textContent=`
