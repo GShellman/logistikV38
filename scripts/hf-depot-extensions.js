@@ -175,8 +175,16 @@
     hfEnsureDepots();if(!state.depots.length)return `<div class="empty"><div class="big">🏬</div>Noch kein Depot gebaut. Depots automatisieren die letzte Meile, benötigen aber regelmäßige Warenzufuhr.</div>`;
     return `<div class="list">${state.depots.map(d=>{const demand=hfDepotDemandTotal(d),stock=hfDepotInventoryTotal(d),coverage=hfDepotCoverage(d),pct=demand?clamp(stock/demand*100,0,100):0;return `<div class="list-item hf-depot-card"><div class="hf-depot-icon">🏬</div><div><div class="row"><div><b>${d.name}</b><div class="sub">${d.cities.length} Städte · ${d.goods.length} Waren · ${hfDepotFleetCount(d)} Fahrzeuge</div></div><span class="pill ${d.active?'live':'locked'}">${d.active?'AUTO':'PAUSE'}</span></div><div class="hf-depot-card-grid"><span>Tagesbedarf <b>${formatWeight(demand)}</b></span><span>Lager <b>${formatWeight(stock)}</b></span><span>Deckung <b>${coverage}%</b></span><span>Kapazität <b>${formatWeight(hfDepotFleetCapacity(d))}</b></span></div><div class="bar"><i style="width:${pct}%"></i></div><div class="sub" style="margin-top:6px">${d.lastStatus}</div><div class="fleet-actions"><button class="btn sm primary" onclick="window.HF.hfOpenDepot('${d.id}')">Verwalten</button><button class="btn sm secondary" onclick="window.HF.hfOpenDepotSupply('${d.id}')">Beliefern</button></div></div></div>`}).join('')}</div>`
   }
+  function hfDepotLogisticsSectionMarkup(){
+    return `<section class="card" data-hf-depot-menu="1"><div class="row"><div><h2 style="margin:0">Depots & Nahverteilung</h2><div class="sub">Depots versorgen ausgewählte Städte automatisch mit deren Tagesbedarf.</div></div><button class="btn sm primary" onclick="window.HF.hfOpenDepotBuild()">+ Depot</button></div><div class="compact-note" style="margin:10px 0">Deine Aufgabe verschiebt sich zur Warenversorgung der Depots. Depotfahrzeuge disponieren die letzte Meile selbstständig.</div>${hfDepotCardsMarkup()}</section>`
+  }
+  function hfRenderDepotLogisticsSection(root){
+    if(!root||root.querySelector('[data-hf-depot-menu]'))return false;
+    root.insertAdjacentHTML('beforeend',hfDepotLogisticsSectionMarkup());
+    return true
+  }
   const hfBaseRenderLogistics=renderLogistics;
-  renderLogistics=function(root){hfBaseRenderLogistics(root);root.innerHTML+=`<section class="card"><div class="row"><div><h2 style="margin:0">Depots & Nahverteilung</h2><div class="sub">Depots versorgen ausgewählte Städte automatisch mit deren Tagesbedarf.</div></div><button class="btn sm primary" onclick="window.HF.hfOpenDepotBuild()">+ Depot</button></div><div class="compact-note" style="margin:10px 0">Deine Aufgabe verschiebt sich zur Warenversorgung der Depots. Depotfahrzeuge disponieren die letzte Meile selbstständig.</div>${hfDepotCardsMarkup()}</section>`};
+  renderLogistics=function(root){const result=hfBaseRenderLogistics(root);hfRenderDepotLogisticsSection(root);return result};
   const hfBaseRenderCompany=renderCompany;
   renderCompany=function(root){hfBaseRenderCompany(root);const fixed=(state.depots||[]).length*HF_DEPOT_DAILY_COST,fleet=(state.depots||[]).reduce((n,d)=>n+hfDepotFleetMaintenance(d),0);root.innerHTML+=`<section class="card"><div class="compact-head"><h3>Depotkosten</h3><span class="pill">${state.depots?.length||0} Depots</span></div><div class="finance-grid"><div class="finance-tile"><span>Gebäude</span><b>${money(fixed)}/Tag</b></div><div class="finance-tile"><span>Depot-Fuhrpark</span><b>${money(fleet)}/Tag</b></div><div class="finance-tile"><span>Gesamt</span><b>${money(fixed+fleet)}/Tag</b></div></div></section>`};
 
@@ -191,7 +199,7 @@
     .hf-depot-panel{margin-top:12px;padding:11px;border:1px solid #d7ded8;border-radius:15px;background:#f8faf7}.hf-depot-panel h3{margin:0 0 4px}.hf-depot-check-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:9px;max-height:210px;overflow:auto}.hf-depot-check-grid label,.hf-depot-good-grid label{display:flex;align-items:center;gap:7px;padding:8px;border:1px solid #d7ded8;border-radius:10px;background:white;font-size:10px;font-weight:800}.hf-depot-check-grid input,.hf-depot-good-grid input{width:17px;height:17px;accent-color:#197457}.hf-depot-good-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:9px;max-height:210px;overflow:auto}.hf-depot-good-grid img{width:25px;height:25px}.hf-depot-summary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:9px}.hf-depot-summary-grid>div{padding:9px;border-radius:11px;background:white;border:1px solid #e1e6e2}.hf-depot-summary-grid span{display:block;font-size:8px;color:#728079;text-transform:uppercase;font-weight:800}.hf-depot-summary-grid b{display:block;font-size:13px;margin-top:3px}.hf-depot-demand-list{display:grid;gap:6px;margin-top:8px}.hf-depot-demand-list>div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;align-items:center;padding:8px;border-radius:10px;background:white}.hf-depot-demand-list span{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:800}.hf-depot-demand-list small{grid-column:1/-1;color:#6b7771}.hf-depot-vehicle{grid-template-columns:74px minmax(0,1fr)}.depot-actions{display:grid;grid-template-columns:1fr 1fr}.depot-actions .btn:last-child{grid-column:1/-1}.hf-depot-card{grid-template-columns:44px minmax(0,1fr)}.hf-depot-icon{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;background:#e4f0e9;font-size:23px}.hf-depot-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 8px;margin:7px 0}.hf-depot-card-grid span{font-size:9px;color:#66746d}.hf-depot-card-grid b{color:#263a31}.hf-depot-marker{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:#f2fff8;border:3px solid #197457;box-shadow:0 3px 10px #173f3255;font-size:17px}.hf-depot-marker-wrap{background:transparent;border:0}.hf-depot-marker-wrap .leaflet-marker-icon{background:transparent}@media(max-width:380px){.hf-depot-check-grid,.hf-depot-good-grid{grid-template-columns:1fr}.depot-actions{grid-template-columns:1fr}.depot-actions .btn:last-child{grid-column:auto}}
   `;document.head.appendChild(style)}
 
-  window.HF={...window.HF,hfOpenDepotBuild,hfBuildDepot,hfOpenDepot,hfSaveDepotConfig,hfDepotBuyVehicle,hfDepotSellVehicle,hfOpenDepotSupply,hfDispatchSupply,hfRunDepotNow};
+  window.HF={...window.HF,hfOpenDepotBuild,hfBuildDepot,hfOpenDepot,hfSaveDepotConfig,hfDepotBuyVehicle,hfDepotSellVehicle,hfOpenDepotSupply,hfDispatchSupply,hfRunDepotNow,hfRenderDepotLogisticsSection};
   document.body.dataset.hfBuild='1.0.35';
   document.body.dataset.hfDepots='1';
   save(false);renderAll();
@@ -815,7 +823,7 @@ save(false);
   document.body.dataset.hfBuild='1.0.40';
   document.body.dataset.hfHardReset='1';
   state.cleanStartVersion='1.0.40';
-  state.tab='city';
+  state.tab=['city','network','logistics','company'].includes(state.tab)?state.tab:'city';
   if(!state.selected||!CITY[state.selected])state.selected='zurich';
   save(false);
   try{renderAll()}catch(err){
@@ -1155,7 +1163,7 @@ save(false);
   const hfV142BaseOpen=window.HF?.hfOpenDepot;if(hfV142BaseOpen)window.HF.hfOpenDepot=function(id){const r=hfV142BaseOpen(id);requestAnimationFrame(()=>hfV142EnhanceDepot(id));return r};
   for(const name of ['hfSaveDepotConfig','hfDepotBuyVehicle','hfDepotSellVehicle','hfRunDepotNow']){const base=window.HF?.[name];if(!base)continue;window.HF[name]=function(id,...args){const r=base(id,...args);setTimeout(()=>hfV142EnhanceDepot(id),0);return r}}
 
-  const hfV142BaseRenderLogistics=renderLogistics;renderLogistics=function(root){hfV142BaseRenderLogistics(root);root.querySelectorAll('button[onclick*="hfOpenDepot("]').forEach(btn=>btn.textContent='📅 Disponieren');root.querySelectorAll('button[onclick*="hfOpenDepotSupply"]').forEach(btn=>{if(btn.closest('.hf-depot-card'))btn.textContent='📦 Direkt beliefern'})};
+  const hfV142BaseRenderLogistics=renderLogistics;renderLogistics=function(root){const result=hfV142BaseRenderLogistics(root);window.HF?.hfRenderDepotLogisticsSection?.(root);root.querySelectorAll('button[onclick*="hfOpenDepot("]').forEach(btn=>btn.textContent='📅 Disponieren');root.querySelectorAll('button[onclick*="hfOpenDepotSupply"]').forEach(btn=>{if(btn.closest('.hf-depot-card'))btn.textContent='📦 Direkt beliefern'});return result};
   const hfV142BaseRefresh=refreshLiveTimeUi;refreshLiveTimeUi=function(...args){const r=hfV142BaseRefresh(...args);const panel=document.querySelector('#hfV138SchedulePanel[data-depot-id]');if(panel){const id=panel.dataset.depotId;requestAnimationFrame(()=>{hfV142CropCalendar(id);const d=hfV142Depot(id);if(d)hfV142RenderOrderPanel(id)})}return r};
 
   if(!document.getElementById('hf-v142-style')){const style=document.createElement('style');style.id='hf-v142-style';style.textContent=`
