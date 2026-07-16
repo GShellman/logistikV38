@@ -7963,7 +7963,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
     },
     "history": [],
     "tutorial": 0,
-    "depots": [],
     "physicalUnitsVersion": 1,
     "junctions": [],
     "networkOriginNode": "zurich",
