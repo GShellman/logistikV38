@@ -13,7 +13,8 @@
   }
   function depotFallbackMarkup(){
     const detail=window.__HF_DEPOT_MODULE_ERROR__?` · ${String(window.__HF_DEPOT_MODULE_ERROR__).slice(0,140)}`:'';
-    const count=Array.isArray(state?.depots)?state.depots.length:0;
+    const appState=typeof state==='object'&&state?state:null;
+    const count=Array.isArray(appState?.depots)?appState.depots.length:0;
     return `<div class="compact-note" style="margin:10px 0">Depot-Funktionen werden geladen. Falls der Button noch nicht reagiert, bitte die Ansicht erneut öffnen${detail}.</div><div class="empty"><div class="big">🏬</div>${count?`${count} Depot${count===1?'':'s'} im Spielstand gefunden. Verwaltung wird nachgeladen.`:'Noch kein Depot gebaut. Depots automatisieren die letzte Meile, benötigen aber regelmäßige Warenzufuhr.'}</div>`;
   }
   function injectDepotMenu(root){
@@ -66,14 +67,11 @@
   }
   function ensureDepotModule(){
     try{
-      if(window.HF?.hfOpenDepotBuild||document.querySelector('script[data-hf-depot-module-fallback]'))return;
-      const script=document.createElement('script');
-      script.src='scripts/hf-depot-extensions.js';
-      script.dataset.hfDepotModuleFallback='1';
-      script.onload=()=>{depotMenuCardMarkup();try{if(typeof renderAll==='function')renderAll()}catch(_){ }setTimeout(injectCurrentDepotMenu,0)};
-      script.onerror=err=>console.error('Depot feature module konnte nicht nachgeladen werden',err);
-      document.head.appendChild(script);
-    }catch(err){console.error('Depot feature module fallback',err)}
+      if(window.HF?.hfOpenDepotBuild)return true;
+      window.__HF_DEPOT_MODULE_ERROR__=window.__HF_DEPOT_MODULE_ERROR__||'Depot-Modul wurde nicht im Hauptspiel-Scope geladen.';
+      console.warn('Depot feature module fallback deaktiviert: scripts/hf-depot-extensions.js benötigt lokale App-Variablen aus dem Haupt-IIFE-Scope.');
+      return false;
+    }catch(err){console.error('Depot feature module fallback',err);return false}
   }
   function uiAction(name){return function(){try{const fn=window.HF&&window.HF[name];if(typeof fn==='function')fn();else console.warn('Spielstand-Aktion nicht verfügbar',name)}catch(err){console.warn('Spielstand-Aktion fehlgeschlagen',name,err)}}}
   function ensureSaveTools(){
