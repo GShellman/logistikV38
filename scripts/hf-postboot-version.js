@@ -29,7 +29,7 @@
   function ensureLogisticsDepotQuickAction(){
     try{
       const root=document.getElementById('content');
-      if(root?.dataset?.tab!=='logistics')return;
+      if(root?.dataset?.tab!=='depot')return;
       const actions=root.querySelector('.quick-actions');
       if(!actions||actions.querySelector('[data-hf-depot-quick-action]'))return;
       actions.insertAdjacentHTML('beforeend',`<button class="btn secondary" data-hf-depot-quick-action="1" onclick="${depotBuildAction()}">🏬 Depot</button>`);
@@ -38,24 +38,24 @@
   function injectCurrentDepotMenu(){
     try{
       const root=document.getElementById('content');
-      if(root?.dataset?.tab==='logistics'){ensureLogisticsDepotQuickAction();injectDepotMenu(root)}
+      if(root?.dataset?.tab==='depot'){ensureLogisticsDepotQuickAction();injectDepotMenu(root)}
     }catch(err){console.error('Depot-Menü konnte nicht direkt ergänzt werden',err)}
   }
   function depotMenuCardMarkup(){
     try{
-      if(typeof renderLogistics!=='function')return;
-      if(!renderLogistics.__hfDepotMenuGuard){
-        const baseRenderLogistics=renderLogistics;
-        renderLogistics=function(root){
-          const result=baseRenderLogistics(root);
+      if(typeof renderDepot!=='function')return;
+      if(!renderDepot.__hfDepotMenuGuard){
+        const baseRenderDepot=renderDepot;
+        renderDepot=function(root){
+          const result=baseRenderDepot(root);
           try{ensureLogisticsDepotQuickAction();injectDepotMenu(root)}catch(err){console.error('Depot-Menü konnte nicht ergänzt werden',err)}
           return result;
         };
-        renderLogistics.__hfDepotMenuGuard=true;
+        renderDepot.__hfDepotMenuGuard=true;
       }
       injectCurrentDepotMenu();
       const content=document.getElementById('content');
-      if(content?.dataset?.tab==='logistics'&&typeof renderAll==='function')requestAnimationFrame(()=>{renderAll();setTimeout(injectCurrentDepotMenu,0)});
+      if(content?.dataset?.tab==='depot'&&typeof renderAll==='function')requestAnimationFrame(()=>{renderAll();setTimeout(injectCurrentDepotMenu,0)});
     }catch(err){console.error('HF Depot menu guard',err)}
   }
   function postbootOpenDepotBuild(){
