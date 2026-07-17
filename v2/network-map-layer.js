@@ -69,13 +69,31 @@
       const coords = lineCoordinates(connection, start, target);
       const typeName = spec.name || connection.type || 'Verbindung';
       const capacity = formatCapacity(connection, spec);
-      const line = L.polyline(coords, {
-        color: spec.color || '#3d6fae',
-        weight: spec.weight || 4,
+      const baseWeight = Number(spec.weight) || 4;
+      const lineOptions = {
         dashArray: spec.dashArray || null,
-        opacity: 1,
         lineCap: 'round',
         lineJoin: 'round',
+      };
+      const glow = L.polyline(coords, {
+        ...lineOptions,
+        color: spec.color || '#3d6fae',
+        weight: baseWeight + 12,
+        opacity: .22,
+        interactive: false,
+      });
+      const casing = L.polyline(coords, {
+        ...lineOptions,
+        color: '#fffdf7',
+        weight: baseWeight + 7,
+        opacity: .96,
+        interactive: false,
+      });
+      const line = L.polyline(coords, {
+        ...lineOptions,
+        color: spec.color || '#3d6fae',
+        weight: baseWeight + 3,
+        opacity: .98,
       });
 
       line.bindTooltip([
@@ -85,6 +103,8 @@
         `Kapazität: ${escapeHtml(capacity)}`,
       ].join('<br>'));
 
+      networkLineLayer.addLayer(glow);
+      networkLineLayer.addLayer(casing);
       networkLineLayer.addLayer(line);
     });
 
