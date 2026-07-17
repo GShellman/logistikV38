@@ -255,8 +255,7 @@ function cityGoodPrice(cityId,goodId){
   return Math.max(0,base*mult*(1+(wealth-1)*sensitivity));
 }
 function freshState(){
-  const cities={}; CITIES.forEach(c=>cities[c.id]=createCityState(c,{unlocked:c.id==='zurich'}));
-  return {version:8,day:1,hour:8,minute:0,cash:335000,reputation:0,totalRevenue:0,totalDelivered:0,selected:'zurich',tab:'city',cities,connections:[],shipments:[],routes:[],fleet:{van:1,lightTruck:0,heavyTruck:0,artic:0,freightTrain:0},usedCapacity:{},usedVehicles:{},history:[],tutorial:0};
+  return HF_GAME_MECHANICS.createFreshStateFromPackage(window.HF_INITIAL_STATE_PACKAGE,{goods:GOODS,demandGoods:DEMAND_GOODS,cities:CITIES});
 }
 function migrateState(s){
   return window.HF_MIGRATE_SAVE_STATE?.(s,{transportTypes:TRANSPORT_TYPES,vehicles:VEHICLES,cities:CITIES,cityById:CITY,createCityState,normalizeInventory,makeDemands})||null;
