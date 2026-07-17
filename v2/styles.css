@@ -250,6 +250,12 @@ code {
   transition: background .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease;
   width: 38px;
 }
+.hf-v2-city-action-icon {
+  display: block;
+  height: 27px;
+  object-fit: contain;
+  width: 27px;
+}
 .hf-v2-city-action-button:hover,
 .hf-v2-city-action-button:focus-visible {
   background: #fff6ee;

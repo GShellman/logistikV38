@@ -47,19 +47,20 @@
     return `style="--hf-action-x:${x.toFixed(3)}%;--hf-action-y:${y.toFixed(3)}%;"`;
   }
 
-  function actionButton(action, label, icon, city, index, total) {
+  function actionButton(action, label, city, index, total) {
+    const image = window.HFV2CityActionAssets?.actionImage?.(action) || '';
     return `
           <button class="hf-v2-city-action-button hf-v2-city-action-button--${action}" type="button" data-action="${action}" ${actionPosition(index, total)} aria-label="${label} für ${escapeHtml(city.name)} öffnen">
-            <span aria-hidden="true">${icon}</span>
+            <img class="hf-v2-city-action-icon" src="${image}" alt="" aria-hidden="true">
           </button>`;
   }
 
   function cityActions(city) {
     return [
-      {action: 'network', label: 'Netzwerkoptionen', icon: '🛣️'},
-      {action: 'fleet', label: 'Fuhrpark', icon: '🚚'},
-      {action: 'factory', label: 'Betriebe', icon: '🏭'},
-    ].map((item, index, actions) => actionButton(item.action, item.label, item.icon, city, index, actions.length)).join('');
+      {action: 'network', label: 'Netzwerkoptionen'},
+      {action: 'fleet', label: 'Fuhrpark'},
+      {action: 'factory', label: 'Betriebe'},
+    ].map((item, index, actions) => actionButton(item.action, item.label, city, index, actions.length)).join('');
   }
 
   function bindPopupEvents() {
