@@ -72,9 +72,9 @@
 
   function renderExistingBadges(state) {
     const badges = [];
-    if (state.road) badges.push('<span class="network-menu__badge network-menu__badge--disabled">Straße besteht</span>');
-    if (state.rail) badges.push('<span class="network-menu__badge network-menu__badge--disabled">Bahn besteht</span>');
-    if (!badges.length) badges.push('<span class="network-menu__badge">Bebaubar</span>');
+    if (state.road) badges.push('<span class="hf-v2-network-badge hf-v2-network-badge--disabled">Straße besteht</span>');
+    if (state.rail) badges.push('<span class="hf-v2-network-badge hf-v2-network-badge--disabled">Bahn besteht</span>');
+    if (!badges.length) badges.push('<span class="hf-v2-network-badge">Bebaubar</span>');
     return badges.join('');
   }
 
@@ -89,21 +89,21 @@
       const fullyConnected = state.road && state.rail;
       const distance = origin ? estimatedDistanceForType(origin, target, 'mainroad') : 0;
       return `
-        <button class="network-menu__target${fullyConnected ? ' is-disabled' : ''}" type="button" data-network-target="${escapeHtml(target.id)}" ${fullyConnected ? 'disabled' : ''}>
+        <button class="hf-v2-network-target${fullyConnected ? ' is-disabled' : ''}" type="button" data-network-target="${escapeHtml(target.id)}" ${fullyConnected ? 'disabled' : ''}>
           <span>
             <strong>${escapeHtml(target.name)}</strong>
             <small>${formatKm(distance)} · Stufe ${escapeHtml(target.tier)}</small>
           </span>
-          <span class="network-menu__badges">${renderExistingBadges(state)}</span>
+          <span class="hf-v2-network-badges">${renderExistingBadges(state)}</span>
         </button>`;
-    }).join('') : '<p class="network-menu__empty">Keine potenziellen Zielstädte in Reichweite.</p>';
+    }).join('') : '<p class="hf-v2-network-empty">Keine potenziellen Zielstädte in Reichweite.</p>';
 
     return `
-      <div class="network-menu" data-network-origin="${escapeHtml(originId)}">
-        <p class="network-menu__eyebrow">Ursprung</p>
+      <div class="hf-v2-network-menu" data-network-origin="${escapeHtml(originId)}">
+        <p class="hf-v2-network-eyebrow">Ursprung</p>
         <h3>${escapeHtml(origin?.name || originId)}</h3>
-        <p class="network-menu__hint">Wähle eine Zielstadt aus dem Stadtkatalog. Bereits vorhandene Verbindungen sind markiert; vollständig verbundene Ziele sind deaktiviert.</p>
-        <div class="network-menu__targets">${rows}</div>
+        <p class="hf-v2-network-hint">Wähle eine Zielstadt aus dem Stadtkatalog. Bereits vorhandene Verbindungen sind markiert; vollständig verbundene Ziele sind deaktiviert.</p>
+        <div class="hf-v2-network-grid">${rows}</div>
       </div>`;
   }
 
@@ -116,13 +116,13 @@
     const quote = hfNetwork.buildQuote?.(type, distance);
     const disabled = exists || !quote;
     return `
-      <button class="network-menu__build-option${disabled ? ' is-disabled' : ''}" type="button" data-network-build="${escapeHtml(type)}" ${disabled ? 'disabled' : ''}>
-        <span class="network-menu__build-icon" aria-hidden="true">${escapeHtml(spec.icon)}</span>
+      <button class="hf-v2-network-option${disabled ? ' is-disabled' : ''}" type="button" data-network-build="${escapeHtml(type)}" ${disabled ? 'disabled' : ''}>
+        <span class="hf-v2-network-icon" aria-hidden="true">${escapeHtml(spec.icon)}</span>
         <span>
           <strong>${escapeHtml(DISPLAY_NAMES[type] || spec.name)}</strong>
           <small>${formatKm(distance)} · ${formatMoney(quote?.cost || 0)} · Unterhalt ${formatMoney(quote?.maintenance || 0)}/Tag</small>
         </span>
-        ${exists ? '<span class="network-menu__badge network-menu__badge--disabled">besteht</span>' : '<span class="network-menu__badge">planen</span>'}
+        ${exists ? '<span class="hf-v2-network-badge hf-v2-network-badge--disabled">besteht</span>' : '<span class="hf-v2-network-badge">planen</span>'}
       </button>`;
   }
 
@@ -134,12 +134,12 @@
     if (!origin || !target) return renderTargetPicker(originId);
 
     return `
-      <div class="network-menu" data-network-origin="${escapeHtml(originId)}" data-network-target-id="${escapeHtml(targetId)}">
-        <button class="network-menu__back" type="button" data-network-target-picker>← Ziel ändern</button>
-        <p class="network-menu__eyebrow">Bauoptionen</p>
+      <div class="hf-v2-network-menu" data-network-origin="${escapeHtml(originId)}" data-network-target-id="${escapeHtml(targetId)}">
+        <button class="hf-v2-network-back" type="button" data-network-target-picker>← Ziel ändern</button>
+        <p class="hf-v2-network-eyebrow">Bauoptionen</p>
         <h3>${escapeHtml(origin.name)} → ${escapeHtml(target.name)}</h3>
-        <div class="network-menu__build-options">${BUILD_TYPES.map(type => renderBuildOption(origin, target, type)).join('')}</div>
-        <p class="network-menu__hint">Nach Auswahl wird das Projekt mit Kosten, Distanz und Route in der Netzwerklogik vorgemerkt.</p>
+        <div class="hf-v2-network-grid">${BUILD_TYPES.map(type => renderBuildOption(origin, target, type)).join('')}</div>
+        <p class="hf-v2-network-hint">Nach Auswahl wird das Projekt mit Kosten, Distanz und Route in der Netzwerklogik vorgemerkt.</p>
       </div>`;
   }
 
@@ -153,12 +153,12 @@
     const origin = cityById(project.a);
     const target = cityById(project.b);
     setBody(`
-      <div class="network-menu">
-        <p class="network-menu__eyebrow">Projekt geplant</p>
+      <div class="hf-v2-network-menu">
+        <p class="hf-v2-network-eyebrow">Projekt geplant</p>
         <h3>${escapeHtml(origin?.name || project.a)} → ${escapeHtml(target?.name || project.b)}</h3>
-        <p class="network-menu__hint">${escapeHtml(DISPLAY_NAMES[project.type] || network()?.TRANSPORT_TYPES?.[project.type]?.name || project.type)} · ${formatKm(project.distance)} · Baukosten ${formatMoney(project.cost)} · Unterhalt ${formatMoney(project.maintenance)}/Tag</p>
-        <button class="network-menu__back" type="button" data-network-confirm>Bauen</button>
-        <button class="network-menu__back" type="button" data-network-back>Weitere Option wählen</button>
+        <p class="hf-v2-network-hint">${escapeHtml(DISPLAY_NAMES[project.type] || network()?.TRANSPORT_TYPES?.[project.type]?.name || project.type)} · ${formatKm(project.distance)} · Baukosten ${formatMoney(project.cost)} · Unterhalt ${formatMoney(project.maintenance)}/Tag</p>
+        <button class="hf-v2-network-back" type="button" data-network-confirm>Bauen</button>
+        <button class="hf-v2-network-back" type="button" data-network-back>Weitere Option wählen</button>
       </div>`);
   }
 
@@ -204,7 +204,7 @@
     const origin = cityById(cityId);
     if (!origin || !window.HFV2Modal?.openModal) return;
     window.HFV2Modal.openModal({
-      className: 'city-network-modal',
+      className: 'hf-v2-network-modal',
       title: origin.name,
       subtitle: 'Netzwerk bauen',
       bodyHtml: renderTargetPicker(cityId),
