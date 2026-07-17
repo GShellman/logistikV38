@@ -4036,11 +4036,12 @@ function hfInstallAutosaveHooks(){
     const def=registry.goods[goodId],d=def?.demand||{},profile=registry.demandProfiles[d.profile]||registry.demandProfiles.legacy;
     if(!d.enabled||profile.enabled===false)return 0;
     if(Number(d.baseDemandPer100kKg)>0){
-      const city=CITY[cityId]||{},population=Math.max(1000,Number(city.population)||((Number(city.tier)||1)*50000)),wealth=Math.max(.5,Number(city.wealthFactor)||1);
+      const city=CITY[cityId]||{},population=Math.max(0,Number(city.population)||0),wealth=Math.max(0,Number(city.wealthFactor)||1);
       const wealthFactor=Math.pow(wealth,Number.isFinite(Number(d.wealthElasticity))?Number(d.wealthElasticity):0);
       const profileFactor=profileDemandFactor(cityId,goodId);
-      const variation=deterministicDemandFactor(cityId,goodId,d.regionalVariance);
-      return round(Math.max(Number(d.minDailyKg??profile.minDailyKg)||0,Number(d.baseDemandPer100kKg)*(population/100000)*wealthFactor*profileFactor*variation));
+      const daily=Number(d.baseDemandPer100kKg)*(population/100000)*wealthFactor*profileFactor;
+      const minimum=Number(d.minDailyKg??profile.minDailyKg)||1;
+      return daily>=minimum?round(daily):0;
     }
     if(!d.canonical)return referenceDaily(cityId,goodId);
     const refs=unique(d.referenceGoods||profile.referenceGoods),values=refs.map(g=>referenceDaily(cityId,g)).filter(v=>v>EPS);
@@ -4053,7 +4054,8 @@ function hfInstallAutosaveHooks(){
   function demandStateFor(cityId,goodId){
     const override=cityDemandOverride(cityId,goodId);
     const def=registry.goods[goodId],daily=demandDailyKg(cityId,goodId),rate=Math.max(EPS,Number(override?.dailyRate??def?.demand?.dailyRate??registry.demandProfiles[def?.demand?.profile]?.dailyRate)||1);
-    const max=round(Number(override?.max)>0?Number(override.max):daily/rate),mult=Number(override?.mult)>0?Number(override.mult):1;return {need:max,max,mult,dailyRate:rate};
+    if(Number(override?.max)>0){const max=round(Number(override.max)||0),need=round(Number(override.need)>0?Number(override.need):max*.62),mult=Number(override?.mult)>0?Number(override.mult):1;return {need,max,mult,dailyRate:rate}}
+    const need=round(daily/rate),max=round(need/.62),mult=1;return {need,max,mult,dailyRate:rate};
   }
   function migrateState(){
     if(!state?.cities)return;
