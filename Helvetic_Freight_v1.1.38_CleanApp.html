@@ -416,7 +416,19 @@ window.HF_CITY_POPUP_SECTIONS=window.HF_CITY_POPUP_SECTIONS||[];
 window.HF_COMPANY_SECTIONS=window.HF_COMPANY_SECTIONS||[];
 function registerCitySection(fn){if(typeof fn==='function')window.HF_CITY_SECTIONS.push(fn);return fn}
 function registerCityPopupSection(fn){if(typeof fn==='function'&&!window.HF_CITY_POPUP_SECTIONS.includes(fn))window.HF_CITY_POPUP_SECTIONS.push(fn);return fn}
+function cityDemandDailyAmount(cityId,goodId,demand){
+  const actual=typeof hfActualDailyConsumption==='function'?Number(hfActualDailyConsumption(cityId,goodId)):0;
+  if(actual>0)return actual;
+  return Math.max(0,(Number(demand?.need)||0)*(Number(demand?.dailyRate)||1));
+}
+function hfCityDemandPopupSection(cityId,s){
+  if(!s||s.isDepot)return '';
+  const rows=Object.keys(s.demands||{}).filter(g=>GOODS[g]).map(g=>({good:g,demand:s.demands[g],daily:cityDemandDailyAmount(cityId,g,s.demands[g])})).sort((a,b)=>b.daily-a.daily||(GOODS[a.good].name||a.good).localeCompare(GOODS[b.good].name||b.good,'de'));
+  const total=rows.reduce((sum,row)=>sum+row.daily,0);
+  return `<section class="card hf-city-demand-panel"><div class="compact-head"><div><h3>Täglicher Bedarf</h3><div class="sub">Alle Nachfragewaren dieser Stadt, kompakt nach Tagesverbrauch sortiert.</div></div><span class="pill live">${formatWeight(total)}/Tag</span></div>${rows.length?`<div class="hf-city-demand-list">${rows.map(row=>{const d=row.demand||{},fill=Number(d.max)>0?clamp((Number(d.need)||0)/Number(d.max)*100,0,100):0;return `<article class="hf-city-demand-row">${goodImg(row.good,'asset-img asset-xs')}<div class="hf-city-demand-main"><div class="row"><b>${GOODS[row.good].name}</b><strong>${formatGoodAmount(row.good,row.daily)}/Tag</strong></div><div class="bar"><i style="width:${fill}%"></i></div></div><small>${formatGoodAmount(row.good,Number(d.need)||0)} offen</small></article>`}).join('')}</div>`:'<div class="compact-note">Für diese Stadt sind noch keine Nachfragewaren hinterlegt.</div>'}</section>`;
+}
 function hfCoreSupplyPopupSection(cityId,s){const fn=window.HF?.hfV1138SupplyPopupSection;if(typeof fn==='function')return '';if(s&&s.isDepot)return '';return '<section class="card hf-v1138-supply-section"><div class="compact-head"><div><h3>Warenbestellung</h3><div class="sub">Stadtmenü-Modul wird vorbereitet.</div></div><span class="pill orange">Lädt</span></div><div class="compact-note">Bitte öffne das Stadtmenü nach dem Laden des Spielstands erneut, falls die Warenliste nicht automatisch erscheint.</div></section>'}
+registerCityPopupSection(hfCityDemandPopupSection);
 registerCityPopupSection(hfCoreSupplyPopupSection);
 function registerCompanySection(fn){if(typeof fn==='function')window.HF_COMPANY_SECTIONS.push(fn);return fn}
 window.HF={...window.HF,registerCitySection,registerCityPopupSection,registerCompanySection};
@@ -4036,11 +4048,12 @@ function hfInstallAutosaveHooks(){
     const def=registry.goods[goodId],d=def?.demand||{},profile=registry.demandProfiles[d.profile]||registry.demandProfiles.legacy;
     if(!d.enabled||profile.enabled===false)return 0;
     if(Number(d.baseDemandPer100kKg)>0){
-      const city=CITY[cityId]||{},population=Math.max(1000,Number(city.population)||((Number(city.tier)||1)*50000)),wealth=Math.max(.5,Number(city.wealthFactor)||1);
+      const city=CITY[cityId]||{},population=Math.max(0,Number(city.population)||0),wealth=Math.max(0,Number(city.wealthFactor)||1);
       const wealthFactor=Math.pow(wealth,Number.isFinite(Number(d.wealthElasticity))?Number(d.wealthElasticity):0);
       const profileFactor=profileDemandFactor(cityId,goodId);
-      const variation=deterministicDemandFactor(cityId,goodId,d.regionalVariance);
-      return round(Math.max(Number(d.minDailyKg??profile.minDailyKg)||0,Number(d.baseDemandPer100kKg)*(population/100000)*wealthFactor*profileFactor*variation));
+      const daily=Number(d.baseDemandPer100kKg)*(population/100000)*wealthFactor*profileFactor;
+      const minimum=Number(d.minDailyKg??profile.minDailyKg)||1;
+      return daily>=minimum?round(daily):0;
     }
     if(!d.canonical)return referenceDaily(cityId,goodId);
     const refs=unique(d.referenceGoods||profile.referenceGoods),values=refs.map(g=>referenceDaily(cityId,g)).filter(v=>v>EPS);
@@ -4053,7 +4066,8 @@ function hfInstallAutosaveHooks(){
   function demandStateFor(cityId,goodId){
     const override=cityDemandOverride(cityId,goodId);
     const def=registry.goods[goodId],daily=demandDailyKg(cityId,goodId),rate=Math.max(EPS,Number(override?.dailyRate??def?.demand?.dailyRate??registry.demandProfiles[def?.demand?.profile]?.dailyRate)||1);
-    const max=round(Number(override?.max)>0?Number(override.max):daily/rate),mult=Number(override?.mult)>0?Number(override.mult):1;return {need:max,max,mult,dailyRate:rate};
+    if(Number(override?.max)>0){const max=round(Number(override.max)||0),need=round(Number(override.need)>0?Number(override.need):max*.62),mult=Number(override?.mult)>0?Number(override.mult):1;return {need,max,mult,dailyRate:rate}}
+    const need=round(daily/rate),max=round(need/.62),mult=1;return {need,max,mult,dailyRate:rate};
   }
   function migrateState(){
     if(!state?.cities)return;
