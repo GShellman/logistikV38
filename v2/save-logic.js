@@ -53,6 +53,11 @@
     return {cityFactories: {}};
   }
 
+  function defaultGoodsState() {
+    if (window.HFV2Goods?.createGoodsState) return window.HFV2Goods.createGoodsState();
+    return {cityInventories: {}, producedGoods: {}, productionCycles: {}, lastProductionAt: null, schemaVersion: 1};
+  }
+
   function normalizePackage(savePackage) {
     const source = savePackage && typeof savePackage === 'object' ? savePackage : {};
     const sourceState = source.state && typeof source.state === 'object' ? source.state : {};
@@ -60,34 +65,43 @@
     const fleet = {...defaultFleetState(), ...(sourceState.fleet || {})};
     const sourceFactories = sourceState.factories && typeof sourceState.factories === 'object' && !Array.isArray(sourceState.factories) ? sourceState.factories : {};
     const factories = {...defaultFactoryState(), ...sourceFactories};
+    const sourceGoods = sourceState.goods && typeof sourceState.goods === 'object' && !Array.isArray(sourceState.goods) ? sourceState.goods : {};
+    const goods = {...defaultGoodsState(), ...sourceGoods};
     network.connections = Array.isArray(network.connections) ? network.connections : [];
     network.junctions = Array.isArray(network.junctions) ? network.junctions : [];
     network.cities = network.cities && typeof network.cities === 'object' ? network.cities : {};
     network.usedCapacity = network.usedCapacity && typeof network.usedCapacity === 'object' ? network.usedCapacity : {};
     fleet.cityFleets = fleet.cityFleets && typeof fleet.cityFleets === 'object' ? fleet.cityFleets : {};
     factories.cityFactories = factories.cityFactories && typeof factories.cityFactories === 'object' && !Array.isArray(factories.cityFactories) ? factories.cityFactories : {};
+    goods.cityInventories = goods.cityInventories && typeof goods.cityInventories === 'object' && !Array.isArray(goods.cityInventories) ? goods.cityInventories : {};
+    goods.producedGoods = goods.producedGoods && typeof goods.producedGoods === 'object' && !Array.isArray(goods.producedGoods) ? goods.producedGoods : {};
+    goods.productionCycles = goods.productionCycles && typeof goods.productionCycles === 'object' && !Array.isArray(goods.productionCycles) ? goods.productionCycles : {};
+    goods.lastProductionAt = typeof goods.lastProductionAt === 'string' && goods.lastProductionAt ? goods.lastProductionAt : null;
+    goods.schemaVersion = Number.isFinite(Number(goods.schemaVersion)) ? Number(goods.schemaVersion) : 1;
     delete network.cash;
     delete fleet.cash;
     delete factories.cash;
+    delete goods.cash;
     const legacyCash = Number.isFinite(Number(sourceState.cash)) ? Number(sourceState.cash) : Number(sourceState.fleet?.cash ?? sourceState.network?.cash);
     const cash = Number.isFinite(legacyCash) ? legacyCash : STARTING_CASH;
 
     return {
       schemaVersion: SCHEMA_VERSION,
       savedAt: source.savedAt || new Date().toISOString(),
-      state: {cash, network, fleet, factories},
+      state: {cash, network, fleet, factories, goods},
     };
   }
 
   function createDefaultState() {
-    return normalizePackage({schemaVersion: SCHEMA_VERSION, state: {network: defaultNetworkState(), fleet: defaultFleetState(), factories: defaultFactoryState()}});
+    return normalizePackage({schemaVersion: SCHEMA_VERSION, state: {network: defaultNetworkState(), fleet: defaultFleetState(), factories: defaultFactoryState(), goods: defaultGoodsState()}});
   }
 
   function serializeState(savePackage = null) {
     const liveNetwork = window.HFNetwork?.getState?.();
     const liveFleet = window.HFFleet?.getState?.();
     const liveFactories = window.HFV2Factories?.getState?.();
-    const source = savePackage || {state: {network: liveNetwork, fleet: liveFleet, factories: liveFactories || getState().factories, cash: getCash()}};
+    const liveGoods = window.HFV2Goods?.getState?.();
+    const source = savePackage || {state: {network: liveNetwork, fleet: liveFleet, factories: liveFactories || getState().factories, goods: liveGoods || getState().goods, cash: getCash()}};
     const normalized = normalizePackage(source);
     normalized.savedAt = new Date().toISOString();
     return deepClone(normalized);
