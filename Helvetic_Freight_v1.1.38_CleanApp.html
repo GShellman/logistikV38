@@ -4304,7 +4304,17 @@ function hfInstallAutosaveHooks(){
 
 
 // --- v1.1.38: city supply contracts, source-owned delivery fleets and rolling weekly plans ---
-eval(window.HF.hfSupplyContractsV1138Source);
+const hfSupplyContractsRuntime=window.HF.hfSupplyContractsV1138({
+  state,CITIES,CITY,GOODS,VEHICLES,
+  roundCargo,clockFromMinutes,parseClockMinutes,
+  hfV117FacilityOutputCapacity,hfActualDailyConsumption,hfV117AvailableForExport,hfV117IncomingDepotGood,
+  findPath,vehicleCanCarryGood,transportCost,formatGoodAmount,formatWeight,money,goodImg,vehicleImg,
+  minuteOfDay,save,closeModal,renderAll,toast,advanceMinutes,
+  hfV117BuildCommitments,hfV117Add,hfDepotDailyNeed,runScheduledRoutesAtCurrentTime,completeShipmentLeg,
+  hfV117MidnightRecalculateDepots,freshState,renderCity,renderCompany,hfV131SetLeg
+});
+({hfV117BuildCommitments,hfDepotDailyNeed,runScheduledRoutesAtCurrentTime,completeShipmentLeg,
+  hfV117MidnightRecalculateDepots,freshState,renderCity,renderCompany}=hfSupplyContractsRuntime);
 
 
 })();

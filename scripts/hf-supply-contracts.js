@@ -3,12 +3,19 @@
   'use strict';
   const HF=global.HF=global.HF||{};
 
-  // Data model and defaults: ensureSupply, contract structures, source configuration.
-  // Planning rules: weekly planning, source load calculation, dispatch.
-  // UI markup: contract editor, source logistics modal, supply sections.
-  HF.hfSupplyContractsV1138Source=(function hfSupplyContractsV1138Source(){/*
+  HF.hfSupplyContractsV1138=function installHfSupplyContractsV1138(runtime){
+    let {
+      state,CITIES,CITY,GOODS,VEHICLES,
+      roundCargo,clockFromMinutes,parseClockMinutes,
+      hfV117FacilityOutputCapacity,hfActualDailyConsumption,hfV117AvailableForExport,hfV117IncomingDepotGood,
+      findPath,vehicleCanCarryGood,transportCost,formatGoodAmount,formatWeight,money,goodImg,vehicleImg,
+      minuteOfDay,save,closeModal,renderAll,toast,advanceMinutes,
+      hfV117BuildCommitments,hfV117Add,hfDepotDailyNeed,runScheduledRoutesAtCurrentTime,completeShipmentLeg,
+      hfV117MidnightRecalculateDepots,freshState,renderCity,renderCompany,hfV131SetLeg
+    }=runtime;
 
-  'use strict';
+    // Data model and defaults: ensureSupply, contract structures, source configuration.
+
   const BUILD=window.hfCurrentBuildVersion?.()||window.HF_BUILD_VERSION||'1.1.38',SCHEMA=138,EPS=.001,MAX_STOPS=6,STAGGER=15,SERVICE_MIN=7;
   const DAY_NAMES=['Mo','Di','Mi','Do','Fr','Sa','So'];
   const round=v=>typeof roundCargo==='function'?roundCargo(Number(v)||0):Math.round((Number(v)||0)*1000)/1000;
@@ -68,6 +75,8 @@
   function candidateSourceObjects(c){const all=sourceCandidates(c.destinationCityId,c.goodId),p=c.primarySource;all.forEach(x=>x.primary=!!p&&x.type===p.type&&x.id===p.id);return all.sort((a,b)=>Number(b.primary)-Number(a.primary)||Number(b.transportReady)-Number(a.transportReady)||b.available-a.available)}
   function projectedSourceLoad(type,id,weekday){ensureSupply();const rows=state.hfSupplyWeekPlan.rows||[],selected=rows.filter(r=>r.sourceType===type&&r.sourceId===id&&r.weekday===weekday&&!['Blockiert','Nicht nötig'].includes(r.status));const capacity=Object.entries(sourceFleet(type,id)).reduce((n,[t,q])=>n+(Number(q)||0)*(Number(VEHICLES[t]?.load)||0),0);const cargo=selected.reduce((n,r)=>n+cargoTotal(r.cargo),0);return {cargo,capacity,pct:capacity>EPS?Math.round(cargo/capacity*100):0,trips:selected.length}}
 
+    // Planning rules: weekly planning, source load calculation, dispatch.
+
   // Contracts are production commitments. Weekly orders accumulate one daily slice per day and reach 7x on the chosen delivery day.
   const priorCommitments=hfV117BuildCommitments;
   hfV117BuildCommitments=function(){const map=priorCommitments();ensureSupply();const wd=absWeekday(state.day);for(const c of contracts()){if(c.primarySource?.type!=='city'||!sourceEnabled('city',c.primarySource.id,c.goodId))continue;const daily=dailyNeed(c.destinationCityId,c.goodId);let target=daily;if(c.frequency==='weekly'){const elapsed=(wd-c.weekday+7)%7;target=daily*(elapsed===0?7:elapsed)}target=Math.max(target,Number(c.openQuantity)||0);hfV117Add(map,c.primarySource.id,c.goodId,target)}return map};
@@ -109,6 +118,8 @@
   const priorMidnight=hfV117MidnightRecalculateDepots;
   hfV117MidnightRecalculateDepots=function(){const r=priorMidnight();replanSupply(true);return {...(r||{}),supplyRows:(state.hfSupplyWeekPlan.rows||[]).filter(x=>x.absoluteDay===state.day).length}};
 
+    // UI markup: contract editor, source logistics modal, supply sections.
+
   function sourceOptionLabel(x,good){const flags=[x.transportReady?'Transport bereit':x.reachable?'Fahrzeug fehlt':'keine Rundverbindung',`frei ${formatGoodAmount(good,x.available)}`];if(x.type==='city')flags.push(`Kapazität ${formatGoodAmount(good,x.capacity)}/Tag`);else flags.push('Depotware aktiviert');return `${x.type==='depot'?'🏬':'🏭'} ${x.name} · ${flags.join(' · ')}`}
   function openContractEditor(cityId,good){ensureSupply();const city=state.cities?.[cityId],dem=city?.demands?.[good];if(!city||!dem)return;const existing=getContract(cityId,good),candidates=sourceCandidates(cityId,good),modal=document.getElementById('modal'),back=document.getElementById('modalBack'),selected=existing?.primarySource?sourceKey(existing.primarySource.type,existing.primarySource.id):(candidates[0]?sourceKey(candidates[0].type,candidates[0].id):'');modal.className='modal hf-v1138-contract-modal';modal.innerHTML=`<div class="row"><div><h2>${goodImg(good,'asset-img asset-good')} ${GOODS[good]?.name||good} anfordern</h2><div class="sub">${CITY[cityId]?.name||cityId} legt Quelle und Lieferrhythmus fest. Transportiert wird durch die Quelle.</div></div><button class="btn sm secondary" onclick="window.HF.closeModal()">✕</button></div><section class="hf-v1138-box"><div class="hf-v1138-metrics"><span>Tagesverbrauch <b>${formatGoodAmount(good,dailyNeed(cityId,good))}</b></span><span>Bestand <b>${formatGoodAmount(good,Number(city.inventory?.[good])||0)}</b></span><span>Unterwegs <b>${formatGoodAmount(good,incomingTo(cityId,good))}</b></span></div></section><div class="field"><label>Primäre Bezugsquelle</label><select id="hfV1138Source">${candidates.length?candidates.map(x=>`<option value="${sourceKey(x.type,x.id)}" ${sourceKey(x.type,x.id)===selected?'selected':''}>${sourceOptionLabel(x,good)}</option>`).join(''):'<option value="">Keine produzierende oder aktivierte Quelle gefunden</option>'}</select></div><section class="hf-v1138-box"><label class="hf-v1138-radio"><input type="radio" name="hfV1138Frequency" value="daily" ${existing?.frequency!=='weekly'?'checked':''}><span><b>Täglich liefern</b><small>Bestand auf einen Tagesbedarf auffüllen.</small></span></label><label class="hf-v1138-radio"><input type="radio" name="hfV1138Frequency" value="weekly" ${existing?.frequency==='weekly'?'checked':''}><span><b>Wöchentlich liefern</b><small>Am gewählten Tag auf sieben Tagesbedarfe auffüllen.</small></span></label><div class="field" id="hfV1138WeekdayField"><label>Liefertag</label><select id="hfV1138Weekday">${DAY_NAMES.map((n,i)=>`<option value="${i}" ${i===(existing?.weekday??4)?'selected':''}>${n}</option>`).join('')}</select></div><label class="hf-v1138-radio compact"><input type="checkbox" id="hfV1138Fallback" ${existing?.allowFallback!==false?'checked':''}><span><b>Automatische Ersatzquelle</b><small>Nur wenn dort Ware, Rundverbindung und stationierte Fahrzeugkapazität verfügbar sind.</small></span></label></section><div id="hfV1138SourcePreview"></div><div class="modal-actions">${existing?`<button class="btn danger" onclick="window.HF.hfV1138DeleteContract('${cityId}','${good}')">Auftrag löschen</button>`:''}<button class="btn primary" onclick="window.HF.hfV1138SaveContract('${cityId}','${good}')">Versorgung speichern</button><button class="btn secondary" onclick="window.HF.closeModal()">Schließen</button></div>`;back.classList.add('show');
     function refresh(){const freq=modal.querySelector('input[name="hfV1138Frequency"]:checked')?.value||'daily',field=modal.querySelector('#hfV1138WeekdayField');if(field)field.style.display=freq==='weekly'?'block':'none';const raw=modal.querySelector('#hfV1138Source')?.value||'',parts=raw.split(':'),type=parts.shift(),id=parts.join(':'),cand=candidates.find(x=>x.type===type&&x.id===id),weekday=Number(modal.querySelector('#hfV1138Weekday')?.value)||0,load=cand?projectedSourceLoad(type,id,weekday):null;modal.querySelector('#hfV1138SourcePreview').innerHTML=cand?`<section class="hf-v1138-box"><div class="row"><b>${cand.name}</b><span class="pill ${cand.transportReady?'live':cand.reachable?'orange':'locked'}">${cand.transportReady?'LIEFERBEREIT':cand.reachable?'FAHRZEUG FEHLT':'NICHT ERREICHBAR'}</span></div><div class="hf-v1138-metrics"><span>Frei <b>${formatGoodAmount(good,cand.available)}</b></span><span>Fahrzeuge <b>${cand.fleet}</b></span><span>${DAY_NAMES[weekday]} geplant <b>${load?.pct||0}%</b></span></div>${cand.type==='city'?`<button class="btn sm secondary" onclick="window.HF.hfV1138OpenSourceLogistics('city','${cand.id}')">Fuhrpark & Wochenplan öffnen</button>`:`<button class="btn sm secondary" onclick="window.HF.hfV1138OpenSourceLogistics('depot','${cand.id}')">Depot-Wochenplan öffnen</button>`}</section>`:'<div class="compact-note">Baue zuerst eine passende Fabrik oder aktiviere die Ware in einem Depot.</div>'}
@@ -141,8 +152,10 @@
   // HF v1.1.38 styles live in Helvetic_Freight_v1.1.38_CleanApp.css to keep the HTML update layer smaller.
   function mark(){try{window.__HF_BUILD__=BUILD;document.documentElement.dataset.hfVersion=BUILD;if(document.body){document.body.dataset.hfBuild=BUILD;document.body.dataset.hfSupplySchema=String(SCHEMA)}const badge=document.getElementById('hfStabilityBuild');if(badge)badge.textContent=window.hfCurrentBuildLabel?.()||'HF 1.1.38 · Versorgungslogistik';}catch(_){}}
   mark();setTimeout(()=>{ensureSupply();replanSupply(true);window.__HF_SUPPLY_AUDIT__=audit();mark();try{renderAll()}catch(_){ }try{save(false)}catch(_){ }},900);setTimeout(mark,1800);
-  */}).toString().replace(/^[\s\S]*?\/\*\n?/, '').replace(/\n?\s*\*\/[\s\S]*$/, '');
-  HF.hfSupplyContractsV1138=function installHfSupplyContractsV1138(){
-    throw new Error('hfSupplyContractsV1138 must be installed from the CleanApp runtime via direct eval.');
+    Object.assign(runtime,{
+      hfV117BuildCommitments,hfDepotDailyNeed,runScheduledRoutesAtCurrentTime,completeShipmentLeg,
+      hfV117MidnightRecalculateDepots,freshState,renderCity,renderCompany
+    });
+    return runtime;
   };
 })(window);
