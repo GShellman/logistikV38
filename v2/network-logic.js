@@ -311,6 +311,10 @@
     return state.pendingProject;
   }
 
+  function getState() {
+    return configure();
+  }
+
   function confirmProject() {
     const project = state?.pendingProject;
     if (!project || project.kind !== 'build') return null;
@@ -324,5 +328,5 @@
     return edges[0];
   }
 
-  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, TEST_STARTING_CASH, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, confirmProject};
+  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, TEST_STARTING_CASH, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject};
 })();
