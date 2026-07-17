@@ -124,14 +124,24 @@
     const quote = hfNetwork.buildQuote?.(type, distance);
     const canAfford = !!quote && currentCash() >= quote.cost;
     const disabled = exists || !quote || !canAfford;
+    const statusLabel = exists ? 'Besteht' : canAfford ? 'Planbar' : 'Nicht leistbar';
+    const statusClass = exists || !canAfford ? ' hf-v2-network-badge--disabled' : '';
     return `
       <button class="hf-v2-network-option${disabled ? ' is-disabled' : ''}" type="button" data-action="plan-connection" data-origin="${escapeHtml(origin.id)}" data-target="${escapeHtml(target.id)}" data-type="${escapeHtml(type)}" ${disabled ? 'disabled' : ''}>
-        <span class="hf-v2-network-icon" aria-hidden="true">${escapeHtml(spec.icon)}</span>
-        <span>
-          <strong>${escapeHtml(DISPLAY_NAMES[type] || spec.name)}</strong>
-          <small>${formatKm(distance)} · ${formatMoney(quote?.cost || 0)} · Unterhalt ${formatMoney(quote?.maintenance || 0)}/Tag</small>
+        <span class="hf-v2-network-option__header">
+          <span class="hf-v2-network-icon" aria-hidden="true">${escapeHtml(spec.icon)}</span>
+          <span class="hf-v2-network-option__title">
+            <strong>${escapeHtml(DISPLAY_NAMES[type] || spec.name)}</strong>
+            <small>${escapeHtml(spec.mode === 'rail' ? 'Schienentrasse' : 'Straßenverbindung')}</small>
+          </span>
+          <span class="hf-v2-network-badge${statusClass}">${statusLabel}</span>
         </span>
-        ${exists ? '<span class="hf-v2-network-badge hf-v2-network-badge--disabled">besteht</span>' : canAfford ? '<span class="hf-v2-network-badge">planen</span>' : '<span class="hf-v2-network-badge hf-v2-network-badge--disabled">zu teuer</span>'}
+        <span class="hf-v2-network-option__rows">
+          <span><em>Distanz</em><strong>${formatKm(distance)}</strong></span>
+          <span><em>Baukosten</em><strong>${formatMoney(quote?.cost || 0)}</strong></span>
+          <span><em>Unterhalt</em><strong>${formatMoney(quote?.maintenance || 0)}/Tag</strong></span>
+          <span><em>Status</em><strong>${statusLabel}</strong></span>
+        </span>
       </button>`;
   }
 
@@ -145,8 +155,8 @@
     return `
       <div class="hf-v2-network-menu" data-network-origin="${escapeHtml(originId)}" data-network-target-id="${escapeHtml(targetId)}">
         <button class="hf-v2-network-back" type="button" data-action="show-target-picker">← Ziel ändern</button>
-        <p class="hf-v2-network-eyebrow">Bauoptionen</p>
-        <h3>${escapeHtml(origin.name)} → ${escapeHtml(target.name)}</h3>
+        <p class="hf-v2-network-eyebrow">Netzwerkplanung</p>
+        <h3>Verbindung ${escapeHtml(origin.name)} → ${escapeHtml(target.name)}</h3>
         ${renderCashBadge()}
         <div class="hf-v2-network-grid">${BUILD_TYPES.map(type => renderBuildOption(origin, target, type)).join('')}</div>
         <p class="hf-v2-network-hint">Nach Auswahl wird das Projekt mit Kosten, Distanz und Route in der Netzwerklogik vorgemerkt.</p>
@@ -230,8 +240,8 @@
     if (!origin || !window.HFV2Modal?.openModal) return;
     window.HFV2Modal.openModal({
       className: 'hf-v2-network-modal',
-      title: origin.name,
-      subtitle: 'Netzwerk bauen',
+      title: 'Netzwerkplanung',
+      subtitle: origin.name,
       bodyHtml: renderTargetPicker(cityId),
     });
   }

@@ -64,21 +64,25 @@
       const canAfford = cash >= (Number(vehicle.cost) || 0);
       const disabledText = canAfford ? '' : ' disabled aria-disabled="true" title="Nicht genug Kapital"';
       return `
-        <article class="hf-v2-fleet-card">
+        <article class="hf-v2-fleet-card${canAfford ? '' : ' is-disabled'}">
           <div class="hf-v2-fleet-card__icon" aria-hidden="true">${vehicleVisual(type, vehicle)}</div>
           <div class="hf-v2-fleet-card__main">
             <div class="hf-v2-fleet-card__head">
-              <h4>${escapeHtml(vehicle.name || type)}</h4>
-              <span class="hf-v2-fleet-owned">${owned.toLocaleString('de-CH')} vorhanden</span>
+              <span>
+                <small>Typ</small>
+                <h4>${escapeHtml(vehicle.name || type)}</h4>
+              </span>
+              <span class="hf-v2-fleet-owned">${owned.toLocaleString('de-CH')} im Bestand</span>
             </div>
             <p>${escapeHtml(vehicle.desc || 'Kaufbares Fahrzeug für den städtischen Fuhrpark.')}</p>
             <dl class="hf-v2-fleet-stats">
-              <div><dt>Preis</dt><dd>${formatMoney(vehicle.cost)}</dd></div>
-              <div><dt>Nutzlast</dt><dd>${formatLoad(vehicle.load)}</dd></div>
-              <div><dt>Geschwindigkeit</dt><dd>${formatSpeed(vehicle.speed)}</dd></div>
+              <div><dt>Kapazität</dt><dd>${formatLoad(vehicle.load)}</dd></div>
+              <div><dt>Kosten</dt><dd>${formatMoney(vehicle.cost)}</dd></div>
+              <div><dt>Bestand</dt><dd>${owned.toLocaleString('de-CH')}</dd></div>
+              <div><dt>Tempo</dt><dd>${formatSpeed(vehicle.speed)}</dd></div>
             </dl>
           </div>
-          <button class="hf-v2-fleet-buy" type="button" data-action="buy-fleet-vehicle" data-city-id="${escapeHtml(cityId)}" data-vehicle-type="${escapeHtml(type)}"${disabledText}>${canAfford ? 'Kaufen' : 'Zu teuer'}</button>
+          <button class="hf-v2-fleet-buy" type="button" data-action="buy-fleet-vehicle" data-city-id="${escapeHtml(cityId)}" data-vehicle-type="${escapeHtml(type)}"${disabledText}><span>${canAfford ? 'Kaufen' : 'Nicht leistbar'}</span><strong>${formatMoney(vehicle.cost)}</strong></button>
         </article>`;
     }).join('');
   }
@@ -89,8 +93,8 @@
     const cash = window.HFV2Save?.getCash?.() ?? 0;
     return `
       <div class="hf-v2-fleet-menu" data-fleet-city-id="${escapeHtml(city.id)}">
-        <p class="hf-v2-fleet-eyebrow">Fuhrpark</p>
-        <h3>${escapeHtml(city.name)}</h3>
+        <p class="hf-v2-fleet-eyebrow">Fuhrparkbeschaffung</p>
+        <h3>Fahrzeuge für ${escapeHtml(city.name)}</h3>
         <div class="hf-v2-fleet-cash" aria-label="Verfügbares Kapital"><span>Kapital</span><strong>${formatMoney(cash)}</strong></div>
         <p class="hf-v2-fleet-hint">Kaufe Fahrzeuge und stationiere sie direkt in dieser Stadt. Käufe werden vom gemeinsamen V2-Kapital abgezogen.</p>
         <div class="hf-v2-fleet-grid">${vehicleRows(city.id)}</div>
@@ -121,8 +125,8 @@
     if (!city || !window.HFV2Modal?.openModal) return;
     window.HFV2Modal.openModal({
       className: 'hf-v2-fleet-modal',
-      title: city.name,
-      subtitle: 'Fuhrpark verwalten',
+      title: 'Fuhrparkbeschaffung',
+      subtitle: city.name,
       bodyHtml: renderFleetMenu(city.id),
     });
   }
