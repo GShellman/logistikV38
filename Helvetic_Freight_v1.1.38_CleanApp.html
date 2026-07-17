@@ -101,7 +101,7 @@ window.__HF_CLEAN_APP__=true;
 </script>
 <script src="scripts/hf-boot-state.js"></script>
 <script crossorigin="" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="scripts/hf-supply-contracts.js"></script>
+<script src="scripts/hf-supply-contracts.js?v=city-menu-popup-20260717d"></script>
 <script>
 (() => {
 'use strict';
@@ -325,7 +325,7 @@ function initMap(){
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap-Mitwirkende'}).addTo(map);
   CITIES.forEach(c=>{
     const icon=L.divIcon({className:'',html:`<div id="mk-${c.id}" class="city-marker"></div>`,iconSize:[30,30],iconAnchor:[15,15]});
-    const m=L.marker([c.lat,c.lng],{icon,zIndexOffset:c.id==='zurich'?500:0}).addTo(map).on('click',()=>selectCity(c.id,false));
+    const m=L.marker([c.lat,c.lng],{icon,zIndexOffset:c.id==='zurich'?500:0}).addTo(map).on('click',()=>openCityMarkerMenu(c.id));
     m.bindTooltip(c.name,{permanent:state.cities[c.id].unlocked,direction:'top',offset:[0,-13],className:'city-label'});markers[c.id]=m;
   });
   renderMap();
@@ -359,6 +359,11 @@ function renderMap(){
 const tabScroll={city:0,network:0,logistics:0,company:0};
 function rememberMenuScroll(){const root=document.getElementById('content');if(root&&root.dataset.tab)tabScroll[root.dataset.tab]=root.scrollTop||0}
 function selectCity(id,pan=false){rememberMenuScroll();state.selected=id;state.tab='city';if(map)map.stop();renderAll()}
+function cityPopulationLabel(city){const n=Number(city?.population)||0;return n>0?`${n.toLocaleString('de-CH')} Einwohner`:'Einwohnerzahl unbekannt'}
+function ensureCityPopupModules(){const fn=window.HF?.hfV1138SupplyPopupSection;if(typeof fn==='function'&&!window.HF_CITY_POPUP_SECTIONS.includes(fn))registerCityPopupSection(fn)}
+function cityPopupModules(cityId){ensureCityPopupModules();return (window.HF_CITY_POPUP_SECTIONS||[]).map(fn=>{try{return fn(cityId,state.cities?.[cityId])||''}catch(err){console.warn('Stadtpopup-Modul konnte nicht gerendert werden',cityId,err);return '<section class="card"><div class="compact-note">Ein Stadtmenü-Modul konnte nicht geladen werden.</div></section>'}}).filter(Boolean).join('')}
+function openCityMenuPopup(id){rememberMenuScroll();state.selected=id;const city=CITY[id],cs=state.cities?.[id],modal=document.getElementById('modal'),back=document.getElementById('modalBack');if(!city||!modal||!back)return selectCity(id,false);const modules=cityPopupModules(id)||'<section class="card"><div class="compact-note">Für diese Stadt sind noch keine Stadtmenü-Module verfügbar.</div></section>';modal.className='modal route-manager-open hf-city-menu-popup';modal.innerHTML=`<div class="logistics-popup-header"><div><h2>${city.name}</h2><div class="sub">${cityPopulationLabel(city)} · ${cs?.unlocked?'freigeschaltet':'noch nicht freigeschaltet'}</div></div><button class="btn secondary logistics-popup-close" onclick="window.HF.closeModal()">✕</button></div><div class="logistics-popup-scroll">${modules}</div>`;back.classList.add('show');requestAnimationFrame(()=>{const scroller=modal.querySelector('.logistics-popup-scroll')||modal;scroller.scrollTop=0})}
+function openCityMarkerMenu(id){openCityMenuPopup(id)}
 function activeTab(tab){rememberMenuScroll();state.tab=tab;renderAll()}
 function renderAll(){const root=document.getElementById('content');if(root&&root.dataset.tab===state.tab)tabScroll[state.tab]=root.scrollTop||0;renderMap();renderHeader();renderTabs();renderContent()}
 function renderHeader(){document.getElementById('cash').textContent=money(state.cash);document.getElementById('day').textContent=formatClock(state.day,state.hour,state.minute);const n=Object.values(state.cities).filter(x=>x.unlocked).length;document.getElementById('networkStat').textContent=`${n} Orte · ${fleetTotal()} Fz.`}
@@ -407,10 +412,12 @@ function renderCompanyLegacy(root){const unlocked=Object.values(state.cities).fi
   root.innerHTML+=`<section class="card"><h3>Spielprinzip</h3><p class="sub">1. Orte über fünf upgradefähige Straßenstufen oder Bahn erschließen.<br>2. Lieferwagen, LKW, Sattelzüge und Güterzüge selbst kaufen.<br>3. Alle Lieferwagen und LKW können jede Straßenstufe nutzen; Ausbauten erhöhen Tempo und Kapazität.<br>4. Einmalige Transporte disponieren oder Dauerrouten aktivieren.<br>5. Dauerroute fährt bei jedem Tageswechsel automatisch, solange eine volle Fahrzeugladung bereitsteht. Belegte Straßen werden nur von gleichzeitig fahrenden Fahrzeugen gezählt; bei Engpässen warten Fahrzeuge an Knotenpunkten.</p></section><section class="card"><h3>Reale Straßenführung</h3><p class="sub">Neue Straßen werden beim Bau über einen OpenStreetMap-basierten Routingdienst berechnet und als tatsächlicher Straßenverlauf gespeichert. Upgrades behalten exakt diese Trasse bei.</p></section>`;
 }
 window.HF_CITY_SECTIONS=window.HF_CITY_SECTIONS||[];
+window.HF_CITY_POPUP_SECTIONS=window.HF_CITY_POPUP_SECTIONS||[];
 window.HF_COMPANY_SECTIONS=window.HF_COMPANY_SECTIONS||[];
 function registerCitySection(fn){if(typeof fn==='function')window.HF_CITY_SECTIONS.push(fn);return fn}
+function registerCityPopupSection(fn){if(typeof fn==='function')window.HF_CITY_POPUP_SECTIONS.push(fn);return fn}
 function registerCompanySection(fn){if(typeof fn==='function')window.HF_COMPANY_SECTIONS.push(fn);return fn}
-window.HF={...window.HF,registerCitySection,registerCompanySection};
+window.HF={...window.HF,registerCitySection,registerCityPopupSection,registerCompanySection};
 function renderCity(root){
   const cityId=state.selected,result=renderCityBase(root,cityId);
   for(const fn of window.HF_CITY_SECTIONS||[]){try{fn(root,cityId,state.cities?.[cityId])}catch(err){console.warn('Stadtansicht-Section konnte nicht gerendert werden',err)}}
@@ -718,7 +725,7 @@ function initMap(){
   const bounds=L.latLngBounds(HF_SWISS_BOUNDS);
   map=L.map('map',{zoomControl:true,minZoom:7,maxZoom:13,preferCanvas:true,zoomAnimation:false,fadeAnimation:false,markerZoomAnimation:false,maxBounds:bounds.pad(.08),maxBoundsViscosity:1}).setView([46.82,8.25],8);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{minZoom:7,maxZoom:13,maxNativeZoom:18,noWrap:true,bounds,keepBuffer:0,updateWhenIdle:true,updateWhenZooming:false,detectRetina:false,attribution:'© OpenStreetMap-Mitwirkende'}).addTo(map);
-  CITIES.forEach(c=>{const m=L.marker([c.lat,c.lng],{icon:hfCityIcon(c),zIndexOffset:c.id==='zurich'?500:(c.id==='sissach'?350:(c.tier===1?120:0))}).on('click',()=>selectCity(c.id,false));markers[c.id]=m});
+  CITIES.forEach(c=>{const m=L.marker([c.lat,c.lng],{icon:hfCityIcon(c),zIndexOffset:c.id==='zurich'?500:(c.id==='sissach'?350:(c.tier===1?120:0))}).on('click',()=>openCityMarkerMenu(c.id));markers[c.id]=m});
   let viewportTimer=0;
   const viewportChanged=()=>{clearTimeout(viewportTimer);viewportTimer=setTimeout(()=>{renderMap();},80)};
   map.on('moveend zoomend',viewportChanged);
@@ -2241,7 +2248,7 @@ document.body.dataset.hfBuild='1.0.30';
 document.body.dataset.hfAutoJunction='1';
 save(false);
 
-window.HF={openFacility,buildFacility,exportSave,importSave,planConnection,buildConnection:planConnection,planUpgrade,confirmProject,openConnectTo,closeModal,save,reset,performReset,buyVehicle,sellVehicle,openVehicleShop,shopBuyVehicle,shopSellVehicle,openTransportPopup,openRoutesPopup,openConnectionPopup,manageToggleRoute,manageDeleteRoute,toggleRoute,deleteRoute,startJunctionPlacement,cancelJunctionPlacement,selectJunction,openFoodFactorySettings,saveFoodFactoryMix,openRouteScheduleEditor,saveRouteSchedule,requestRemoveJunction,confirmRemoveJunction,openFacilityUpgrade:window.openFacilityUpgrade,confirmFacilityUpgrade:window.confirmFacilityUpgrade};
+window.HF={...window.HF,openFacility,buildFacility,exportSave,importSave,planConnection,buildConnection:planConnection,planUpgrade,confirmProject,openConnectTo,openCityMenuPopup,closeModal,save,reset,performReset,buyVehicle,sellVehicle,openVehicleShop,shopBuyVehicle,shopSellVehicle,openTransportPopup,openRoutesPopup,openConnectionPopup,manageToggleRoute,manageDeleteRoute,toggleRoute,deleteRoute,startJunctionPlacement,cancelJunctionPlacement,selectJunction,openFoodFactorySettings,saveFoodFactoryMix,openRouteScheduleEditor,saveRouteSchedule,requestRemoveJunction,confirmRemoveJunction,openFacilityUpgrade:window.openFacilityUpgrade,confirmFacilityUpgrade:window.confirmFacilityUpgrade};
 const menuContent=document.getElementById('content');menuContent.addEventListener('wheel',e=>e.stopPropagation(),{passive:true});menuContent.addEventListener('touchmove',e=>e.stopPropagation(),{passive:true});menuContent.setAttribute('tabindex','0');
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{if(hfIsMobile()&&hfSheetState==='collapsed')hfApplySheetState('half');activeTab(t.dataset.tab)}));
 document.getElementById('nextDayBtn').addEventListener('click',nextDay);document.getElementById('nextHourBtn').addEventListener('click',nextHour);document.getElementById('playBtn').addEventListener('click',togglePlay);document.getElementById('saveBtn').addEventListener('click',()=>save());document.getElementById('modalBack').addEventListener('click',e=>{if(e.target.id==='modalBack')closeModal()});window.addEventListener('beforeunload',()=>save(false));
