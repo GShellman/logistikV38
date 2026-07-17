@@ -174,24 +174,36 @@ ASSETS.goods.electronics=window.HF_ELECTRONICS_ASSET_DATA_URI;
 ASSETS.goods.medicine=window.HF_MEDICINE_ASSET_DATA_URI;
 ASSETS.goods.aluminum=window.HF_ALUMINUM_ASSET_DATA_URI;
 ASSETS.facilities.aluminumworks=window.HF_ALUMINUMWORKS_FACILITY_ASSET_DATA_URI;
-// Bootstrap only needs stable object identities plus the fields used before the
-// content-pack import: goods need name/icon/raw/price and facilities need
-// name/icon/cost/input/output/raw/desc. The full active catalog lives in
-// scripts/hf-goods-database.js and is applied through externalGoodsContentPack.
-const GOODS = {
-  grain:{name:'Getreide',icon:'🌾',raw:true}, wood:{name:'Holz',icon:'🪵',raw:true}, ore:{name:'Erz',icon:'⛏️',raw:true}, chemicals:{name:'Chemikalien',icon:'⚗️',raw:true},
-  food:{name:'Lebensmittel',icon:'🥫',price:3200}, furniture:{name:'Möbel',icon:'🪑',price:4300}, tools:{name:'Werkzeuge',icon:'🔧',price:4700}, electronics:{name:'Elektronik',icon:'💻',price:6500}, medicine:{name:'Medizin',icon:'💊',price:6900}
-};
-const FACILITIES = {
-  farm:{name:'Landwirtschaft',icon:'🌾',cost:42000,output:{grain:5},inputs:{},raw:true,desc:'Erzeugt 5 Getreide pro Tag.'},
-  forestry:{name:'Forstbetrieb',icon:'🌲',cost:48000,output:{wood:5},inputs:{},raw:true,desc:'Erzeugt 5 Holz pro Tag.'},
-  mine:{name:'Bergwerk',icon:'⛏️',cost:65000,output:{ore:4},inputs:{},raw:true,desc:'Erzeugt 4 Erz pro Tag.'},
-  chemical:{name:'Chemiewerk',icon:'⚗️',cost:85000,output:{chemicals:4},inputs:{},raw:true,desc:'Erzeugt 4 Chemikalien pro Tag.'},
-  furniture:{name:'Möbelfabrik',icon:'🪑',cost:92000,output:{furniture:3},inputs:{wood:3},desc:'3 Holz → 3 Möbel'},
-  toolworks:{name:'Werkzeugfabrik',icon:'🔧',cost:105000,output:{tools:3},inputs:{ore:2,wood:1},desc:'2 Erz + 1 Holz → 3 Werkzeuge'},
-  electronics:{name:'Elektronikwerk',icon:'💻',cost:142000,output:{electronics:3},inputs:{ore:2,chemicals:1},desc:'2 Erz + 1 Chemikalien → 3 Elektronik'},
-  pharma:{name:'Pharmawerk',icon:'💊',cost:155000,output:{medicine:3},inputs:{chemicals:2},desc:'2 Chemikalien → 3 Medizin'}
-};
+// Bootstrap keeps stable object identities for early helpers. Active content is
+// derived from window.HF_GOODS_CONTENT_PACK when available; otherwise the
+// containers intentionally stay minimal until the content registry imports data.
+const HF_BOOTSTRAP_CONTENT_PACK=window.HF_GOODS_CONTENT_PACK||null;
+const HF_LEGACY_MIGRATION_GOODS={food:{name:'Lebensmittel',icon:'🥫',price:3200,legacyOnly:true}};
+function hfBootstrapGoodsFromPack(pack){
+  const goods={};
+  for(const def of pack?.goods||[]){
+    if(!def?.id)continue;
+    goods[def.id]={name:def.name||def.id,icon:def.icon||'📦',price:Number(def.price)||0,raw:!!def.properties?.rawMaterial,perishable:!!def.properties?.perishable};
+    if(!goods[def.id].price)delete goods[def.id].price;
+    if(!goods[def.id].raw)delete goods[def.id].raw;
+    if(!goods[def.id].perishable)delete goods[def.id].perishable;
+  }
+  return goods;
+}
+function hfBootstrapFacilitiesFromPack(pack){
+  const facilities={};
+  for(const def of pack?.facilities||[]){
+    if(!def?.id)continue;
+    facilities[def.id]={name:def.name||def.id,icon:def.icon||'🏭',cost:Number(def.cost)||0,output:{...(def.outputs||{})},inputs:{...(def.inputs||{})},raw:!!def.raw,desc:def.description||def.desc||''};
+    if(!facilities[def.id].raw)delete facilities[def.id].raw;
+  }
+  return facilities;
+}
+function hfBootstrapDemandGoodsFromPack(pack){
+  return [...new Set((pack?.goods||[]).filter(def=>def?.id&&def.demand?.enabled).map(def=>def.id))];
+}
+const GOODS = hfBootstrapGoodsFromPack(HF_BOOTSTRAP_CONTENT_PACK);
+const FACILITIES = hfBootstrapFacilitiesFromPack(HF_BOOTSTRAP_CONTENT_PACK);
 const TRANSPORT_TYPES = {
   localroad:{name:'Gemeindestraße',short:'GEMEINDE',mode:'road',icon:'🛤️',capacity:3,capacityUnit:'Fahrzeuge',speed:35,baseCost:4000,buildKm:280,maintenanceKm:12,color:'#85796b',weight:2,desc:'Sehr günstig, aber langsam und mit geringer Tageskapazität.'},
   regional:{name:'Regionalstraße',short:'REGIONAL',mode:'road',icon:'🚚',capacity:8,capacityUnit:'Fahrzeuge',speed:60,baseCost:9000,buildKm:650,maintenanceKm:25,color:'#a66a2d',weight:3,desc:'Mehr Geschwindigkeit und Kapazität als eine Gemeindestraße.'},
@@ -234,7 +246,7 @@ const CITIES = (window.HF_CITY_CATALOG||[]).map(entry=>Array.isArray(entry)
   ? {id:entry[0],name:entry[1],lat:entry[2],lng:entry[3],tier:entry[4],slots:entry[5],population:entry[6],wealthFactor:entry[7],demandProfile:entry[8]}
   : {id:entry.id,name:entry.name,lat:entry.coordinates?.lat??entry.lat,lng:entry.coordinates?.lng??entry.lng,tier:entry.tier,slots:entry.slots,population:entry.population,wealthFactor:entry.wealthFactor,demandProfile:entry.demandProfile});
 const CITY = Object.fromEntries(CITIES.map(c=>[c.id,c]));
-const DEMAND_GOODS=['food','furniture','tools','electronics','medicine'];
+const DEMAND_GOODS=hfBootstrapDemandGoodsFromPack(HF_BOOTSTRAP_CONTENT_PACK);
 const money=n=>'CHF '+Math.round(n).toLocaleString('de-CH');
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const HF_GAME_MECHANICS=window.HF_GAME_MECHANICS;
