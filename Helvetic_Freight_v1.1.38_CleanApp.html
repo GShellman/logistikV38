@@ -4304,7 +4304,8 @@ function hfInstallAutosaveHooks(){
 
 
 // --- v1.1.38: city supply contracts, source-owned delivery fleets and rolling weekly plans ---
-const hfSupplyContractsRuntime=window.HF.hfSupplyContractsV1138({
+// Use the stable module installer because earlier app bootstrap stages replace window.HF.
+const hfSupplyContractsRuntime=window.HF_SUPPLY_CONTRACTS_V1138({
   state,CITIES,CITY,GOODS,VEHICLES,
   roundCargo,clockFromMinutes,parseClockMinutes,
   hfV117FacilityOutputCapacity,hfActualDailyConsumption,hfV117AvailableForExport,hfV117IncomingDepotGood,

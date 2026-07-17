@@ -3,7 +3,7 @@
   'use strict';
   const HF=global.HF=global.HF||{};
 
-  HF.hfSupplyContractsV1138=function installHfSupplyContractsV1138(runtime){
+  function installHfSupplyContractsV1138(runtime){
     let {
       state,CITIES,CITY,GOODS,VEHICLES,
       roundCargo,clockFromMinutes,parseClockMinutes,
@@ -157,5 +157,8 @@
       hfV117MidnightRecalculateDepots,freshState,renderCity,renderCompany
     });
     return runtime;
-  };
+  }
+
+  global.HF_SUPPLY_CONTRACTS_V1138=installHfSupplyContractsV1138;
+  HF.hfSupplyContractsV1138=installHfSupplyContractsV1138;
 })(window);
