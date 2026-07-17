@@ -62,11 +62,5 @@
     });
   }
 
-  function goodImage(goodId) {
-    const goodItem = GOODS_CATALOG.find((item) => item.id === goodId);
-    return goodItem?.assetGlobal ? window[goodItem.assetGlobal] || '' : '';
-  }
-
   window.HFV2GoodsCatalog = GOODS_CATALOG;
-  window.HFV2GoodsAssets = Object.freeze({goodImage});
 })();
