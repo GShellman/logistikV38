@@ -593,3 +593,42 @@ code {
   .hf-v2-fleet-buy { grid-column: 1 / -1; }
   .hf-v2-fleet-stats { grid-template-columns: 1fr; }
 }
+
+.hf-v2-save-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.hf-v2-save-button {
+  background: var(--hf-primary);
+  border: 1px solid var(--hf-primary);
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 900;
+  padding: 10px 14px;
+}
+
+.hf-v2-save-button:hover,
+.hf-v2-save-button:focus-visible {
+  background: #0f4933;
+}
+
+.hf-v2-save-button--ghost {
+  background: #fff;
+  color: var(--hf-primary);
+}
+
+.hf-v2-save-button--ghost:hover,
+.hf-v2-save-button--ghost:focus-visible {
+  background: #e6f5eb;
+}
+
+.hf-v2-save-status {
+  color: var(--hf-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 12px 0 0;
+}

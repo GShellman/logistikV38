@@ -34,8 +34,15 @@
       </section>
 
       <section class="hf-v2-panel-card hf-v2-storage-note">
-        <h2>Keine Browser-Speicherdaten</h2>
-        <p>Diese V2 liest nur den Ortskatalog und hält die aktuelle Auswahl ausschließlich im Arbeitsspeicher der Seite. Es gibt keine Aufrufe auf <code>localStorage</code>, <code>sessionStorage</code> oder IndexedDB.</p>
+        <h2>Manueller Spielstand</h2>
+        <p>Diese V2 nutzt eine zentrale JSON-Save-Schicht ohne <code>localStorage</code>, <code>sessionStorage</code>, IndexedDB oder Cache APIs. Exportiere den Spielstand als Datei, damit er nicht an Browserdaten hängt.</p>
+        <div class="hf-v2-save-actions" aria-label="Spielstand-Aktionen">
+          <button id="hfV2SaveButton" class="hf-v2-save-button" type="button">Speichern</button>
+          <button id="hfV2ExportButton" class="hf-v2-save-button" type="button">Exportieren</button>
+          <button id="hfV2ImportButton" class="hf-v2-save-button hf-v2-save-button--ghost" type="button">Importieren</button>
+          <input id="hfV2ImportInput" type="file" accept="application/json,.json" hidden>
+        </div>
+        <p id="hfV2SaveStatus" class="hf-v2-save-status" role="status" aria-live="polite">Noch kein manueller Export in dieser Sitzung.</p>
       </section>
     </aside>
   </main>
@@ -55,6 +62,7 @@
 
   <script src="../scripts/hf-city-catalog.js"></script>
   <script crossorigin="" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="save-logic.js"></script>
   <script src="network-logic.js"></script>
   <script src="network-map-layer.js"></script>
   <script src="network-menu.js"></script>

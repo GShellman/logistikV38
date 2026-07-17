@@ -7,6 +7,7 @@
 
   let selectedId = null;
   let map = null;
+  let savePackage = null;
   let networkState = null;
   let citiesById = {};
   const markerById = new Map();
@@ -211,15 +212,56 @@
     window.HFNetwork?.renderNetworkLines?.(networkState.connections, citiesById);
   }
 
+  function setSaveStatus(message) {
+    const status = document.getElementById('hfV2SaveStatus');
+    if (status) status.textContent = message;
+  }
+
+  function applySavePackage(nextPackage) {
+    savePackage = window.HFV2Save?.hydrateState?.(nextPackage) || nextPackage;
+    networkState = window.HFNetwork?.configure({state: savePackage.state.network, cities: Object.values(citiesById), citiesById});
+    window.HFFleet?.configure?.({state: savePackage.state.fleet});
+    renderCurrentNetworkLines();
+    return savePackage;
+  }
+
+  function bindSaveControls() {
+    const saveButton = document.getElementById('hfV2SaveButton');
+    const exportButton = document.getElementById('hfV2ExportButton');
+    const importButton = document.getElementById('hfV2ImportButton');
+    const importInput = document.getElementById('hfV2ImportInput');
+
+    function exportCurrentSave(label) {
+      savePackage = window.HFV2Save?.exportSave?.() || savePackage;
+      setSaveStatus(`${label} am ${new Date(savePackage.savedAt).toLocaleString('de-CH')} als JSON-Datei bereitgestellt.`);
+    }
+
+    saveButton?.addEventListener('click', () => exportCurrentSave('Spielstand gespeichert'));
+    exportButton?.addEventListener('click', () => exportCurrentSave('Spielstand exportiert'));
+    importButton?.addEventListener('click', () => importInput?.click());
+    importInput?.addEventListener('change', async () => {
+      const file = importInput.files?.[0];
+      if (!file) return;
+      try {
+        const imported = await window.HFV2Save.importSave(file);
+        applySavePackage(imported);
+        setSaveStatus(`Spielstand vom ${new Date(imported.savedAt).toLocaleString('de-CH')} importiert.`);
+      } catch (error) {
+        setSaveStatus(`Import fehlgeschlagen: ${error.message}`);
+      } finally {
+        importInput.value = '';
+      }
+    });
+  }
+
   function boot() {
     const cities = loadCities();
     citiesById = Object.fromEntries(cities.map(city => [city.id, city]));
-    networkState = window.HFNetwork?.configure({
-      state: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}),
-      cities,
-      citiesById,
-    });
+    savePackage = window.HFV2Save?.createDefaultState?.() || {state: {network: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}), fleet: window.HFFleet?.createFleetState?.()}};
+    networkState = window.HFNetwork?.configure({state: savePackage.state.network, cities, citiesById});
+    window.HFFleet?.configure?.({state: savePackage.state.fleet});
     document.getElementById('hfV2CityCount').textContent = `${cities.length.toLocaleString('de-CH')} Orte`;
+    bindSaveControls();
     window.addEventListener('hf:network:confirmed', renderCurrentNetworkLines);
     if (!bootMap(cities)) return;
     const zurich = cities.find(city => city.id === 'zurich');
