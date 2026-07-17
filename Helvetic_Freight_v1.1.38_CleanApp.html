@@ -90,80 +90,14 @@ window.__HF_CLEAN_APP__=true;
 })();
 </script>
 <script src="scripts/hf-boot-state.js"></script>
+<script src="scripts/hf-storage.js"></script>
+<script src="scripts/hf-migrations.js"></script>
+<script src="scripts/hf-state.js"></script>
+<script src="scripts/hf-routing.js"></script>
 <script crossorigin="" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (() => {
 'use strict';
-// v1.0.39: safe browser storage. Local files and privacy modes may deny HF_STORAGE.
-const HF_MEMORY_STORAGE=new Map();
-const HF_STORAGE=(()=>{
-  try{
-    const s=window.localStorage,key='__hf_storage_probe__';
-    s.setItem(key,'1');s.removeItem(key);
-    return s;
-  }catch(err){
-    window.__HF_STORAGE_UNAVAILABLE__=true;
-    return {
-      getItem:key=>HF_MEMORY_STORAGE.has(String(key))?HF_MEMORY_STORAGE.get(String(key)):null,
-      setItem:(key,value)=>{HF_MEMORY_STORAGE.set(String(key),String(value))},
-      removeItem:key=>{HF_MEMORY_STORAGE.delete(String(key))},
-      clear:()=>HF_MEMORY_STORAGE.clear()
-    };
-  }
-})();
-
-// v1.1.0 stability core: one canonical save key, transactional writes and a one-time forced wipe.
-const HF_SAVE_KEY='helveticFreightSave_stable';
-const HF_SAVE_TEMP_KEY=HF_SAVE_KEY+'_tmp';
-const HF_SAVE_LAST_GOOD_KEY=HF_SAVE_KEY+'_lastGood';
-const HF_SAVE_BACKUP_1_KEY=HF_SAVE_KEY+'_backup1';
-const HF_SAVE_BACKUP_2_KEY=HF_SAVE_KEY+'_backup2';
-const HF_SAVE_SCHEMA=1;
-const HF_STABILITY_WIPE_MARKER='helveticFreightStabilityWipe_1_1_0';
-
-function hfStorageKeys(){
-  try{
-    const keys=[];
-    if(Number.isFinite(HF_STORAGE.length) && typeof HF_STORAGE.key==='function'){
-      for(let i=0;i<HF_STORAGE.length;i++){const key=HF_STORAGE.key(i);if(key!=null)keys.push(String(key));}
-      return keys;
-    }
-    return Object.keys(HF_STORAGE||{});
-  }catch(_){return []}
-}
-function hfSafeGet(key){try{return HF_STORAGE.getItem(key)}catch(_){return null}}
-function hfSafeSet(key,value){try{HF_STORAGE.setItem(key,String(value));return true}catch(_){return false}}
-function hfSafeRemove(key){try{HF_STORAGE.removeItem(key);return true}catch(_){return false}}
-function hfClone(value){
-  if(typeof structuredClone==='function')return structuredClone(value);
-  return JSON.parse(JSON.stringify(value));
-}
-function hfStateIsStructurallyValid(value){
-  return !!value && typeof value==='object' && Number.isFinite(Number(value.day)) && Number.isFinite(Number(value.cash)) &&
-    value.cities && typeof value.cities==='object' && Array.isArray(value.connections) && Array.isArray(value.shipments) && Array.isArray(value.routes);
-}
-function hfReadEnvelope(raw){
-  if(!raw)return null;
-  const parsed=JSON.parse(raw);
-  return parsed && parsed.state && typeof parsed.state==='object' ? parsed.state : parsed;
-}
-function hfSaveEnvelope(currentState){
-  return JSON.stringify({schemaVersion:HF_SAVE_SCHEMA,buildVersion:'1.1.0',savedAt:new Date().toISOString(),state:currentState});
-}
-
-(function hfPerformOneTimeStabilityWipe(){
-  if(hfSafeGet(HF_STABILITY_WIPE_MARKER)==='done')return;
-  const legacyKeys=hfStorageKeys().filter(key=>
-    /^helveticFreightSave/i.test(key) || /^helveticFreightHardReset/i.test(key) || /^helveticFreight.*Wipe/i.test(key)
-  ).filter(key=>key!==HF_STABILITY_WIPE_MARKER);
-  const recoverable=legacyKeys.map(key=>({key,raw:hfSafeGet(key)})).find(x=>x.raw);
-  if(recoverable)hfSafeSet('helveticFreightLegacyArchive_1_1_0',recoverable.raw);
-  for(const key of legacyKeys)hfSafeRemove(key);
-  hfSafeSet(HF_STABILITY_WIPE_MARKER,'done');
-  window.__HF_FORCE_CLEAN_START__=true;
-  window.__HF_DID_STABILITY_WIPE__=true;
-})();
-
 const ASSETS = {"goods":{"grain":"__WINDOW_HF_GRAIN_ASSET_DATA_URI__","wood":"__WINDOW_HF_WOOD_ASSET_DATA_URI__","ore":"__WINDOW_HF_ORE_ASSET_DATA_URI__","chemicals":"__WINDOW_HF_CHEMICALS_ASSET_DATA_URI__","food":"__WINDOW_HF_FOOD_ASSET_DATA_URI__","clothing":"__WINDOW_HF_CLOTHING_ASSET_DATA_URI__"},"facilities":{"farm":window.HF_FARM_FACILITY_ASSET_DATA_URI,"forestry":window.HF_FORESTRY_FACILITY_ASSET_DATA_URI,"mine":window.HF_MINE_FACILITY_ASSET_DATA_URI,"chemical":window.HF_CHEMICAL_FACILITY_ASSET_DATA_URI,"foodplant":window.HF_FOODPLANT_FACILITY_ASSET_DATA_URI,"furniture":window.HF_FURNITURE_FACILITY_ASSET_DATA_URI,"toolworks":window.HF_TOOLWORKS_FACILITY_ASSET_DATA_URI,"electronics":window.HF_ELECTRONICS_FACILITY_ASSET_DATA_URI,"pharma":window.HF_PHARMA_FACILITY_ASSET_DATA_URI,"textile":window.HF_TEXTILE_FACILITY_ASSET_DATA_URI},"vehicles":{"van":window.HF_VAN_VEHICLE_ASSET_DATA_URI,"lightTruck":window.HF_LIGHT_TRUCK_VEHICLE_ASSET_DATA_URI,"heavyTruck":window.HF_HEAVY_TRUCK_VEHICLE_ASSET_DATA_URI,"artic":window.HF_ARTIC_VEHICLE_ASSET_DATA_URI,"freightTrain":window.HF_FREIGHT_TRAIN_VEHICLE_ASSET_DATA_URI}};
 ASSETS.goods.corn=window.HF_CORN_ASSET_DATA_URI;
 ASSETS.goods.pears=window.HF_PEARS_ASSET_DATA_URI;
@@ -237,77 +171,22 @@ const DEMAND_GOODS=['food','furniture','tools','electronics','medicine','clothin
 const money=n=>'CHF '+Math.round(n).toLocaleString('de-CH');
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const HF_GAME_MECHANICS=window.HF_GAME_MECHANICS;
+const {HF_STORAGE,HF_SAVE_KEY,HF_SAVE_TEMP_KEY,HF_SAVE_LAST_GOOD_KEY,HF_SAVE_BACKUP_1_KEY,HF_SAVE_BACKUP_2_KEY,hfSafeGet,hfSafeSet,hfSafeRemove,hfClone,hfStateIsStructurallyValid,hfReadEnvelope,hfSaveEnvelope,createSaveApi}=window.HF_STORAGE_CORE;
 const seeded=HF_GAME_MECHANICS.seeded;
 const makeDemands=city=>HF_GAME_MECHANICS.makeDemands(city,DEMAND_GOODS);
 const createInventoryDefaults=()=>HF_GAME_MECHANICS.createInventoryDefaults(GOODS);
 const normalizeInventory=(inventory={})=>HF_GAME_MECHANICS.normalizeInventory(inventory,GOODS);
 const createCityState=(city,opts={})=>HF_GAME_MECHANICS.createCityState(city,GOODS,DEMAND_GOODS,opts);
+let {migrateState}=window.HF_MIGRATIONS.createMigrationApi({TRANSPORT_TYPES,VEHICLES,CITIES,CITY,GOODS,DEMAND_GOODS,makeDemands,normalizeInventory,createCityState});
+let {freshState,load,initialState}=window.HF_STATE.createStateApi({CITIES,CITY,VEHICLES,GOODS,DEMAND_GOODS,createCityState,migrateState,hfClone,hfSafeGet,HF_SAVE_KEY,HF_SAVE_LAST_GOOD_KEY,HF_SAVE_BACKUP_1_KEY,HF_SAVE_BACKUP_2_KEY,hfReadEnvelope,hfStateIsStructurallyValid});
+let state=initialState();
 function cityGoodPrice(cityId,goodId){
   const city=CITY[cityId]||{},def=window.HF_CONTENT?.registry?.goods?.[goodId],d=state?.cities?.[cityId]?.demands?.[goodId]||{};
   const base=Number(GOODS[goodId]?.price)||0,mult=Number.isFinite(Number(d.mult))?Number(d.mult):1,wealth=Number(city.wealthFactor)||1;
   const sensitivity=Number(def?.demand?.priceWealthSensitivity)||0;
   return Math.max(0,base*mult*(1+(wealth-1)*sensitivity));
 }
-function freshState(){
-  const cities={}; CITIES.forEach(c=>cities[c.id]=createCityState(c,{unlocked:c.id==='zurich'}));
-  return {version:8,day:1,hour:8,minute:0,cash:335000,reputation:0,totalRevenue:0,totalDelivered:0,selected:'zurich',tab:'city',cities,connections:[],shipments:[],routes:[],fleet:{van:1,lightTruck:0,heavyTruck:0,artic:0,freightTrain:0},usedCapacity:{},usedVehicles:{},history:[],tutorial:0};
-}
-function migrateState(s){
-  if(!s||![1,2,3,4,5,6,7,8].includes(s.version))return null;const oldVersion=s.version;
-  if(oldVersion===1)s.connections=(s.connections||[]).map(e=>({...e,type:e.type==='road'?'mainroad':e.type,geometry:e.geometry||null}));
-  s.connections=(s.connections||[]).map(e=>{const type=TRANSPORT_TYPES[e.type]?e.type:(e.type==='road'?'mainroad':'rail'),t=TRANSPORT_TYPES[type];return {...e,type,capacity:oldVersion<3?t.capacity:(e.capacity||t.capacity),maintenance:oldVersion<3?Math.round(e.distance*t.maintenanceKm):(e.maintenance||Math.round(e.distance*t.maintenanceKm)),geometry:e.geometry||null}});
-  s.routes=(s.routes||[]).map(r=>{const v=VEHICLES[r.vehicleType]||VEHICLES.van,count=Math.max(1,Math.floor(r.vehicleCount||1)),amount=count*v.load;return {...r,vehicleCount:count,amountPerDay:amount,returnPolicy:r.returnPolicy||'empty',returnGood:r.returnGood||null,returnAmount:(r.returnPolicy&&r.returnPolicy!=='empty')?amount:0}});
-  s.fleet=s.fleet||{van:2,lightTruck:0,heavyTruck:0,artic:0,freightTrain:0};Object.keys(VEHICLES).forEach(k=>s.fleet[k]=s.fleet[k]||0);
-  s.usedCapacity={};
-  s.shipments=(s.shipments||[]).map(sh=>{const remainingMinutes=sh.remainingMinutes??Math.max(0,Math.round((sh.remainingHours??sh.eta??1)*60)),totalMinutes=sh.totalMinutes??Math.max(1,Math.round((sh.totalHours??sh.eta??1)*60)),phase=sh.phase||'outbound',currentNode=sh.currentNode||(phase==='awaiting_return'?(sh.destination||sh.to):(sh.from||sh.home));const next={...sh,vehicleType:sh.vehicleType||'van',remainingMinutes,totalMinutes,edgeIds:sh.edgeIds||[],trips:sh.trips||1,home:sh.home||sh.from,destination:sh.destination||sh.to,phase,returnPolicy:sh.returnPolicy||'empty',returnGood:sh.returnGood||null,returnAmount:sh.returnAmount||0,waitingReason:sh.waitingReason||'',movementStatus:phase==='awaiting_return'?'waiting_return':(oldVersion>=8?(sh.movementStatus||'queued'):'queued'),currentEdgeIndex:oldVersion>=8?(sh.currentEdgeIndex||0):0,currentNode,edgeRemainingMinutes:oldVersion>=8?(sh.edgeRemainingMinutes||0):0,edgeTotalMinutes:oldVersion>=8?(sh.edgeTotalMinutes||0):0};delete next.eta;delete next.remainingHours;delete next.totalHours;return next});
-  s.usedVehicles={};s.shipments.forEach(sh=>s.usedVehicles[sh.vehicleType]=(s.usedVehicles[sh.vehicleType]||0)+(sh.trips||1));
-  s.cities=s.cities||{};CITIES.forEach(c=>{if(!s.cities[c.id]){s.cities[c.id]=createCityState(c);}else{s.cities[c.id].inventory=normalizeInventory(s.cities[c.id].inventory);s.cities[c.id].facilities=s.cities[c.id].facilities||[];s.cities[c.id].demands=s.cities[c.id].demands||makeDemands(c);s.cities[c.id].sales=s.cities[c.id].sales||0;}});
-  if(!s.selected || !CITY[s.selected]) s.selected='zurich';
-  s.hour=Number.isFinite(s.hour)?Math.floor(s.hour):8;s.minute=Number.isFinite(s.minute)?Math.floor(s.minute):0;
-  s.version=8;return s;
-}
-let state=window.__HF_FORCE_CLEAN_START__?freshState():(load()||freshState());
 let map,markers={},lines={},shipmentMarkers={},pendingProject=null,routeHydrationRunning=false,playTimer=null,playTick=0;
-function load(){
-  const candidates=[HF_SAVE_KEY,HF_SAVE_LAST_GOOD_KEY,HF_SAVE_BACKUP_1_KEY,HF_SAVE_BACKUP_2_KEY];
-  for(const key of candidates){
-    try{
-      const raw=hfSafeGet(key);if(!raw)continue;
-      const source=hfReadEnvelope(raw);if(!hfStateIsStructurallyValid(source))continue;
-      const migrated=migrateState(hfClone(source));
-      if(hfStateIsStructurallyValid(migrated))return migrated;
-    }catch(err){console.warn('Spielstand konnte nicht aus '+key+' geladen werden',err)}
-  }
-  return null;
-}
-function save(show=true){
-  if(window.__HF_TITLE_PENDING__)return false;
-  if(!window.__HF_BOOT_COMPLETE__){window.__HF_PENDING_SAVE__=true;return false;}
-  try{
-    if(!hfStateIsStructurallyValid(state))throw new Error('Spielzustand ist unvollständig');
-    const payload=hfSaveEnvelope(hfClone(state));
-    const current=hfSafeGet(HF_SAVE_KEY);
-    if(current){
-      const backup1=hfSafeGet(HF_SAVE_BACKUP_1_KEY);
-      if(backup1)hfSafeSet(HF_SAVE_BACKUP_2_KEY,backup1);
-      hfSafeSet(HF_SAVE_BACKUP_1_KEY,current);
-    }
-    if(!hfSafeSet(HF_SAVE_TEMP_KEY,payload))throw new Error('Temporärer Spielstand konnte nicht geschrieben werden');
-    const verify=hfReadEnvelope(hfSafeGet(HF_SAVE_TEMP_KEY));
-    if(!hfStateIsStructurallyValid(verify))throw new Error('Temporärer Spielstand ist ungültig');
-    if(!hfSafeSet(HF_SAVE_KEY,payload))throw new Error('Spielstand konnte nicht übernommen werden');
-    hfSafeSet(HF_SAVE_LAST_GOOD_KEY,payload);
-    hfSafeRemove(HF_SAVE_TEMP_KEY);
-    window.__HF_PENDING_SAVE__=false;
-    if(show)toast(window.__HF_STORAGE_UNAVAILABLE__?'Temporär gespeichert – Browser blockiert dauerhaften Speicher.':'Spielstand sicher gespeichert.','good');
-    return true;
-  }catch(e){
-    console.warn('Transaktionales Speichern nicht möglich',e);
-    hfSafeRemove(HF_SAVE_TEMP_KEY);
-    if(show)toast('Speichern nicht möglich – der letzte funktionierende Stand bleibt erhalten.','bad');
-    return false;
-  }
-}
 function dist(a,b){const R=6371,p=Math.PI/180,dlat=(b.lat-a.lat)*p,dlon=(b.lng-a.lng)*p;const x=Math.sin(dlat/2)**2+Math.cos(a.lat*p)*Math.cos(b.lat*p)*Math.sin(dlon/2)**2;return 2*R*Math.asin(Math.sqrt(x))}
 function edgeUtilization(e){return clamp(((state.usedCapacity?.[e.id]||0)/(e.capacity||1)),0,1)}
 function edgeLoadClass(e){const u=edgeUtilization(e);return u>=.95?'full':u>=.7?'high':u>=.4?'mid':u>0?'low':'idle'}
@@ -324,6 +203,7 @@ function shipmentRouteCoords(sh){const edges=shipmentEdgeSequence(sh);if(!edges.
 function shipmentPose(sh){const node=sh.currentNode||sh.from;if(sh.phase==='awaiting_return'||sh.movementStatus==='waiting_return'||sh.movementStatus==='queued')return {lat:CITY[node].lat,lng:CITY[node].lng,east:false};const e=state.connections.find(x=>x.id===sh.edgeIds?.[sh.currentEdgeIndex]);if(!e)return {lat:CITY[node].lat,lng:CITY[node].lng,east:false};const coords=edgeGeometryForTravel(e,node),progress=clamp((sh.edgeTotalMinutes-sh.edgeRemainingMinutes)/Math.max(sh.edgeTotalMinutes,1),0,1),p=pointOnPolyline(coords,progress),ahead=pointOnPolyline(coords,Math.min(1,progress+.02)),behind=pointOnPolyline(coords,Math.max(0,progress-.02)),east=(ahead?.lng??p.lng)>=(behind?.lng??p.lng);return {...p,east}}
 function rebuildEdgeOccupancy(){state.usedCapacity={};state.shipments.forEach(sh=>{if(sh.movementStatus==='moving'){const id=sh.edgeIds?.[sh.currentEdgeIndex];if(id)state.usedCapacity[id]=(state.usedCapacity[id]||0)+(sh.trips||1)}})}
 function toast(msg,type=''){const el=document.createElement('div');el.className='toast '+type;el.textContent=msg;document.getElementById('toasts').appendChild(el);setTimeout(()=>el.remove(),3300)}
+const {save}=createSaveApi({getState:()=>state,hfSaveEnvelope,hfReadEnvelope,hfStateIsStructurallyValid,toast});
 function initMap(){
   if(!window.L){document.getElementById('map').innerHTML='<div class="map-load-error">Die Kartenbibliothek konnte nicht geladen werden. Bitte die HTML-Datei mit Internetverbindung öffnen.</div>';return}
   map=L.map('map',{zoomControl:true,minZoom:7,maxZoom:13}).setView([46.82,8.25],8);
@@ -387,12 +267,7 @@ function renderNetwork(root){
 function routeTiming(from,to,vehicleType){const out=findPath(from,to,vehicleType),back=findPath(to,from,vehicleType);return {out,back,round:(out?.timeHours||0)+(back?.timeHours||0)}}
 function returnPolicyLabel(r){if(r.returnPolicy==='required')return `Rückfracht zwingend: ${GOODS[r.returnGood]?.name||'Ware'} · ${r.returnAmount} Pal.`;if(r.returnPolicy==='optional')return `Rückfracht optional: bis ${r.returnAmount} Pal. ${GOODS[r.returnGood]?.name||''}`;return 'Rückfahrt leer'}
 function shipmentCargoVisual(sh){return sh.good&&GOODS[sh.good]?goodImg(sh.good,'asset-img asset-route-good'):`<div class="asset-route-good" style="display:grid;place-items:center;font-size:22px">↩</div>`}
-function graph(vehicleId){const g={};CITIES.forEach(c=>g[c.id]=[]);state.connections.forEach(e=>{if(!vehicleCanUseEdge(vehicleId,e))return;const t=transportSpec(e),v=VEHICLES[vehicleId],w=e.distance/Math.min(t.speed,v.speed);g[e.a].push({to:e.b,e,w});g[e.b].push({to:e.a,e,w})});return g}
-function findPath(start,end,vehicleId){if(start===end||!VEHICLES[vehicleId])return null;const g=graph(vehicleId),D={},prev={},prevE={},q=new Set(Object.keys(g));Object.keys(g).forEach(k=>D[k]=Infinity);D[start]=0;
-  while(q.size){let u=null;for(const k of q)if(u===null||D[k]<D[u])u=k;if(u===null||D[u]===Infinity)break;q.delete(u);if(u===end)break;for(const n of g[u]){const nd=D[u]+n.w;if(nd<D[n.to]){D[n.to]=nd;prev[n.to]=u;prevE[n.to]=n.e}}}
-  if(!prev[end])return null;const path=[end],edges=[];let x=end;while(x!==start){edges.unshift(prevE[x]);x=prev[x];path.unshift(x)}const distance=edges.reduce((sum,e)=>sum+e.distance,0),time=edges.reduce((sum,e)=>sum+e.distance/Math.min(transportSpec(e).speed,VEHICLES[vehicleId].speed),0);return{path,edges,distance,timeHours:Math.max(.2,time)}}
-function tripsNeeded(vehicleId,amount){return Math.ceil(amount/VEHICLES[vehicleId].load)}
-function transportCost(route,vehicleId,trips){return Math.round(route.distance*VEHICLES[vehicleId].kmCost*trips)}
+let graph,findPath,tripsNeeded,transportCost;
 function dispatchCore(from,to,good,amount,vehicleId,{silent=false,automatic=false,maxTrips=null,routeId=null,returnConfig=null}={}){const inv=state.cities[from].inventory,v=VEHICLES[vehicleId],route=findPath(from,to,vehicleId);if(!route||!v||!good)return {ok:false,reason:'Keine kompatible Verbindung'};const ret=returnConfig||{policy:'empty',good:null,amount:0},requestedTrips=Math.max(1,maxTrips||tripsNeeded(vehicleId,amount)),trips=requestedTrips,dynamicAmount=trips*v.load,routeCapacity=Math.min(...route.edges.map(e=>e.capacity));if(trips>routeCapacity)return {ok:false,reason:`Maximal ${routeCapacity} Fahrzeuge können diese Route gleichzeitig befahren`};const cost=transportCost(route,vehicleId,trips);if((inv[good]||0)<dynamicAmount)return {ok:false,reason:`Es werden ${dynamicAmount} Paletten für eine volle Abfahrt benötigt`};const owned=state.fleet[vehicleId]||0,used=state.usedVehicles[vehicleId]||0;if(automatic){if(used+trips>owned)return {ok:false,reason:'Nicht genug Fahrzeuge im Fuhrpark'}}else if(trips>manualVehicleAvailable(vehicleId))return {ok:false,reason:'Nicht genug freie Fahrzeuge'};if(state.cash<cost)return {ok:false,reason:'Zu wenig Kapital für Betriebskosten'};inv[good]-=dynamicAmount;state.cash-=cost;state.usedVehicles[vehicleId]=(state.usedVehicles[vehicleId]||0)+trips;const travelMinutes=Math.max(1,Math.round(route.timeHours*60));state.shipments.push({id:'s'+Date.now()+Math.random().toString(16).slice(2),home:from,destination:to,from,to,good,amount:dynamicAmount,remainingMinutes:travelMinutes,totalMinutes:travelMinutes,path:route.path,edgeIds:route.edges.map(e=>e.id),vehicleType:vehicleId,routeId,trips,phase:'outbound',returnPolicy:ret.policy||'empty',returnGood:ret.good||null,returnAmount:ret.policy==='empty'?0:dynamicAmount,waitingReason:'Wartet auf freie Einfahrt',movementStatus:'queued',currentEdgeIndex:0,currentNode:from,edgeRemainingMinutes:0,edgeTotalMinutes:0});if(!silent)toast(`${v.icon} Rundfahrt eingeplant: ${dynamicAmount} ${GOODS[good].name}.`,'good');return {ok:true,cost,trips,amount:dynamicAmount}}
 function dispatch(from,to,good,amount,vehicleId,returnConfig){const result=dispatchCore(from,to,good,amount,vehicleId,{returnConfig});if(!result.ok)toast(result.reason+'.','bad');renderAll()}
 function createPersistentRoute(from,to,good,amount,vehicleType,vehicleCount,returnPolicy='empty',returnGood=null,returnAmount=0){vehicleCount=Math.max(1,Math.floor(vehicleCount||1));const v=VEHICLES[vehicleType],timing=routeTiming(from,to,vehicleType);if(!v||!timing.out||!timing.back)return toast('Keine kompatible Hin- und Rückverbindung für diesen Fahrzeugtyp.','bad');const routeCapacity=Math.min(...timing.out.edges.map(e=>e.capacity),...timing.back.edges.map(e=>e.capacity));if(vehicleCount>routeCapacity)return toast(`Diese Route erlaubt maximal ${routeCapacity} Fahrzeuge gleichzeitig.`,'bad');const dynamicAmount=vehicleCount*v.load;if(returnPolicy!=='empty'&&!returnGood)return toast('Bitte eine Rückfracht auswählen.','bad');if(reservedVehicles(vehicleType)+vehicleCount>(state.fleet[vehicleType]||0))return toast('Nicht genug Fahrzeuge im Fuhrpark, um diese Route dauerhaft zu reservieren.','bad');state.routes.push({id:'r'+Date.now()+Math.random().toString(16).slice(2),from,to,good,amountPerDay:dynamicAmount,vehicleType,vehicleCount,returnPolicy,returnGood:returnPolicy==='empty'?null:returnGood,returnAmount:returnPolicy==='empty'?0:dynamicAmount,active:true,lastStatus:'Bereit für den nächsten Tagesstart'});toast('Dauerroute mit dynamischer Vollladung wurde aktiviert.','good');save(false);renderAll()}
@@ -915,24 +790,7 @@ function currentNetworkOrigin(){
 ensureJunctionState();
 
 // Dynamic graph: cities and player-created junctions are equally valid path nodes.
-graph=function(vehicleId){
-  const g={};allNetworkNodes().forEach(n=>g[n.id]=[]);
-  state.connections.forEach(e=>{
-    if(!g[e.a]||!g[e.b]||!vehicleCanUseEdge(vehicleId,e))return;
-    const t=transportSpec(e),v=VEHICLES[vehicleId],w=e.distance/Math.min(t.speed,v.speed);
-    g[e.a].push({to:e.b,e,w});g[e.b].push({to:e.a,e,w});
-  });
-  return g;
-};
-findPath=function(start,end,vehicleId){
-  if(start===end||!VEHICLES[vehicleId])return null;
-  const g=graph(vehicleId);if(!g[start]||!g[end])return null;
-  const D={},prev={},prevE={},q=new Set(Object.keys(g));Object.keys(g).forEach(k=>D[k]=Infinity);D[start]=0;
-  while(q.size){let u=null;for(const k of q)if(u===null||D[k]<D[u])u=k;if(u===null||D[u]===Infinity)break;q.delete(u);if(u===end)break;for(const n of g[u]){const nd=D[u]+n.w;if(nd<D[n.to]){D[n.to]=nd;prev[n.to]=u;prevE[n.to]=n.e}}}
-  if(!prev[end])return null;const path=[end],edges=[];let x=end;while(x!==start){edges.unshift(prevE[x]);x=prev[x];path.unshift(x)}
-  const distance=edges.reduce((sum,e)=>sum+e.distance,0),time=edges.reduce((sum,e)=>sum+e.distance/Math.min(transportSpec(e).speed,VEHICLES[vehicleId].speed),0);
-  return{path,edges,distance,timeHours:Math.max(.2,time)};
-};
+({graph,findPath,tripsNeeded,transportCost}=window.HF_ROUTING.createRoutingApi({getState:()=>state,CITIES,VEHICLES,transportSpec,vehicleCanUseEdge,getNetworkNodes:allNetworkNodes}));
 
 function injectJunctionStyles(){
   if(document.getElementById('junctionStyles'))return;
