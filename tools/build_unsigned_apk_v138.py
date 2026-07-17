@@ -1,8 +1,9 @@
 from pathlib import Path
 import zipfile, shutil, struct, hashlib, zlib
 
+repo=Path(__file__).resolve().parents[1]
 base=Path('/mnt/data/Helvetic_Freight_Clean_v1.1.37.apk')
-html=Path('/mnt/data/Helvetic_Freight_v1.1.38_CleanApp.html')
+html=repo/'Helvetic_Freight_v1.1.38_CleanApp.html'
 out=Path('/mnt/data/Helvetic_Freight_Clean_v1.1.38_unsigned.apk')
 work=Path('/mnt/data/apk138build')
 
@@ -18,6 +19,18 @@ new_asset=work/'assets'/'Helvetic_Freig38.html'
 assert old_asset.exists(), old_asset
 old_asset.unlink()
 new_asset.write_bytes(html.read_bytes())
+
+# The WebView loads scripts/assets relative to the HTML asset. Keep gameplay mechanics
+# out of the HTML, but package the external modules they reference into the APK.
+for rel in ['scripts', 'assets']:
+    src=repo/rel
+    dst=work/'assets'/rel
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(src, dst)
+css=repo/'Helvetic_Freight_v1.1.38_CleanApp.css'
+if css.exists():
+    shutil.copy2(css, work/'assets'/css.name)
 
 rp=work/'resources.arsc'
 rb=rp.read_bytes()
