@@ -44,8 +44,8 @@
 
   const vehicleGroups = Object.freeze({
     general: {id: 'general', name: 'Stückgut', vehicles: ['van', 'lightTruck', 'heavyTruck', 'artic', 'freightTrain']},
-    refrigerated: {id: 'refrigerated', name: 'Kühltransport', vehicles: ['reeferSmall', 'reefer', 'freightTrain']},
-    bulk: {id: 'bulk', name: 'Schüttgut', vehicles: ['tipperSmall', 'tipper', 'freightTrain']},
+    refrigerated: {id: 'refrigerated', name: 'Kühltransport', vehicles: ['reefer', 'freightTrain']},
+    bulk: {id: 'bulk', name: 'Schüttgut', vehicles: ['tipper', 'freightTrain']},
     livestock: {id: 'livestock', name: 'Tiertransport', vehicles: ['lightTruck', 'heavyTruck', 'artic', 'freightTrain']},
     rail: {id: 'rail', name: 'Bahn', vehicles: ['freightTrain']}
   });
