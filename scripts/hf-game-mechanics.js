@@ -33,5 +33,35 @@ function createCityState(city,goods,demandGoods,{unlocked=false}={}){
   const validGoods=activeGoods(goods);
   return {unlocked,inventory:createInventoryDefaults(validGoods),facilities:[],demands:makeDemands(city,demandGoods),sales:0};
 }
-global.HF_GAME_MECHANICS={seeded,makeDemands,createInventoryDefaults,normalizeInventory,createCityState};
+function cloneJson(value){
+  if(typeof global.structuredClone==='function')return global.structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+}
+function normalizeCityRuntimeState(cityState,city,goods,demandGoods){
+  const normalized=cityState&&typeof cityState==='object'?cloneJson(cityState):{};
+  normalized.unlocked=Boolean(normalized.unlocked||city?.id==='zurich');
+  normalized.inventory=normalizeInventory(normalized.inventory,goods);
+  if(!Array.isArray(normalized.facilities))normalized.facilities=[];
+  if(!normalized.demands||typeof normalized.demands!=='object')normalized.demands=makeDemands(city,demandGoods);
+  if(!Number.isFinite(Number(normalized.sales)))normalized.sales=0;
+  return normalized;
+}
+function createFreshStateFromPackage(initialPackage,{goods={},demandGoods=[],cities=[]}={}){
+  const packagedState=initialPackage?.state;
+  if(!packagedState||typeof packagedState!=='object')throw new Error('HF_INITIAL_STATE_PACKAGE.state fehlt');
+  const state=cloneJson(packagedState);
+  if(!state.cities||typeof state.cities!=='object')state.cities={};
+  for(const city of cities){
+    state.cities[city.id]=normalizeCityRuntimeState(state.cities[city.id],city,goods,demandGoods);
+  }
+  state.connections=Array.isArray(state.connections)?state.connections:[];
+  state.shipments=Array.isArray(state.shipments)?state.shipments:[];
+  state.routes=Array.isArray(state.routes)?state.routes:[];
+  state.history=Array.isArray(state.history)?state.history:[];
+  state.fleet=state.fleet&&typeof state.fleet==='object'?state.fleet:{van:1,lightTruck:0,heavyTruck:0,artic:0,freightTrain:0};
+  state.usedCapacity=state.usedCapacity&&typeof state.usedCapacity==='object'?state.usedCapacity:{};
+  state.usedVehicles=state.usedVehicles&&typeof state.usedVehicles==='object'?state.usedVehicles:{};
+  return state;
+}
+global.HF_GAME_MECHANICS={seeded,makeDemands,createInventoryDefaults,normalizeInventory,createCityState,createFreshStateFromPackage};
 })(window);
