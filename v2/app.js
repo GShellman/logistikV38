@@ -123,7 +123,7 @@
   }
 
   function openNetworkModalForCity(city) {
-    window.openNetworkMenuForCity?.(city?.id);
+    window.HF_V2?.openNetworkMenuForCity?.(city?.id);
   }
 
   function renderMarkers(cities) {
