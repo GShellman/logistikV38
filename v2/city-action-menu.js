@@ -37,6 +37,31 @@
     if (event.key === 'Escape') hideCityActionMenu();
   }
 
+  function actionPosition(index, total) {
+    const safeTotal = Math.max(1, Number(total) || 1);
+    const angle = -90 + (360 / safeTotal) * index;
+    const radians = angle * Math.PI / 180;
+    const radius = 42;
+    const x = 50 + Math.cos(radians) * radius;
+    const y = 50 + Math.sin(radians) * radius;
+    return `style="--hf-action-x:${x.toFixed(3)}%;--hf-action-y:${y.toFixed(3)}%;"`;
+  }
+
+  function actionButton(action, label, icon, city, index, total) {
+    return `
+          <button class="hf-v2-city-action-button hf-v2-city-action-button--${action}" type="button" data-action="${action}" ${actionPosition(index, total)} aria-label="${label} für ${escapeHtml(city.name)} öffnen">
+            <span aria-hidden="true">${icon}</span>
+          </button>`;
+  }
+
+  function cityActions(city) {
+    return [
+      {action: 'network', label: 'Netzwerkoptionen', icon: '🛣️'},
+      {action: 'fleet', label: 'Fuhrpark', icon: '🚚'},
+      {action: 'factory', label: 'Betriebe', icon: '🏭'},
+    ].map((item, index, actions) => actionButton(item.action, item.label, item.icon, city, index, actions.length)).join('');
+  }
+
   function bindPopupEvents() {
     const element = actionPopup?.getElement?.();
     const buttons = element?.querySelectorAll?.('.hf-v2-city-action-button');
@@ -65,20 +90,12 @@
       closeButton: false,
       autoClose: false,
       closeOnClick: false,
-      offset: [0, -10],
+      offset: [0, 52],
     })
       .setLatLng([city.lat, city.lng])
       .setContent(`
         <div class="hf-v2-city-action-panel" data-city-id="${escapeHtml(city.id)}">
-          <button class="hf-v2-city-action-button hf-v2-city-action-button--network" type="button" data-action="network" aria-label="Netzwerkoptionen für ${escapeHtml(city.name)} öffnen">
-            <span aria-hidden="true">🛣️</span>
-          </button>
-          <button class="hf-v2-city-action-button hf-v2-city-action-button--fleet" type="button" data-action="fleet" aria-label="Fuhrpark für ${escapeHtml(city.name)} öffnen">
-            <span aria-hidden="true">🚚</span>
-          </button>
-          <button class="hf-v2-city-action-button hf-v2-city-action-button--factory" type="button" data-action="factory" aria-label="Betriebe für ${escapeHtml(city.name)} öffnen">
-            <span aria-hidden="true">🏭</span>
-          </button>
+          ${cityActions(city)}
         </div>`)
       .openOn(map);
 
