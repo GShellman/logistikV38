@@ -2,10 +2,15 @@
   'use strict';
 
   const networkMenu = window.HFNetworkMenu || null;
+  const fleetMenu = window.HFV2FleetMenu || null;
   if (window.HFNetworkMenu) delete window.HFNetworkMenu;
 
   function openNetworkMenuForCity(cityId) {
     networkMenu?.openNetworkMenuForCity?.(cityId);
+  }
+
+  function openCityFleetForCity(cityId) {
+    fleetMenu?.openCityFleetForCity?.(cityId);
   }
 
   function closeModal() {
@@ -24,6 +29,7 @@
 
   window.HF_V2 = {
     openNetworkMenuForCity,
+    openCityFleetForCity,
     closeModal,
     planConnection,
     confirmProject,
