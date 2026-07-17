@@ -7,6 +7,8 @@
 
   let selectedId = null;
   let map = null;
+  let networkState = null;
+  let citiesById = {};
   const markerById = new Map();
 
   function normaliseCity(raw) {
@@ -165,12 +167,21 @@
     }).addTo(map);
 
     renderMarkers(cities);
+    if (window.HFNetwork && networkState) {
+      window.HFNetwork.renderNetworkLines(map, networkState, citiesById);
+    }
     map.fitBounds(bounds, {padding: [16, 16], animate: false});
     return true;
   }
 
   function boot() {
     const cities = loadCities();
+    citiesById = Object.fromEntries(cities.map(city => [city.id, city]));
+    networkState = window.HFNetwork?.configure({
+      state: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}),
+      cities,
+      citiesById,
+    });
     document.getElementById('hfV2CityCount').textContent = `${cities.length.toLocaleString('de-CH')} Orte`;
     if (!bootMap(cities)) return;
     const zurich = cities.find(city => city.id === 'zurich');
