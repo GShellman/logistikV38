@@ -452,3 +452,111 @@ code {
   .hf-v2-modal-scroll { padding: 14px 18px 20px; }
   .hf-v2-network-grid { grid-template-columns: 1fr; }
 }
+
+.hf-v2-fleet-menu {
+  display: grid;
+  gap: 12px;
+}
+.hf-v2-fleet-eyebrow {
+  color: var(--hf-accent);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  margin: 0;
+  text-transform: uppercase;
+}
+.hf-v2-fleet-menu h3 { margin: 0; }
+.hf-v2-fleet-hint,
+.hf-v2-fleet-empty {
+  color: var(--hf-muted);
+  font-size: 13px;
+  margin: 0;
+}
+.hf-v2-fleet-grid {
+  display: grid;
+  gap: 10px;
+  max-height: min(58vh, 520px);
+  overflow: auto;
+  padding: 2px 4px 2px 0;
+}
+.hf-v2-fleet-card {
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--hf-line);
+  border-radius: 16px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: auto 1fr auto;
+  padding: 14px;
+}
+.hf-v2-fleet-card__icon {
+  font-size: 24px;
+  text-align: center;
+  width: 32px;
+}
+.hf-v2-fleet-card__main {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.hf-v2-fleet-card__head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+.hf-v2-fleet-card h4,
+.hf-v2-fleet-card p,
+.hf-v2-fleet-stats { margin: 0; }
+.hf-v2-fleet-card p {
+  color: var(--hf-muted);
+  font-size: 12px;
+}
+.hf-v2-fleet-owned {
+  background: #edf5ef;
+  border-radius: 999px;
+  color: var(--hf-ink);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+.hf-v2-fleet-stats {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.hf-v2-fleet-stats div { min-width: 0; }
+.hf-v2-fleet-stats dt {
+  color: var(--hf-muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.hf-v2-fleet-stats dd {
+  font-size: 12px;
+  font-weight: 900;
+  margin: 2px 0 0;
+}
+.hf-v2-fleet-buy {
+  background: var(--hf-accent);
+  border: 0;
+  border-radius: 12px;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+  padding: 10px 14px;
+}
+.hf-v2-fleet-buy:hover,
+.hf-v2-fleet-buy:focus-visible {
+  box-shadow: 0 0 0 3px rgba(230,138,46,.22);
+  outline: none;
+}
+
+@media (max-width: 680px) {
+  .hf-v2-fleet-card { grid-template-columns: auto 1fr; }
+  .hf-v2-fleet-buy { grid-column: 1 / -1; }
+  .hf-v2-fleet-stats { grid-template-columns: 1fr; }
+}
