@@ -21,11 +21,11 @@ for (const text of ['Warenversorgung', 'Bezugsquellen und Lieferrhythmus', 'Ausg
 }
 const citySection = supply.match(/function\s+renderSupplyCitySections\s*\([^)]*\)\s*\{([\s\S]*?)\n\s*function\s+renderSupplyPopupSection/);
 assert(citySection, 'renderSupplyCitySections implementation is missing');
-assert(/supplySectionMarkup\(cityId\)/.test(citySection?.[1] || ''), 'normal city view must register Warenversorgung');
+assert(!/supplySectionMarkup\(cityId\)/.test(citySection?.[1] || ''), 'normal city view must not duplicate Warenversorgung');
 assert(/outgoingSectionMarkup\(cityId\)/.test(citySection?.[1] || ''), 'normal city view must register Ausgehende Logistik');
 const popupSection = supply.match(/function\s+renderSupplyPopupSection\s*\([^)]*\)\s*\{([^}]+)\}/);
 assert(popupSection, 'renderSupplyPopupSection implementation is missing');
 assert(/supplySectionMarkup\(cityId\)/.test(popupSection?.[1] || ''), 'popup section must render Warenversorgung');
 assert(!/outgoingSectionMarkup\(cityId\)/.test(popupSection?.[1] || ''), 'popup section must not duplicate Ausgehende Logistik');
 if (process.exitCode) process.exit(process.exitCode);
-console.log('City composer smoke passed: supply and outgoing logistics sections are registered together.');
+console.log('City composer smoke passed: supply popup and outgoing city section stay separated.');
