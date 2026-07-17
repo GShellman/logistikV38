@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Helvetic Freight V2.0 Karte</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="hf-v2-shell" aria-label="Helvetic Freight V2 Karte">
+    <section class="hf-v2-map-card" aria-labelledby="hfV2Title">
+      <header class="hf-v2-header">
+        <div>
+          <p class="hf-v2-kicker">Helvetic Freight V2.0</p>
+          <h1 id="hfV2Title">Schweiz-Karte</h1>
+          <p class="hf-v2-subtitle">Alle Orte aus dem bestehenden Katalog, ohne Spielstand, ohne Browser-Speicherung.</p>
+        </div>
+        <span class="hf-v2-badge" id="hfV2CityCount">0 Orte</span>
+      </header>
+
+      <div class="hf-v2-map-wrap">
+        <svg id="hfV2Map" class="hf-v2-map" viewBox="0 0 1000 620" role="img" aria-labelledby="hfV2MapTitle hfV2MapDesc">
+          <title id="hfV2MapTitle">Vereinfachte Schweiz-Karte mit Orten</title>
+          <desc id="hfV2MapDesc">Eine bewusst einfache, statische Karte der Schweiz. Jeder Ort wird als klickbarer Marker dargestellt.</desc>
+          <rect class="hf-v2-map-bg" x="0" y="0" width="1000" height="620" rx="28"></rect>
+          <path class="hf-v2-swiss-shape" d="M82 329 L132 258 L205 245 L239 174 L329 184 L387 122 L475 144 L544 108 L620 159 L703 139 L752 213 L850 227 L912 302 L879 385 L812 414 L760 508 L668 482 L608 537 L520 505 L444 543 L375 480 L286 497 L237 428 L145 412 Z"></path>
+          <g class="hf-v2-grid" aria-hidden="true">
+            <line x1="140" y1="130" x2="860" y2="490"></line>
+            <line x1="165" y1="470" x2="835" y2="155"></line>
+            <line x1="500" y1="95" x2="500" y2="545"></line>
+            <line x1="95" y1="310" x2="910" y2="310"></line>
+          </g>
+          <g id="hfV2Markers" class="hf-v2-markers"></g>
+        </svg>
+      </div>
+    </section>
+
+    <aside class="hf-v2-panel" aria-live="polite">
+      <section class="hf-v2-panel-card">
+        <p class="hf-v2-kicker">V2.1 Detailpanel</p>
+        <h2 id="hfV2SelectedName">Ort auswählen</h2>
+        <p id="hfV2SelectedIntro" class="hf-v2-muted">Klicke einen Marker auf der Karte an. Es werden nur Basisdaten angezeigt – noch keine Wirtschaft, keine Waren und keine Speicherung.</p>
+        <dl class="hf-v2-facts" id="hfV2Facts"></dl>
+      </section>
+
+      <section class="hf-v2-panel-card hf-v2-storage-note">
+        <h2>Keine Browser-Speicherdaten</h2>
+        <p>Diese V2 liest nur den Ortskatalog und hält die aktuelle Auswahl ausschließlich im Arbeitsspeicher der Seite. Es gibt keine Aufrufe auf <code>localStorage</code>, <code>sessionStorage</code> oder IndexedDB.</p>
+      </section>
+    </aside>
+  </main>
+
+  <script src="../scripts/hf-city-catalog.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
