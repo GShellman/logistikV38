@@ -122,10 +122,16 @@
         title: city.name,
         zIndexOffset: city.id === 'zurich' ? 500 : (city.tier === 1 ? 120 : 0),
       }).addTo(map);
-      marker.on('click', () => selectCity(city, cities));
+      marker.on('click', () => {
+        selectCity(city, cities);
+        window.hideCityNetworkAction?.();
+        window.showCityNetworkAction?.(city);
+      });
       marker.on('keypress', event => {
         if (event.originalEvent?.key === 'Enter' || event.originalEvent?.key === ' ') {
           selectCity(city, cities);
+          window.hideCityNetworkAction?.();
+          window.showCityNetworkAction?.(city);
         }
       });
       bindCityTooltip(marker, city);
@@ -152,6 +158,8 @@
       maxBounds: bounds.pad(.08),
       maxBoundsViscosity: 1,
     }).setView(MAP_CENTER, 8);
+    window.HFV2Map = map;
+    window.HFV2CitiesById = citiesById;
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       minZoom: 7,
