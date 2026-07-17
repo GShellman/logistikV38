@@ -14,6 +14,18 @@
       kmCost: 4.2,
       desc: 'Klein, flexibel und auf jeder Straße einsetzbar.',
     },
+    largeVan: {
+      id: 'largeVan',
+      name: 'Großer Transporter',
+      icon: '🚐',
+      mode: 'road',
+      load: 2.8,
+      speed: 78,
+      cost: 42000,
+      daily: 280,
+      kmCost: 5.1,
+      desc: 'Größerer Transporter mit 2.8 t Nutzlast für flexible Stadt- und Regionaltransporte.',
+    },
     lightTruck: {
       id: 'lightTruck',
       name: 'Leicht-LKW',
