@@ -256,6 +256,10 @@ code {
   left: 69%;
   top: 42%;
 }
+.hf-v2-city-action-button--factory {
+  left: 50%;
+  top: 78%;
+}
 .hf-v2-city-action-button:hover,
 .hf-v2-city-action-button:focus-visible {
   background: #fff6ee;
@@ -676,6 +680,101 @@ code {
   .hf-v2-fleet-buy { grid-column: 1 / -1; }
   .hf-v2-fleet-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hf-v2-fleet-stats div:nth-child(2n) { border-right: 0; }
+}
+
+.hf-v2-factory-menu {
+  display: grid;
+  gap: 12px;
+}
+.hf-v2-factory-menu h3 { margin: 0; }
+.hf-v2-factory-empty {
+  background: #f7f5f2;
+  border: 1px dashed #d8d1ca;
+  border-radius: 14px;
+  color: var(--hf-muted);
+  font-size: 13px;
+  margin: 0;
+  padding: 14px;
+  text-align: center;
+}
+.hf-v2-factory-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-height: min(58vh, 520px);
+  overflow: auto;
+  padding: 2px 4px 2px 0;
+}
+.hf-v2-factory-card {
+  align-items: start;
+  background: #fff;
+  border: 1px solid var(--hf-line);
+  border-radius: 16px;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+}
+.hf-v2-factory-card.is-disabled {
+  background: #f7f5f2;
+  border-color: #e0d8d0;
+}
+.hf-v2-factory-card__head {
+  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+.hf-v2-factory-card__head small {
+  color: var(--hf-muted);
+  display: block;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.hf-v2-factory-card h4,
+.hf-v2-factory-card p { margin: 0; }
+.hf-v2-factory-card h4 { font-size: 15px; }
+.hf-v2-factory-card p {
+  color: var(--hf-muted);
+  font-size: 12px;
+}
+.hf-v2-factory-build {
+  align-items: center;
+  background: var(--hf-accent);
+  border: 1px solid var(--hf-accent);
+  border-radius: 12px;
+  color: #fff;
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  font-weight: 900;
+  gap: 2px;
+  justify-items: center;
+  padding: 10px 14px;
+  width: 100%;
+}
+.hf-v2-factory-build strong {
+  font-size: 11px;
+  font-weight: 800;
+  opacity: .88;
+}
+.hf-v2-factory-build:disabled {
+  background: #eee6df;
+  border-color: #dccfc4;
+  color: #7a5a48;
+  cursor: not-allowed;
+}
+.hf-v2-factory-build:hover:not(:disabled),
+.hf-v2-factory-build:focus-visible:not(:disabled) {
+  box-shadow: 0 0 0 3px rgba(230,138,46,.22);
+  outline: none;
+}
+
+@media (max-width: 680px) {
+  .hf-v2-factory-grid { grid-template-columns: 1fr; }
 }
 
 .hf-v2-save-actions {
