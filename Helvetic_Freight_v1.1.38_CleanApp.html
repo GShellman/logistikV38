@@ -101,7 +101,7 @@ window.__HF_CLEAN_APP__=true;
 </script>
 <script src="scripts/hf-boot-state.js"></script>
 <script crossorigin="" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="scripts/hf-supply-contracts.js"></script>
+<script src="scripts/hf-supply-contracts.js?v=city-popup-20260717"></script>
 <script>
 (() => {
 'use strict';
@@ -325,7 +325,7 @@ function initMap(){
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap-Mitwirkende'}).addTo(map);
   CITIES.forEach(c=>{
     const icon=L.divIcon({className:'',html:`<div id="mk-${c.id}" class="city-marker"></div>`,iconSize:[30,30],iconAnchor:[15,15]});
-    const m=L.marker([c.lat,c.lng],{icon,zIndexOffset:c.id==='zurich'?500:0}).addTo(map).on('click',()=>{state.selected=c.id;window.HF?.hfV1138OpenCitySupply?window.HF.hfV1138OpenCitySupply(c.id):selectCity(c.id,false)});
+    const m=L.marker([c.lat,c.lng],{icon,zIndexOffset:c.id==='zurich'?500:0}).addTo(map).on('click',()=>openCityMarkerMenu(c.id));
     m.bindTooltip(c.name,{permanent:state.cities[c.id].unlocked,direction:'top',offset:[0,-13],className:'city-label'});markers[c.id]=m;
   });
   renderMap();
@@ -359,6 +359,7 @@ function renderMap(){
 const tabScroll={city:0,network:0,logistics:0,company:0};
 function rememberMenuScroll(){const root=document.getElementById('content');if(root&&root.dataset.tab)tabScroll[root.dataset.tab]=root.scrollTop||0}
 function selectCity(id,pan=false){rememberMenuScroll();state.selected=id;state.tab='city';if(map)map.stop();renderAll()}
+function openCityMarkerMenu(id){rememberMenuScroll();state.selected=id;const open=()=>{if(typeof window.HF?.hfV1138OpenCitySupply==='function'){window.HF.hfV1138OpenCitySupply(id);return true}return false};if(open())return;setTimeout(()=>{if(!open())selectCity(id,false)},0)}
 function activeTab(tab){rememberMenuScroll();state.tab=tab;renderAll()}
 function renderAll(){const root=document.getElementById('content');if(root&&root.dataset.tab===state.tab)tabScroll[state.tab]=root.scrollTop||0;renderMap();renderHeader();renderTabs();renderContent()}
 function renderHeader(){document.getElementById('cash').textContent=money(state.cash);document.getElementById('day').textContent=formatClock(state.day,state.hour,state.minute);const n=Object.values(state.cities).filter(x=>x.unlocked).length;document.getElementById('networkStat').textContent=`${n} Orte · ${fleetTotal()} Fz.`}
@@ -718,7 +719,7 @@ function initMap(){
   const bounds=L.latLngBounds(HF_SWISS_BOUNDS);
   map=L.map('map',{zoomControl:true,minZoom:7,maxZoom:13,preferCanvas:true,zoomAnimation:false,fadeAnimation:false,markerZoomAnimation:false,maxBounds:bounds.pad(.08),maxBoundsViscosity:1}).setView([46.82,8.25],8);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{minZoom:7,maxZoom:13,maxNativeZoom:18,noWrap:true,bounds,keepBuffer:0,updateWhenIdle:true,updateWhenZooming:false,detectRetina:false,attribution:'© OpenStreetMap-Mitwirkende'}).addTo(map);
-  CITIES.forEach(c=>{const m=L.marker([c.lat,c.lng],{icon:hfCityIcon(c),zIndexOffset:c.id==='zurich'?500:(c.id==='sissach'?350:(c.tier===1?120:0))}).on('click',()=>{state.selected=c.id;window.HF?.hfV1138OpenCitySupply?window.HF.hfV1138OpenCitySupply(c.id):selectCity(c.id,false)});markers[c.id]=m});
+  CITIES.forEach(c=>{const m=L.marker([c.lat,c.lng],{icon:hfCityIcon(c),zIndexOffset:c.id==='zurich'?500:(c.id==='sissach'?350:(c.tier===1?120:0))}).on('click',()=>openCityMarkerMenu(c.id));markers[c.id]=m});
   let viewportTimer=0;
   const viewportChanged=()=>{clearTimeout(viewportTimer);viewportTimer=setTimeout(()=>{renderMap();},80)};
   map.on('moveend zoomend',viewportChanged);
