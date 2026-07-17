@@ -415,7 +415,9 @@ window.HF_CITY_SECTIONS=window.HF_CITY_SECTIONS||[];
 window.HF_CITY_POPUP_SECTIONS=window.HF_CITY_POPUP_SECTIONS||[];
 window.HF_COMPANY_SECTIONS=window.HF_COMPANY_SECTIONS||[];
 function registerCitySection(fn){if(typeof fn==='function')window.HF_CITY_SECTIONS.push(fn);return fn}
-function registerCityPopupSection(fn){if(typeof fn==='function')window.HF_CITY_POPUP_SECTIONS.push(fn);return fn}
+function registerCityPopupSection(fn){if(typeof fn==='function'&&!window.HF_CITY_POPUP_SECTIONS.includes(fn))window.HF_CITY_POPUP_SECTIONS.push(fn);return fn}
+function hfCoreSupplyPopupSection(cityId,s){const fn=window.HF?.hfV1138SupplyPopupSection;if(typeof fn==='function')return '';if(s&&s.isDepot)return '';return '<section class="card hf-v1138-supply-section"><div class="compact-head"><div><h3>Warenbestellung</h3><div class="sub">Stadtmenü-Modul wird vorbereitet.</div></div><span class="pill orange">Lädt</span></div><div class="compact-note">Bitte öffne das Stadtmenü nach dem Laden des Spielstands erneut, falls die Warenliste nicht automatisch erscheint.</div></section>'}
+registerCityPopupSection(hfCoreSupplyPopupSection);
 function registerCompanySection(fn){if(typeof fn==='function')window.HF_COMPANY_SECTIONS.push(fn);return fn}
 window.HF={...window.HF,registerCitySection,registerCityPopupSection,registerCompanySection};
 function renderCity(root){

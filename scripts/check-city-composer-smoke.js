@@ -14,6 +14,7 @@ assert(/function\s+renderCityBase\s*\(\s*root\s*,\s*cityId/.test(html), 'renderC
 assert(/function\s+renderCity\s*\(\s*root\s*\)\s*\{[\s\S]*renderCityBase\(root,cityId\)[\s\S]*HF_CITY_SECTIONS/.test(html), 'renderCity must call the base renderer and registered city sections');
 assert(/HF_CITY_SECTIONS\s*=\s*window\.HF_CITY_SECTIONS\s*\|\|\s*\[\]/.test(html), 'HF_CITY_SECTIONS registry is missing');
 assert(/registerCitySection/.test(html), 'registerCitySection API is missing from the app shell');
+assert(/hfCoreSupplyPopupSection/.test(html), 'core supply popup fallback module is missing');
 assert(/registerCitySection/.test(supply), 'supply contracts must register a city section');
 assert(!/renderCity\s*=\s*function/.test(html + supply), 'legacy renderCity=function reassignment remains');
 for (const text of ['Warenbestellung', 'Produzierte Waren und Lieferaufträge', 'Ausgehende Logistik']) {
