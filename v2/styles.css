@@ -75,6 +75,76 @@ h2 { font-size: 24px; }
 .hf-v2-subtitle { margin: 10px 0 0; max-width: 680px; }
 .hf-v2-muted { margin: 12px 0 0; }
 
+
+.hf-v2-demand-card {
+  border-top: 1px solid rgba(202, 213, 226, .78);
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.hf-v2-demand-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.hf-v2-demand-head h3 { font-size: 18px; margin: 0; }
+.hf-v2-demand-head strong {
+  background: linear-gradient(135deg, #e9f6ef, #ddebf7);
+  border: 1px solid rgba(31, 95, 143, .16);
+  border-radius: 999px;
+  color: var(--hf-primary);
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 8px 10px;
+}
+
+.hf-v2-demand-list { display: grid; gap: 8px; }
+.hf-v2-demand-row {
+  align-items: center;
+  background: linear-gradient(135deg, rgba(255,255,255,.96), rgba(244,248,252,.9));
+  border: 1px solid rgba(202, 213, 226, .82);
+  border-radius: 14px;
+  display: grid;
+  gap: 9px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  padding: 8px;
+}
+
+.hf-v2-demand-icon {
+  align-items: center;
+  background: #eef4f8;
+  border-radius: 11px;
+  display: grid;
+  font-size: 18px;
+  height: 34px;
+  justify-items: center;
+  overflow: hidden;
+  width: 34px;
+}
+.hf-v2-demand-icon img { height: 30px; object-fit: contain; width: 30px; }
+.hf-v2-demand-main { min-width: 0; }
+.hf-v2-demand-main div { align-items: baseline; display: flex; gap: 8px; justify-content: space-between; }
+.hf-v2-demand-main b { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hf-v2-demand-main strong { color: var(--hf-primary-2); flex: 0 0 auto; font-size: 11px; }
+.hf-v2-demand-main span {
+  background: #e4ebf2;
+  border-radius: 999px;
+  display: block;
+  height: 5px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+.hf-v2-demand-main i {
+  background: linear-gradient(90deg, var(--hf-accent), var(--hf-primary-2));
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+}
+
 .hf-v2-badge {
   background: #e6f5eb;
   border: 1px solid #bfe2cd;
