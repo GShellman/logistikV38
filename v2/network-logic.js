@@ -60,6 +60,15 @@
     return {cost: Math.round(t.baseCost + distance * t.buildKm), maintenance: Math.round(distance * t.maintenanceKm)};
   }
 
+  function availableCash(targetState = state) {
+    const cash = Number(targetState?.cash);
+    return Number.isFinite(cash) ? cash : 0;
+  }
+
+  function canAffordProject(project, targetState = state) {
+    return availableCash(targetState) >= Number(project?.cost || 0);
+  }
+
   function sameEndpoints(edge, a, b) {
     return (edge.a === a && edge.b === b) || (edge.a === b && edge.b === a);
   }
@@ -307,20 +316,28 @@
     const fallback = mode === 'road' ? {distance: estimateRoadDistance(dist(from, to)), duration: estimateRoadDistance(dist(from, to)) / t.speed, geometry: null} : {distance: dist(from, to), duration: dist(from, to) / t.speed, geometry: null};
     const route = mode === 'road' ? (await fetchRoadRoute(from, to).catch(() => null)) || fallback : fallback;
     const quote = buildQuote(type, route.distance);
-    state.pendingProject = {kind: 'build', a: fromId, b: toId, type, distance: route.distance, duration: route.duration, geometry: route.geometry, cost: quote.cost, maintenance: quote.maintenance};
+    const project = {kind: 'build', a: fromId, b: toId, type, distance: route.distance, duration: route.duration, geometry: route.geometry, cost: quote.cost, maintenance: quote.maintenance};
+    project.cash = availableCash();
+    project.affordable = canAffordProject(project);
+    state.pendingProject = project;
     return state.pendingProject;
   }
 
   function confirmProject() {
     const project = state?.pendingProject;
     if (!project || project.kind !== 'build') return null;
+    if (!canAffordProject(project)) {
+      state.pendingProject = {...project, cash: availableCash(), affordable: false};
+      return null;
+    }
     const edges = splitRoadsForAutomaticJunctions(project);
     state.connections.push(...edges);
+    state.cash = availableCash() - project.cost;
     if (state.cities?.[project.a]) state.cities[project.a].unlocked = true;
     if (state.cities?.[project.b]) state.cities[project.b].unlocked = true;
     state.selected = project.b;
     state.pendingProject = null;
-    window.dispatchEvent?.(new CustomEvent('hf:network:confirmed', {detail: {edge: edges[0], edges, state}}));
+    window.dispatchEvent?.(new CustomEvent('hf:network:confirmed', {detail: {edge: edges[0], edges, cash: state.cash, state}}));
     return edges[0];
   }
 
