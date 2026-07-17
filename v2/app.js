@@ -222,6 +222,7 @@
     window.HFV2Save?.configureState?.(savePackage);
     networkState = window.HFNetwork?.configure({state: savePackage.state.network, cities: Object.values(citiesById), citiesById});
     window.HFFleet?.configure?.({state: savePackage.state.fleet});
+    window.HFV2Factories?.configure?.({state: savePackage.state.factories});
     renderCurrentNetworkLines();
     return savePackage;
   }
@@ -258,10 +259,11 @@
   function boot() {
     const cities = loadCities();
     citiesById = Object.fromEntries(cities.map(city => [city.id, city]));
-    savePackage = window.HFV2Save?.createDefaultState?.() || {state: {network: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}), fleet: window.HFFleet?.createFleetState?.()}};
+    savePackage = window.HFV2Save?.createDefaultState?.() || {state: {network: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}), fleet: window.HFFleet?.createFleetState?.(), factories: window.HFV2Factories?.createFactoryState?.()}};
     window.HFV2Save?.configureState?.(savePackage);
     networkState = window.HFNetwork?.configure({state: savePackage.state.network, cities, citiesById});
     window.HFFleet?.configure?.({state: savePackage.state.fleet});
+    window.HFV2Factories?.configure?.({state: savePackage.state.factories});
     document.getElementById('hfV2CityCount').textContent = `${cities.length.toLocaleString('de-CH')} Orte`;
     bindSaveControls();
     window.addEventListener('hf:network:confirmed', renderCurrentNetworkLines);
