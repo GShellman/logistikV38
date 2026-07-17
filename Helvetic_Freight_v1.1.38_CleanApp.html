@@ -13,6 +13,7 @@
 
 <script src="scripts/hf-app-shell.js"></script>
 <script src="scripts/hf-city-catalog.js"></script>
+<script src="scripts/hf-city-rules.js"></script>
 <script src="scripts/hf-initial-state.js"></script>
 <script src="scripts/hf-goods-database.js"></script>
 <script src="scripts/hf-demand-database.js"></script>
@@ -234,16 +235,9 @@ function vehicleCanUseEdge(vehicleId,e){const v=VEHICLES[vehicleId],t=transportS
 function fleetTotal(){return Object.values(state.fleet||{}).reduce((a,b)=>a+b,0)}
 function reservedVehicles(vehicleId,excludeId=null){return (state.routes||[]).filter(r=>r.active&&r.vehicleType===vehicleId&&r.id!==excludeId).reduce((n,r)=>n+r.vehicleCount,0)}
 function manualVehicleAvailable(vehicleId){const owned=state.fleet?.[vehicleId]||0,used=state.usedVehicles?.[vehicleId]||0,reserved=reservedVehicles(vehicleId);return Math.max(0,owned-Math.max(used,reserved))}
-const RAW_ALLOWED = {
-  farm:new Set(['zurich','winterthur','baden','aarau','olten','basel','liestal','sissach','solothurn','bern','thun','fribourg','biel','yverdon','lausanne','geneva','nyon','luzern','zug','rapperswil','uster','schaffhausen','frauenfeld','kreuzlingen','stgallen','wil','delémont','sursee','emmen','horgen','wetzikon','pfaffikon','lachen','sarnen','romanshorn','weinfelden','bulle','payerne','morges','gland','renens','chiasso']),
-  forestry:new Set(['winterthur','baden','aarau','liestal','sissach','solothurn','bern','thun','interlaken','spiez','fribourg','biel','neuchatel','yverdon','montreux','sion','martigny','brig','luzern','schwyz','stans','altdorf','glarus','rapperswil','schaffhausen','stgallen','wil','herisau','appenzell','chur','landquart','davos','stmoritz','bellinzona','locarno','delémont','sarnen','einsiedeln','sargans','badragaz','altstatten','moutier','porrentruy','biasca','airolo','fluelen','arthgoldau','monthey','aigle','sursee']),
-  mine:new Set(['thun','interlaken','spiez','sion','martigny','brig','visp','schwyz','stans','altdorf','andermatt','glarus','chur','landquart','davos','stmoritz','bellinzona','locarno','lugano','sargans','biasca','airolo','sierre','moutier','chiasso']),
-  chemical:new Set(['basel','liestal','visp','zurich','geneva','lausanne','bern','stgallen','renens','monthey','sargans','chiasso'])
-};
+const RAW_ALLOWED = window.HF_CITY_RULES.rawAllowed;
 function facilityAllowed(cityId,fid){return !FACILITIES[fid].raw || RAW_ALLOWED[fid]?.has(cityId)}
-const CITIES = (window.HF_CITY_CATALOG||[]).map(entry=>Array.isArray(entry)
-  ? {id:entry[0],name:entry[1],lat:entry[2],lng:entry[3],tier:entry[4],slots:entry[5],population:entry[6],wealthFactor:entry[7],demandProfile:entry[8]}
-  : {id:entry.id,name:entry.name,lat:entry.coordinates?.lat??entry.lat,lng:entry.coordinates?.lng??entry.lng,tier:entry.tier,slots:entry.slots,population:entry.population,wealthFactor:entry.wealthFactor,demandProfile:entry.demandProfile});
+const CITIES = window.HF_CITY_RULES.normalizeCatalog(window.HF_CITY_CATALOG);
 const CITY = Object.fromEntries(CITIES.map(c=>[c.id,c]));
 const DEMAND_GOODS=hfBootstrapDemandGoodsFromPack(HF_BOOTSTRAP_CONTENT_PACK);
 const money=n=>'CHF '+Math.round(n).toLocaleString('de-CH');
@@ -486,7 +480,7 @@ function togglePlay(){if(playTimer){stopPlay();toast('Zeitverlauf pausiert.')}el
 function reset(){if(!confirm('Wirklich neu starten? Der aktuelle Spielstand wird gelöscht.'))return;stopPlay();hfSafeRemove(HF_SAVE_KEY);state=freshState();renderAll();map.setView([46.82,8.25],8);toast('Neues Unternehmen in Zürich gegründet.','good')}
 
 // --- v9 patch: fish cargo, reefer truck, editable route amounts, end-day button ---
-const LAKE_TOWNS = new Set(['zurich','thun','interlaken','spiez','biel','neuchatel','yverdon','lausanne','montreux','vevey','geneva','nyon','gland','morges','luzern','zug','stans','fluelen','rapperswil','uster','horgen','pfaffikon','lachen','kreuzlingen','romanshorn','locarno','lugano','chiasso']);
+const LAKE_TOWNS = window.HF_CITY_RULES.lakeTownsSet();
 GOODS.fish={name:'Fisch',icon:'🐟',price:3900,perishable:true};
 FACILITIES.fishery={name:'Fischerei',icon:'🐟',cost:76000,output:{fish:4},inputs:{},raw:true,desc:'Erzeugt 4 Fisch pro Tag. Nur in Orten direkt an einem See.'};
 RAW_ALLOWED.fishery=LAKE_TOWNS;
@@ -827,11 +821,11 @@ GOOD_MEASURES.ravioli_veg = {unit:'Stk.',kgPerUnit:0.455,step:10};
 
 if(!DEMAND_GOODS.includes('ravioli_meat')) DEMAND_GOODS.push('ravioli_meat');
 if(!DEMAND_GOODS.includes('ravioli_veg')) DEMAND_GOODS.push('ravioli_veg');
-RAW_ALLOWED.tomatofarm = new Set(CITIES.map(c=>c.id));
-RAW_ALLOWED.aluminumworks = new Set(CITIES.filter(c=>c.tier>=2).map(c=>c.id));
-RAW_ALLOWED.cannery = new Set(CITIES.map(c=>c.id));
-RAW_ALLOWED.ravioli_meat_factory = new Set(CITIES.filter(c=>c.tier>=2).map(c=>c.id));
-RAW_ALLOWED.ravioli_veg_factory = new Set(CITIES.filter(c=>c.tier>=1).map(c=>c.id));
+RAW_ALLOWED.tomatofarm = window.HF_CITY_RULES.allCitiesSet(CITIES);
+RAW_ALLOWED.aluminumworks = window.HF_CITY_RULES.minimumTierSet(CITIES,2);
+RAW_ALLOWED.cannery = window.HF_CITY_RULES.allCitiesSet(CITIES);
+RAW_ALLOWED.ravioli_meat_factory = window.HF_CITY_RULES.minimumTierSet(CITIES,2);
+RAW_ALLOWED.ravioli_veg_factory = window.HF_CITY_RULES.minimumTierSet(CITIES,1);
 
 vehicleCanCarryGood = function(vehicleId,goodId){
   if(!vehicleId||!goodId||!GOODS[goodId]) return true;
@@ -1611,9 +1605,9 @@ GOOD_MEASURES.potatoes={unit:'kg',kgPerUnit:1,step:1};
 FACILITIES.zucchinifarm={name:'Zucchini-Gewächshaus',icon:'🥒',cost:58000,output:{zucchini:3000},inputs:{},raw:true,_physicalRates:true,desc:'Produziert 3 t Zucchini pro Tag. Günstige Frischware mit hoher Nachfrage.'};
 FACILITIES.appleorchard={name:'Apfelplantage',icon:'🍎',cost:68000,output:{apples:3200},inputs:{},raw:true,_physicalRates:true,desc:'Erntet 3.2 t Äpfel pro Tag. Niedriger Stückpreis, aber stabile Nachfrage.'};
 FACILITIES.potatofarm={name:'Kartoffelhof',icon:'🥔',cost:50000,output:{potatoes:5000},inputs:{},raw:true,_physicalRates:true,desc:'Erzeugt 5 t Kartoffeln pro Tag. Sehr preisgünstige Massenware, ideal für Kipplaster.'};
-RAW_ALLOWED.zucchinifarm=new Set(CITIES.map(c=>c.id));
-RAW_ALLOWED.appleorchard=new Set(CITIES.map(c=>c.id));
-RAW_ALLOWED.potatofarm=new Set(CITIES.map(c=>c.id));
+RAW_ALLOWED.zucchinifarm=window.HF_CITY_RULES.allCitiesSet(CITIES);
+RAW_ALLOWED.appleorchard=window.HF_CITY_RULES.allCitiesSet(CITIES);
+RAW_ALLOWED.potatofarm=window.HF_CITY_RULES.allCitiesSet(CITIES);
 for(const g of ['zucchini','apples','potatoes'])if(!DEMAND_GOODS.includes(g))DEMAND_GOODS.push(g);
 
 function ensureFreshCropState(){
@@ -3277,7 +3271,7 @@ function hfInstallAutosaveHooks(){
   LEGACY_CARGO_KG.cherries=1000;
   GOOD_MEASURES.cherries={unit:'kg',kgPerUnit:1,step:1};
   FACILITIES.cherryorchard={name:'Kirschplantage',icon:'🍒',cost:74000,output:{cherries:2600},inputs:{},raw:true,_physicalRates:true,desc:'Erntet bis zu 2,6 t Kirschen pro Tag. Verderbliche Frischware mit geringerer Nachfrage als Äpfel und Birnen.'};
-  RAW_ALLOWED.cherryorchard=new Set(CITIES.map(c=>c.id));
+  RAW_ALLOWED.cherryorchard=window.HF_CITY_RULES.allCitiesSet(CITIES);
   if(!DEMAND_GOODS.includes('cherries'))DEMAND_GOODS.push('cherries');
   if(typeof HF_FACILITY_GROUPS!=='undefined'){
     const group=HF_FACILITY_GROUPS.find(x=>x.id==='agriculture');
@@ -3457,7 +3451,7 @@ function hfInstallAutosaveHooks(){
   const BUILD='1.1.26',CHERRY_ID='cherryorchard',SCHEMA=126;
   FACILITIES[CHERRY_ID]={name:'Kirschplantage',icon:'🍒',cost:74000,output:{cherries:2600},inputs:{},raw:true,_physicalRates:true,desc:'Erntet bis zu 2,6 t Kirschen pro Tag. Kirschen sind verderbliche Frischware.'};
   GOODS.cherries={name:'Kirschen',icon:'🍒',raw:true,price:1.85,perishable:true,_physicalPrice:true};
-  LEGACY_CARGO_KG.cherries=1000;GOOD_MEASURES.cherries={unit:'kg',kgPerUnit:1,step:1};RAW_ALLOWED[CHERRY_ID]=new Set(CITIES.map(c=>c.id));
+  LEGACY_CARGO_KG.cherries=1000;GOOD_MEASURES.cherries={unit:'kg',kgPerUnit:1,step:1};RAW_ALLOWED[CHERRY_ID]=window.HF_CITY_RULES.allCitiesSet(CITIES);
   if(!DEMAND_GOODS.includes('cherries'))DEMAND_GOODS.push('cherries');
   function alignCherryDemand(force=false){
     for(const city of CITIES){
@@ -3991,7 +3985,7 @@ function hfInstallAutosaveHooks(){
     const facilityAsset=hfAssetFor('facilities',def.assetKey);
     if(facilityAsset)ASSETS.facilities[def.assetKey]=facilityAsset;
     const allowed=Array.isArray(def.allowedCities)?def.allowedCities:[];
-    if(allowed.length)RAW_ALLOWED[def.id]=new Set(allowed);else if(def.allowedEverywhere)RAW_ALLOWED[def.id]=new Set(CITIES.map(c=>c.id));
+    if(allowed.length)RAW_ALLOWED[def.id]=new Set(allowed);else if(def.allowedEverywhere)RAW_ALLOWED[def.id]=window.HF_CITY_RULES.allCitiesSet(CITIES);
     if(typeof HF_FACILITY_GROUPS!=='undefined'){
       for(const group of HF_FACILITY_GROUPS)group.items=(group.items||[]).filter(x=>x!==def.id);
       const group=HF_FACILITY_GROUPS.find(x=>x.id===def.groupId);
