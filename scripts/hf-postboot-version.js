@@ -3,9 +3,10 @@
     try{
       if(window.HF?.rebalanceCherryDemand)window.HF.rebalanceCherryDemand();
       if(window.HF?.hfV130)try{window.HF.save(false)}catch(_){}
-      window.__HF_BUILD__='1.1.38';
-      document.documentElement.dataset.hfVersion='1.1.38';
-      if(document.body)document.body.dataset.hfBuild='1.1.38';
+      const build=window.hfCurrentBuildVersion?.()||window.HF_BUILD_VERSION||'1.1.38';
+      window.__HF_BUILD__=build;
+      document.documentElement.dataset.hfVersion=build;
+      if(document.body)document.body.dataset.hfBuild=build;
     }catch(err){console.error('HF 1.1.29 postboot demand repair',err)}
   }
   function uiAction(name){return function(){try{const fn=window.HF&&window.HF[name];if(typeof fn==='function')fn();else console.warn('Spielstand-Aktion nicht verfügbar',name)}catch(err){console.warn('Spielstand-Aktion fehlgeschlagen',name,err)}}}

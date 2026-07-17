@@ -1,6 +1,6 @@
 (function(){
 'use strict';
-window.__HF_BUILD__='1.1.22';
+window.__HF_BUILD__=window.hfCurrentBuildVersion?.()||window.HF_BUILD_VERSION||'1.1.38';
 window.__HF_FORCE_CLEAN_START__=false;
 window.__HF_DID_STABILITY_WIPE__=false;
 window.__HF_BOOT_COMPLETE__=false;

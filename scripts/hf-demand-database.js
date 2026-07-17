@@ -54,7 +54,7 @@
 
   const database = Object.freeze({
     schemaVersion: SCHEMA_VERSION,
-    buildVersion: '1.1.38',
+    buildVersion: global.hfCurrentBuildVersion?.() || global.HF_BUILD_VERSION || '1.1.38',
     demandProfiles,
     demandProfileFactors,
     cityDemandProfiles

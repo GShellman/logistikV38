@@ -2,7 +2,7 @@
 // Cities intentionally start without stock or buildings; runtime defaults add all goods with 0 stock.
 window.HF_INITIAL_STATE_PACKAGE = {
   "schemaVersion": 1,
-  "buildVersion": "1.1.22",
+  "buildVersion": window.hfCurrentBuildVersion?.() || window.HF_BUILD_VERSION || "1.1.38",
   "savedAt": "2026-07-14T18:30:00.000Z",
   "state": {
     "version": 8,

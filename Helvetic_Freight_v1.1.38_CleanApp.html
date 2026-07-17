@@ -11,6 +11,7 @@
 </head>
 <body>
 
+<script src="scripts/hf-version.js"></script>
 <script src="scripts/hf-app-shell.js"></script>
 <script src="scripts/hf-city-catalog.js"></script>
 <script src="scripts/hf-city-rules.js"></script>
@@ -76,10 +77,10 @@
 <script src="assets/vehicles/freight_train.js"></script>
 <script src="assets/vehicles/reefer.js"></script>
 
-<script id="hf-clean-app-preload-v122">
+<script id="hf-clean-app-preload">
 (function(){
 'use strict';
-const MARKER='helveticFreightCleanPackage122Initialized';
+const MARKER=`helveticFreightCleanPackage${(window.hfCurrentBuildVersion?.()||window.HF_BUILD_VERSION||'1.1.38').replace(/\D/g,'')}Initialized`;
 const PAYLOAD=window.HF_INITIAL_STATE_PAYLOAD||JSON.stringify(window.HF_INITIAL_STATE_PACKAGE||{});
 const SAVE_KEYS=['helveticFreightSave_stable','helveticFreightSave_stable_lastGood','helveticFreightSave_stable_backup1','helveticFreightSave_stable_backup2','helveticFreightSaveEmergencyA','helveticFreightSaveEmergencyB'];
 try{
@@ -87,7 +88,7 @@ try{
     for(const key of SAVE_KEYS)localStorage.setItem(key,PAYLOAD);
     localStorage.setItem(MARKER,'done');
   }
-  // Disable all historic destructive first-run migrations before the main game script starts.
+  // Disable all historic destructive first-run migrations before the main game script starts; these marker names intentionally reference the legacy migrations they neutralize.
   localStorage.setItem('helveticFreightStabilityWipe_1_1_0','done');
   localStorage.setItem('helveticFreightForcedStart_1_0_36','done');
 }catch(err){window.__HF_CLEAN_PRELOAD_ERROR__=String(err)}
@@ -153,7 +154,7 @@ function hfReadEnvelope(raw){
   return parsed && parsed.state && typeof parsed.state==='object' ? parsed.state : parsed;
 }
 function hfSaveEnvelope(currentState){
-  return JSON.stringify({schemaVersion:HF_SAVE_SCHEMA,buildVersion:'1.1.0',savedAt:new Date().toISOString(),state:currentState});
+  return JSON.stringify({schemaVersion:HF_SAVE_SCHEMA,buildVersion:window.hfCurrentBuildVersion?.()||window.HF_BUILD_VERSION||'1.1.38',savedAt:new Date().toISOString(),state:currentState});
 }
 
 (function hfPerformOneTimeStabilityWipe(){
@@ -2959,7 +2960,7 @@ function hfStateFingerprint(value){
   try{return JSON.stringify(value)}catch(_){return ''}
 }
 function hfCreateEnvelope(value){
-  return JSON.stringify({schemaVersion:HF_SAVE_SCHEMA,buildVersion:'1.1.10',savedAt:new Date().toISOString(),state:value});
+  return JSON.stringify({schemaVersion:HF_SAVE_SCHEMA,buildVersion:window.hfCurrentBuildVersion?.()||window.HF_BUILD_VERSION||'1.1.38',savedAt:new Date().toISOString(),state:value});
 }
 function hfQueuePersistentWrite(payload){
   hfWriteChain=hfWriteChain.then(async()=>{
@@ -3632,7 +3633,7 @@ function hfInstallAutosaveHooks(){
   save=function(...args){rebalance(false);return previousSave(...args)};
   window.HF={...window.HF,save,hfV129:{version:BUILD,cherryDemandRatio:.40,zucchiniCap:.75,canonical:true},rebalanceCherryDemand(){rebalance(true);renderAll();save(false);return true}};
   try{window.__HF_BUILD__=BUILD;document.documentElement.dataset.hfVersion=BUILD;if(document.body)document.body.dataset.hfBuild=BUILD;}catch(_){ }
-  setTimeout(()=>{try{renderAll()}catch(_){ }try{save(false)}catch(_){ }const badge=document.getElementById('hfStabilityBuild');if(badge)badge.textContent='HF 1.1.38 · Versorgungslogistik';},0);
+  setTimeout(()=>{try{renderAll()}catch(_){ }try{save(false)}catch(_){ }const badge=document.getElementById('hfStabilityBuild');if(badge)badge.textContent=window.hfCurrentBuildLabel?.()||'HF 1.1.38 · Versorgungslogistik';},0);
 })();
 
 
@@ -4338,7 +4339,7 @@ function hfInstallAutosaveHooks(){
   if(!audit.ok)console.error('Lebensmittelfabrik-Verpackungsprüfung fehlgeschlagen',audit.errors);
 
   function markBuild(){
-    try{window.__HF_BUILD__=BUILD;document.documentElement.dataset.hfVersion=BUILD;if(document.body){document.body.dataset.hfBuild=BUILD;document.body.dataset.hfFoodFactoryRecipe=String(SCHEMA)}const badge=document.getElementById('hfStabilityBuild');if(badge)badge.textContent='HF 1.1.38 · Versorgungslogistik';}catch(_){ }
+    try{window.__HF_BUILD__=BUILD;document.documentElement.dataset.hfVersion=BUILD;if(document.body){document.body.dataset.hfBuild=BUILD;document.body.dataset.hfFoodFactoryRecipe=String(SCHEMA)}const badge=document.getElementById('hfStabilityBuild');if(badge)badge.textContent=window.hfCurrentBuildLabel?.()||'HF 1.1.38 · Versorgungslogistik';}catch(_){ }
   }
   markBuild();setTimeout(()=>{normalizeAll();markBuild();try{renderAll()}catch(_){ }try{save(false)}catch(_){ }},900);setTimeout(markBuild,1600);
 })();
@@ -4517,7 +4518,7 @@ function hfInstallAutosaveHooks(){
 
   window.HF={...window.HF,openFacility,buildFacility,contentAudit:window.HF_CONTENT?.validate,exportContentManifest:window.HF_CONTENT?.contentManifest,applyContentPack:window.HF_CONTENT?.applyContentPack,locationSystem:{version:BUILD,schema:SCHEMA,transportNeutral:true,resourceTypes,climates,geographyTypes,locationProfiles,cityProfiles,evaluate,validate:locationValidate,sync:syncAllAllowedSets},facilityLocationCheck:evaluate,cityLocationProfile:id=>clone(cityProfiles[id]),hfV136:{version:BUILD,locationSchema:SCHEMA,transportRequirements:false,addedCity:'sissach',mapVisibilityFix:true}};
   const audit=window.HF_CONTENT?.validate?window.HF_CONTENT.validate():locationValidate();window.__HF_LOCATION_AUDIT__=locationValidate();window.__HF_CONTENT_AUDIT__=audit;if(!audit.ok)console.error('Standortsystem-Prüfung fehlgeschlagen',audit.errors);
-  function mark(){try{window.__HF_BUILD__=BUILD;document.documentElement.dataset.hfVersion=BUILD;if(document.body){document.body.dataset.hfBuild=BUILD;document.body.dataset.hfLocationSchema=String(SCHEMA)}const badge=document.getElementById('hfStabilityBuild');if(badge)badge.textContent='HF 1.1.38 · Versorgungslogistik';}catch(_){ }}
+  function mark(){try{window.__HF_BUILD__=BUILD;document.documentElement.dataset.hfVersion=BUILD;if(document.body){document.body.dataset.hfBuild=BUILD;document.body.dataset.hfLocationSchema=String(SCHEMA)}const badge=document.getElementById('hfStabilityBuild');if(badge)badge.textContent=window.hfCurrentBuildLabel?.()||'HF 1.1.38 · Versorgungslogistik';}catch(_){ }}
   mark();setTimeout(()=>{syncAllAllowedSets();mark();try{renderAll()}catch(_){ }try{save(false)}catch(_){ }},950);setTimeout(mark,1700);
 
 // --- v1.1.37: Sissach demand data moved to scripts/hf-demand-database.js; migration lives in scripts/hf-save-migrations.js ---
@@ -4526,7 +4527,7 @@ function hfInstallAutosaveHooks(){
 // --- v1.1.38: city supply contracts, source-owned delivery fleets and rolling weekly plans ---
 (function hfSupplyContractsV1138(){
   'use strict';
-  const BUILD='1.1.38',SCHEMA=138,EPS=.001,MAX_STOPS=6,STAGGER=15,SERVICE_MIN=7;
+  const BUILD=window.hfCurrentBuildVersion?.()||window.HF_BUILD_VERSION||'1.1.38',SCHEMA=138,EPS=.001,MAX_STOPS=6,STAGGER=15,SERVICE_MIN=7;
   const DAY_NAMES=['Mo','Di','Mi','Do','Fr','Sa','So'];
   const round=v=>typeof roundCargo==='function'?roundCargo(Number(v)||0):Math.round((Number(v)||0)*1000)/1000;
   const clampInt=(v,a,b)=>Math.max(a,Math.min(b,Math.round(Number(v)||0)));
@@ -4656,7 +4657,7 @@ function hfInstallAutosaveHooks(){
   Object.assign(window.HF,{hfV1138TestSetup(spec={}){ensureSupply();if(Number.isFinite(+spec.cash))state.cash=+spec.cash;if(Number.isFinite(+spec.day))state.day=Math.max(1,Math.round(+spec.day));if(Number.isFinite(+spec.hour))state.hour=clampInt(spec.hour,0,23);if(Number.isFinite(+spec.minute))state.minute=clampInt(spec.minute,0,59);for(const id of spec.unlock||[])if(state.cities?.[id])state.cities[id].unlocked=true;for(const [id,fac] of Object.entries(spec.facilities||{}))if(state.cities?.[id])state.cities[id].facilities=[...fac];for(const [id,inv] of Object.entries(spec.inventory||{}))if(state.cities?.[id])state.cities[id].inventory={...(state.cities[id].inventory||{}),...inv};for(const [id,dem] of Object.entries(spec.demands||{}))if(state.cities?.[id])state.cities[id].demands={...(state.cities[id].demands||{}),...dem};if(Array.isArray(spec.connections))state.connections=spec.connections.map(x=>({...x}));for(const [id,fleet] of Object.entries(spec.cityFleets||{})){const cfg=cityLogistics(id);cfg.fleet={...cfg.fleet,...fleet}}if(spec.contracts)state.supplyContracts={...spec.contracts};replanSupply(true);return audit()},hfV1138SelectCity(id){if(state.cities?.[id]){state.selected=id;state.tab='city';renderAll();return true}return false},hfV1138:{version:BUILD,schema:SCHEMA,deliveryModel:'source-delivers',frequencies:['daily','weekly'],weeklyTargetDays:7,maxStops:MAX_STOPS},hfV1138OpenContract:openContractEditor,hfV1138SaveContract:saveContractFromModal,hfV1138DeleteContract:deleteContract,hfV1138OpenSourceLogistics:openSourceLogistics,hfV1138BuyVehicle:buyVehicle,hfV1138SellVehicle:sellVehicle,hfV1138SaveDeparture:saveDeparture,hfV1138Replan(type,id){replanSupply(true);save(false);openSourceLogistics(type,id)},hfV1138ReplanAll:()=>replanSupply(true),hfV1138Audit:audit,hfV1138Candidates:sourceCandidates,hfV1138Contract:(city,good)=>getContract(city,good),hfV1138Plan:()=>state.hfSupplyWeekPlan,hfV1138DispatchRow:id=>{const row=(state.hfSupplyWeekPlan.rows||[]).find(r=>r.id===id);return row?dispatchSupplyRow(row):{sent:0,blocked:1}},hfV1138RunNow:runSupplyAtCurrentTime,hfV1138AdvanceMinutes:n=>advanceMinutes(n,{quiet:true,live:false}),hfV1138Commitments:()=>hfV117BuildCommitments(),hfV1138SourceState:(type,id)=>JSON.parse(JSON.stringify(sourceCfg(type,id)||{}))});
   window.__HF_SUPPLY_AUDIT__=audit();
   // HF v1.1.38 styles live in Helvetic_Freight_v1.1.38_CleanApp.css to keep the HTML update layer smaller.
-  function mark(){try{window.__HF_BUILD__=BUILD;document.documentElement.dataset.hfVersion=BUILD;if(document.body){document.body.dataset.hfBuild=BUILD;document.body.dataset.hfSupplySchema=String(SCHEMA)}const badge=document.getElementById('hfStabilityBuild');if(badge)badge.textContent='HF 1.1.38 · Versorgungslogistik';}catch(_){}}
+  function mark(){try{window.__HF_BUILD__=BUILD;document.documentElement.dataset.hfVersion=BUILD;if(document.body){document.body.dataset.hfBuild=BUILD;document.body.dataset.hfSupplySchema=String(SCHEMA)}const badge=document.getElementById('hfStabilityBuild');if(badge)badge.textContent=window.hfCurrentBuildLabel?.()||'HF 1.1.38 · Versorgungslogistik';}catch(_){}}
   mark();setTimeout(()=>{ensureSupply();replanSupply(true);window.__HF_SUPPLY_AUDIT__=audit();mark();try{renderAll()}catch(_){ }try{save(false)}catch(_){ }},900);setTimeout(mark,1800);
 })();
 
@@ -4713,5 +4714,5 @@ function hfInstallAutosaveHooks(){
 
 
 
-<div id="hfStabilityBuild" style="position:fixed;left:8px;bottom:8px;z-index:5;padding:3px 7px;border-radius:8px;background:rgba(10,38,31,.72);color:#d8eee3;font:10px system-ui;pointer-events:none">HF 1.1.38 · Versorgungslogistik</div></body>
+<div id="hfStabilityBuild" style="position:fixed;left:8px;bottom:8px;z-index:5;padding:3px 7px;border-radius:8px;background:rgba(10,38,31,.72);color:#d8eee3;font:10px system-ui;pointer-events:none">HF 1.1.38 · Versorgungslogistik</div><script>try{const b=document.getElementById('hfStabilityBuild');if(b)b.textContent=window.hfCurrentBuildLabel?.()||b.textContent}catch(_){}</script></body>
 </html>
