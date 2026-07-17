@@ -3,6 +3,7 @@
 
   const VEHICLE_TYPES = window.HFVehicleCatalog?.VEHICLE_TYPES || [];
   const VEHICLES = window.HFVehicleCatalog?.VEHICLE_CATALOG || {};
+  const STARTING_CASH = 500000;
 
   let state = null;
 
@@ -12,6 +13,7 @@
 
   function createFleetState(overrides = {}) {
     return {
+      cash: STARTING_CASH,
       cityFleets: {},
       ...overrides,
     };
@@ -20,6 +22,7 @@
   function configure(options = {}) {
     state = options.state || state || createFleetState();
     state.cityFleets = state.cityFleets || {};
+    state.cash = Number.isFinite(state.cash) ? state.cash : STARTING_CASH;
     return state;
   }
 
@@ -47,6 +50,10 @@
     return VEHICLES[vehicleType] || null;
   }
 
+  function getState() {
+    return configure();
+  }
+
   function buyVehicle(cityId, vehicleType) {
     const vehicle = vehicleSpec(vehicleType);
     if (!vehicle) return {ok: false, reason: 'unknown-vehicle'};
@@ -68,5 +75,5 @@
     return {ok: true, cityId: String(cityId).trim(), vehicleType, owned: fleet[vehicleType], refund, state};
   }
 
-  window.HFFleet = {VEHICLES, VEHICLE_TYPES, createFleetState, configure, getCityFleet, buyVehicle, sellVehicle};
+  window.HFFleet = {VEHICLES, VEHICLE_TYPES, STARTING_CASH, createFleetState, configure, getState, getCityFleet, buyVehicle, sellVehicle};
 })();

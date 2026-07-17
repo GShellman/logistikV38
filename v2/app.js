@@ -110,7 +110,7 @@
     refreshMarkers(cities);
 
     document.getElementById('hfV2SelectedName').textContent = city.name;
-    document.getElementById('hfV2SelectedIntro').textContent = 'Basisdaten aus dem bestehenden Ortskatalog. In V2.1 gibt es bewusst noch keine Wirtschaftssimulation.';
+    document.getElementById('hfV2SelectedIntro').textContent = 'Basisdaten aus dem bestehenden Ortskatalog. In V2.1 gibt es nur einfaches In-Memory-Kapital für Fahrzeugkäufe, aber noch keine Wirtschaftssimulation.';
     document.getElementById('hfV2Facts').innerHTML = [
       fact('ID', city.id),
       fact('Kategorie', tierLabel(city.tier)),
