@@ -1,15 +1,12 @@
 (() => {
   'use strict';
 
-  const SWISS_BOUNDS = {
-    minLat: 45.72,
-    maxLat: 47.88,
-    minLng: 5.72,
-    maxLng: 10.72,
-  };
-  const MAP = {width: 1000, height: 620, padX: 82, padY: 70};
+  const SWISS_BOUNDS = [[45.72, 5.72], [47.88, 10.72]];
+  const MAP_CENTER = [46.82, 8.25];
+  const MARKER_SIZE = {normal: 30, small: 22};
 
   let selectedId = null;
+  let map = null;
   const markerById = new Map();
 
   function normaliseCity(raw) {
@@ -34,17 +31,6 @@
       .sort((a, b) => a.name.localeCompare(b.name, 'de-CH'));
   }
 
-  function project(city) {
-    const usableWidth = MAP.width - MAP.padX * 2;
-    const usableHeight = MAP.height - MAP.padY * 2;
-    const x = MAP.padX + ((city.lng - SWISS_BOUNDS.minLng) / (SWISS_BOUNDS.maxLng - SWISS_BOUNDS.minLng)) * usableWidth;
-    const y = MAP.padY + ((SWISS_BOUNDS.maxLat - city.lat) / (SWISS_BOUNDS.maxLat - SWISS_BOUNDS.minLat)) * usableHeight;
-    return {
-      x: Math.max(MAP.padX, Math.min(MAP.width - MAP.padX, x)),
-      y: Math.max(MAP.padY, Math.min(MAP.height - MAP.padY, y)),
-    };
-  }
-
   function formatPopulation(value) {
     return value ? value.toLocaleString('de-CH') : 'nicht angegeben';
   }
@@ -59,12 +45,58 @@
     return `<div class="hf-v2-fact"><dt>${label}</dt><dd>${value}</dd></div>`;
   }
 
-  function selectCity(city) {
-    selectedId = city.id;
-    for (const [id, marker] of markerById.entries()) {
-      marker.classList.toggle('is-selected', id === selectedId);
-      marker.setAttribute('aria-pressed', id === selectedId ? 'true' : 'false');
+  function selectedClass(city) {
+    return selectedId === city.id ? ' selected' : '';
+  }
+
+  function cityLabel(city) {
+    if (city.tier >= 3) return '◆';
+    if (city.tier === 2) return '●';
+    return '•';
+  }
+
+  function cityIcon(city) {
+    const small = city.tier === 1;
+    const size = small ? MARKER_SIZE.small : MARKER_SIZE.normal;
+    const anchor = Math.round(size / 2);
+    const classes = [
+      'city-marker',
+      'unlocked',
+      small ? 'small-town' : '',
+      city.id === 'zurich' ? 'hub' : '',
+      selectedClass(city).trim(),
+    ].filter(Boolean).join(' ');
+
+    return L.divIcon({
+      className: '',
+      html: `<div id="mk-${city.id}" class="${classes}">${cityLabel(city)}</div>`,
+      iconSize: [size, size],
+      iconAnchor: [anchor, anchor],
+    });
+  }
+
+  function bindCityTooltip(marker, city) {
+    marker.unbindTooltip();
+    marker.bindTooltip(city.name, {
+      permanent: city.tier >= 3 || city.id === selectedId,
+      direction: 'top',
+      offset: [0, -13],
+      className: 'city-label',
+    });
+  }
+
+  function refreshMarkers(cities) {
+    for (const city of cities) {
+      const marker = markerById.get(city.id);
+      if (!marker) continue;
+      marker.setIcon(cityIcon(city));
+      bindCityTooltip(marker, city);
     }
+  }
+
+  function selectCity(city, cities) {
+    selectedId = city.id;
+    refreshMarkers(cities);
 
     document.getElementById('hfV2SelectedName').textContent = city.name;
     document.getElementById('hfV2SelectedIntro').textContent = 'Basisdaten aus dem bestehenden Ortskatalog. In V2.1 gibt es bewusst noch keine Wirtschaftssimulation.';
@@ -79,55 +111,70 @@
     ].join('');
   }
 
-  function markerRadius(city) {
-    if (city.tier >= 3) return 9;
-    if (city.tier === 2) return 7;
-    return 5;
-  }
-
   function renderMarkers(cities) {
-    const root = document.getElementById('hfV2Markers');
-    root.innerHTML = '';
     markerById.clear();
-
     for (const city of cities) {
-      const point = project(city);
-      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      group.classList.add('hf-v2-marker', `is-tier-${Math.min(city.tier, 3)}`);
-      group.setAttribute('transform', `translate(${point.x.toFixed(1)} ${point.y.toFixed(1)})`);
-      group.setAttribute('tabindex', '0');
-      group.setAttribute('role', 'button');
-      group.setAttribute('aria-label', `${city.name} auswählen`);
-      group.setAttribute('aria-pressed', 'false');
-
-      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      circle.setAttribute('r', String(markerRadius(city)));
-
-      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      label.setAttribute('x', '10');
-      label.setAttribute('y', '-8');
-      label.textContent = city.name;
-
-      group.append(circle, label);
-      group.addEventListener('click', () => selectCity(city));
-      group.addEventListener('keydown', event => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          selectCity(city);
+      const marker = L.marker([city.lat, city.lng], {
+        icon: cityIcon(city),
+        keyboard: true,
+        title: city.name,
+        zIndexOffset: city.id === 'zurich' ? 500 : (city.tier === 1 ? 120 : 0),
+      }).addTo(map);
+      marker.on('click', () => selectCity(city, cities));
+      marker.on('keypress', event => {
+        if (event.originalEvent?.key === 'Enter' || event.originalEvent?.key === ' ') {
+          selectCity(city, cities);
         }
       });
-
-      root.append(group);
-      markerById.set(city.id, group);
+      bindCityTooltip(marker, city);
+      markerById.set(city.id, marker);
     }
+  }
+
+  function bootMap(cities) {
+    const mapError = document.getElementById('hfV2MapError');
+    if (!window.L) {
+      mapError.hidden = false;
+      return false;
+    }
+
+    const bounds = L.latLngBounds(SWISS_BOUNDS);
+    map = L.map('hfV2Map', {
+      zoomControl: true,
+      minZoom: 7,
+      maxZoom: 13,
+      preferCanvas: true,
+      zoomAnimation: false,
+      fadeAnimation: false,
+      markerZoomAnimation: false,
+      maxBounds: bounds.pad(.08),
+      maxBoundsViscosity: 1,
+    }).setView(MAP_CENTER, 8);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      minZoom: 7,
+      maxZoom: 13,
+      maxNativeZoom: 18,
+      noWrap: true,
+      bounds,
+      keepBuffer: 0,
+      updateWhenIdle: true,
+      updateWhenZooming: false,
+      detectRetina: false,
+      attribution: '© OpenStreetMap-Mitwirkende',
+    }).addTo(map);
+
+    renderMarkers(cities);
+    map.fitBounds(bounds, {padding: [16, 16], animate: false});
+    return true;
   }
 
   function boot() {
     const cities = loadCities();
     document.getElementById('hfV2CityCount').textContent = `${cities.length.toLocaleString('de-CH')} Orte`;
-    renderMarkers(cities);
+    if (!bootMap(cities)) return;
     const zurich = cities.find(city => city.id === 'zurich');
-    if (zurich) selectCity(zurich);
+    if (zurich) selectCity(zurich, cities);
   }
 
   if (document.readyState === 'loading') {

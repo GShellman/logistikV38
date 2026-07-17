@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Helvetic Freight V2.0 Karte</title>
+  <link crossorigin="" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -19,19 +20,8 @@
       </header>
 
       <div class="hf-v2-map-wrap">
-        <svg id="hfV2Map" class="hf-v2-map" viewBox="0 0 1000 620" role="img" aria-labelledby="hfV2MapTitle hfV2MapDesc">
-          <title id="hfV2MapTitle">Vereinfachte Schweiz-Karte mit Orten</title>
-          <desc id="hfV2MapDesc">Eine bewusst einfache, statische Karte der Schweiz. Jeder Ort wird als klickbarer Marker dargestellt.</desc>
-          <rect class="hf-v2-map-bg" x="0" y="0" width="1000" height="620" rx="28"></rect>
-          <path class="hf-v2-swiss-shape" d="M82 329 L132 258 L205 245 L239 174 L329 184 L387 122 L475 144 L544 108 L620 159 L703 139 L752 213 L850 227 L912 302 L879 385 L812 414 L760 508 L668 482 L608 537 L520 505 L444 543 L375 480 L286 497 L237 428 L145 412 Z"></path>
-          <g class="hf-v2-grid" aria-hidden="true">
-            <line x1="140" y1="130" x2="860" y2="490"></line>
-            <line x1="165" y1="470" x2="835" y2="155"></line>
-            <line x1="500" y1="95" x2="500" y2="545"></line>
-            <line x1="95" y1="310" x2="910" y2="310"></line>
-          </g>
-          <g id="hfV2Markers" class="hf-v2-markers"></g>
-        </svg>
+        <div id="hfV2Map" class="hf-v2-map" role="application" aria-label="Echte Schweiz-Karte mit klickbaren Orten"></div>
+        <p id="hfV2MapError" class="hf-v2-map-error" hidden>Die Kartenbibliothek konnte nicht geladen werden. Bitte die V2 mit Internetverbindung öffnen.</p>
       </div>
     </section>
 
@@ -51,6 +41,7 @@
   </main>
 
   <script src="../scripts/hf-city-catalog.js"></script>
+  <script crossorigin="" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

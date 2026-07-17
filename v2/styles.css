@@ -6,6 +6,7 @@
   --hf-muted: #60766f;
   --hf-line: #d7e4dc;
   --hf-primary: #176447;
+  --green: #176447;
   --hf-primary-2: #2e8d68;
   --hf-accent: #f2a33a;
   --hf-shadow: 0 22px 55px rgba(28, 65, 49, .16);
@@ -92,49 +93,67 @@ h2 { font-size: 24px; }
 }
 
 .hf-v2-map {
+  background: #dcebe5;
+  border: 1px solid #c7d9cf;
+  border-radius: 22px;
   display: block;
   height: 100%;
   min-height: 560px;
+  overflow: hidden;
   width: 100%;
 }
 
-.hf-v2-map-bg { fill: #dcebe5; }
-.hf-v2-swiss-shape {
-  fill: #f7fbf6;
-  stroke: #93b49f;
-  stroke-linejoin: round;
-  stroke-width: 7;
+.hf-v2-map-error {
+  background: #fff0e9;
+  border: 1px solid #f1c0ad;
+  border-radius: 12px;
+  color: #9b452e;
+  font-weight: 800;
+  margin: 10px 0 0;
+  padding: 10px 12px;
 }
 
-.hf-v2-grid line {
-  stroke: #c7d9cf;
-  stroke-dasharray: 6 14;
-  stroke-linecap: round;
-  stroke-width: 2;
-}
+.leaflet-control-zoom a { color: var(--hf-ink) !important; }
+.leaflet-control-attribution { font-size: 9px !important; }
+.leaflet-popup-content-wrapper { border-radius: 12px !important; }
+.leaflet-popup-content { margin: 10px 12px !important; }
 
-.hf-v2-marker { cursor: pointer; outline: none; }
-.hf-v2-marker circle {
-  fill: #ffffff;
-  stroke: var(--hf-primary);
-  stroke-width: 3;
-  transition: fill .16s ease, r .16s ease, stroke .16s ease;
-}
-.hf-v2-marker text {
-  fill: #29483d;
-  font-size: 13px;
+.city-marker {
+  align-items: center;
+  border: 3px solid white;
+  border-radius: 50%;
+  box-shadow: 0 4px 14px rgba(16,36,25,.35);
+  display: grid;
+  font-size: 12px;
   font-weight: 900;
-  paint-order: stroke;
-  pointer-events: none;
-  stroke: rgba(255,255,255,.86);
-  stroke-width: 4px;
+  height: 30px;
+  justify-items: center;
+  line-height: 1;
+  transition: .2s;
+  width: 30px;
 }
-.hf-v2-marker.is-tier-3 circle { fill: #176447; stroke: #0c3d2a; }
-.hf-v2-marker.is-tier-3 text { fill: #ffffff; stroke: rgba(12,61,42,.8); }
-.hf-v2-marker.is-tier-2 circle { fill: #f2a33a; stroke: #9c6122; }
-.hf-v2-marker.is-selected circle,
-.hf-v2-marker:hover circle,
-.hf-v2-marker:focus-visible circle { fill: #ffef99; r: 12; stroke: #1f4f39; }
+.city-marker.small-town {
+  border-width: 2px;
+  box-shadow: 0 3px 10px rgba(16,36,25,.32);
+  font-size: 10px;
+  height: 22px;
+  width: 22px;
+}
+.city-marker.unlocked { background: var(--green); color: white; }
+.city-marker.locked { background: #8f9792; color: #e8ebe9; filter: saturate(.2); }
+.city-marker.selected { outline: 4px solid rgba(230,138,46,.45); transform: scale(1.08); }
+.city-marker.hub { background: #162a21; }
+.city-label {
+  background: rgba(255,255,255,.88);
+  border: 0;
+  border-radius: 6px;
+  box-shadow: 0 2px 7px rgba(18,38,28,.15);
+  color: #283a31;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 5px;
+}
+.locked-label { color: #7e8782; background: rgba(240,242,240,.8); }
 
 .hf-v2-panel {
   display: grid;
