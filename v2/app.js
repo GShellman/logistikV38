@@ -191,6 +191,10 @@
         window.hideCityActionMenu?.();
         openNetworkModalForCity(city);
       },
+      onFleetClick: city => {
+        window.hideCityActionMenu?.();
+        window.HF_V2?.openCityFleetForCity?.(city.id);
+      },
     });
 
     renderMarkers(cities);
