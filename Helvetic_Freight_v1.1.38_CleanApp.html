@@ -407,8 +407,10 @@ function renderCompanyLegacy(root){const unlocked=Object.values(state.cities).fi
   root.innerHTML+=`<section class="card"><h3>Spielprinzip</h3><p class="sub">1. Orte über fünf upgradefähige Straßenstufen oder Bahn erschließen.<br>2. Lieferwagen, LKW, Sattelzüge und Güterzüge selbst kaufen.<br>3. Alle Lieferwagen und LKW können jede Straßenstufe nutzen; Ausbauten erhöhen Tempo und Kapazität.<br>4. Einmalige Transporte disponieren oder Dauerrouten aktivieren.<br>5. Dauerroute fährt bei jedem Tageswechsel automatisch, solange eine volle Fahrzeugladung bereitsteht. Belegte Straßen werden nur von gleichzeitig fahrenden Fahrzeugen gezählt; bei Engpässen warten Fahrzeuge an Knotenpunkten.</p></section><section class="card"><h3>Reale Straßenführung</h3><p class="sub">Neue Straßen werden beim Bau über einen OpenStreetMap-basierten Routingdienst berechnet und als tatsächlicher Straßenverlauf gespeichert. Upgrades behalten exakt diese Trasse bei.</p></section>`;
 }
 window.HF_CITY_SECTIONS=window.HF_CITY_SECTIONS||[];
+window.HF_COMPANY_SECTIONS=window.HF_COMPANY_SECTIONS||[];
 function registerCitySection(fn){if(typeof fn==='function')window.HF_CITY_SECTIONS.push(fn);return fn}
-window.HF={...window.HF,registerCitySection};
+function registerCompanySection(fn){if(typeof fn==='function')window.HF_COMPANY_SECTIONS.push(fn);return fn}
+window.HF={...window.HF,registerCitySection,registerCompanySection};
 function renderCity(root){
   const cityId=state.selected,result=renderCityBase(root,cityId);
   for(const fn of window.HF_CITY_SECTIONS||[]){try{fn(root,cityId,state.cities?.[cityId])}catch(err){console.warn('Stadtansicht-Section konnte nicht gerendert werden',err)}}
@@ -4307,6 +4309,15 @@ function hfInstallAutosaveHooks(){
 // --- v1.1.37: Sissach demand data moved to scripts/hf-demand-database.js; migration lives in scripts/hf-save-migrations.js ---
 
 
+
+// Company sections use the same composition model as city sections.
+const renderCompanyBaseForSections=renderCompany;
+renderCompany=function(root){
+  const result=renderCompanyBaseForSections(root);
+  for(const fn of window.HF_COMPANY_SECTIONS||[]){try{fn(root)}catch(err){console.warn('Firmenansicht-Section konnte nicht gerendert werden',err)}}
+  return result;
+};
+
 // --- v1.1.38: city supply contracts, source-owned delivery fleets and rolling weekly plans ---
 // Use the stable module installer because earlier app bootstrap stages replace window.HF.
 const hfSupplyContractsRuntime=window.HF_SUPPLY_CONTRACTS_V1138({
@@ -4316,10 +4327,10 @@ const hfSupplyContractsRuntime=window.HF_SUPPLY_CONTRACTS_V1138({
   findPath,vehicleCanCarryGood,transportCost,formatGoodAmount,formatWeight,money,goodImg,vehicleImg,
   minuteOfDay,save,closeModal,renderAll,toast,advanceMinutes,
   hfV117BuildCommitments,hfV117Add,hfDepotDailyNeed,runScheduledRoutesAtCurrentTime,completeShipmentLeg,
-  hfV117MidnightRecalculateDepots,freshState,renderCity,renderCompany,hfV131SetLeg
+  hfV117MidnightRecalculateDepots,freshState,hfV131SetLeg
 });
 ({hfV117BuildCommitments,hfDepotDailyNeed,runScheduledRoutesAtCurrentTime,completeShipmentLeg,
-  hfV117MidnightRecalculateDepots,freshState,renderCity,renderCompany}=hfSupplyContractsRuntime);
+  hfV117MidnightRecalculateDepots,freshState}=hfSupplyContractsRuntime);
 
 
 })();
