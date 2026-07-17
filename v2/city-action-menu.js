@@ -3,6 +3,7 @@
 
   let map = null;
   let onNetworkClick = null;
+  let onFleetClick = null;
   let actionPopup = null;
   let activeCity = null;
 
@@ -37,14 +38,17 @@
 
   function bindPopupEvents() {
     const element = actionPopup?.getElement?.();
-    const button = element?.querySelector?.('.hf-v2-city-action-button');
-    if (!element || !button) return;
+    const buttons = element?.querySelectorAll?.('.hf-v2-city-action-button');
+    if (!element || !buttons?.length) return;
 
     stopLeafletPropagation(element);
-    button.addEventListener('click', event => {
-      L.DomEvent.stopPropagation(event);
-      event.preventDefault();
-      onNetworkClick?.(activeCity);
+    buttons.forEach(button => {
+      button.addEventListener('click', event => {
+        L.DomEvent.stopPropagation(event);
+        event.preventDefault();
+        const callback = button.dataset.action === 'fleet' ? onFleetClick : onNetworkClick;
+        callback?.(activeCity);
+      });
     });
   }
 
@@ -62,9 +66,12 @@
     })
       .setLatLng([city.lat, city.lng])
       .setContent(`
-        <div class="hf-v2-city-action" data-city-id="${escapeHtml(city.id)}">
-          <button class="hf-v2-city-action-button" type="button" aria-label="Netzwerkoptionen für ${escapeHtml(city.name)} öffnen">
+        <div class="hf-v2-city-action-panel" data-city-id="${escapeHtml(city.id)}">
+          <button class="hf-v2-city-action-button hf-v2-city-action-button--network" type="button" data-action="network" aria-label="Netzwerkoptionen für ${escapeHtml(city.name)} öffnen">
             <span aria-hidden="true">🛣️</span>
+          </button>
+          <button class="hf-v2-city-action-button hf-v2-city-action-button--fleet" type="button" data-action="fleet" aria-label="Fuhrpark für ${escapeHtml(city.name)} öffnen">
+            <span aria-hidden="true">🚚</span>
           </button>
         </div>`)
       .openOn(map);
@@ -75,6 +82,7 @@
   function initCityActionMenu(options) {
     map = options?.map || null;
     onNetworkClick = typeof options?.onNetworkClick === 'function' ? options.onNetworkClick : null;
+    onFleetClick = typeof options?.onFleetClick === 'function' ? options.onFleetClick : null;
     hideCityActionMenu();
 
     if (!map) return;
