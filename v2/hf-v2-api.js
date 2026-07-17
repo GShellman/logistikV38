@@ -2,7 +2,6 @@
   'use strict';
 
   const networkMenu = window.HFNetworkMenu || null;
-  const fleetMenu = window.HFV2FleetMenu || null;
   if (window.HFNetworkMenu) delete window.HFNetworkMenu;
 
   function openNetworkMenuForCity(cityId) {
@@ -10,7 +9,7 @@
   }
 
   function openCityFleetForCity(cityId) {
-    fleetMenu?.openCityFleetForCity?.(cityId);
+    window.HFV2FleetMenu?.openCityFleetForCity?.(cityId);
   }
 
   function closeModal() {
