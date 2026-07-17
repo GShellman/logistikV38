@@ -7953,13 +7953,11 @@ window.HF_INITIAL_STATE_PACKAGE = {
       "artic": 0,
       "freightTrain": 0,
       "reefer": 0,
-      "tipper": 0,
-      "reeferSmall": 0
+      "tipper": 0
     },
     "usedCapacity": {},
     "usedVehicles": {
-      "tipper": 0,
-      "reeferSmall": 0
+      "tipper": 0
     },
     "history": [],
     "tutorial": 0,
