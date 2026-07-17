@@ -507,10 +507,21 @@ code {
   padding: 14px;
 }
 .hf-v2-fleet-card__icon {
+  align-items: center;
+  display: flex;
   font-size: 24px;
+  justify-content: center;
+  min-height: 44px;
   text-align: center;
-  width: 32px;
+  width: 56px;
 }
+.hf-v2-fleet-card__image {
+  display: block;
+  height: 40px;
+  object-fit: contain;
+  width: 56px;
+}
+.hf-v2-fleet-card__emoji { line-height: 1; }
 .hf-v2-fleet-card__main {
   display: grid;
   gap: 8px;
