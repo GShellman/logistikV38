@@ -4,7 +4,7 @@
   const root = document.createElement('div');
   root.id = 'app';
   root.innerHTML = `
-    <div id="map"></div>
+    <div id="map"><button aria-label="Netzbau öffnen" class="hf-map-network-button" id="hfMapNetworkButton" type="button">Netz</button></div>
     <div class="legend">
       <b>Netzstatus</b>
       <div><i class="dot g"></i> Freigeschaltet</div>

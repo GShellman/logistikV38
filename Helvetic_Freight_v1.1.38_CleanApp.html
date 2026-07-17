@@ -936,6 +936,7 @@ function syncJunctionMarkers(){
   for(const [id,m] of Object.entries(junctionMarkers)){if(!active.has(id)){if(map.hasLayer(m))map.removeLayer(m);delete junctionMarkers[id]}}
   for(const j of state.junctions){let m=junctionMarkers[j.id];if(!m){m=L.marker([j.lat,j.lng],{icon:junctionIcon(),zIndexOffset:650}).on('click',()=>selectJunction(j.id));junctionMarkers[j.id]=m}const visible=!bounds||bounds.contains([j.lat,j.lng]);if(visible&&!map.hasLayer(m))m.addTo(map);else if(!visible&&map.hasLayer(m))map.removeLayer(m);m.setLatLng([j.lat,j.lng]);m.unbindTooltip();m.bindTooltip(j.name,{permanent:false,direction:'top',offset:[0,-10],className:'junction-label'})}
 }
+function openNetworkFromMap(){rememberMenuScroll();state.tab='network';if(hfIsMobile())hfApplySheetState('half');renderAll()}
 function selectJunction(id){if(!CITY[id])return;state.networkOriginNode=id;state.tab='network';if(hfIsMobile()&&hfSheetState==='collapsed')hfApplySheetState('half');renderAll();toast(`${nodeName(id)} als Ausgangspunkt gewählt.`,'good')}
 
 const renderMapBeforeJunctions=renderMap;
@@ -2250,9 +2251,10 @@ document.body.dataset.hfBuild='1.0.30';
 document.body.dataset.hfAutoJunction='1';
 save(false);
 
-window.HF={...window.HF,openFacility,buildFacility,exportSave,importSave,planConnection,buildConnection:planConnection,planUpgrade,confirmProject,openConnectTo,openCityMenuPopup,closeModal,save,reset,performReset,buyVehicle,sellVehicle,openVehicleShop,shopBuyVehicle,shopSellVehicle,openTransportPopup,openRoutesPopup,openConnectionPopup,manageToggleRoute,manageDeleteRoute,toggleRoute,deleteRoute,startJunctionPlacement,cancelJunctionPlacement,selectJunction,openFoodFactorySettings,saveFoodFactoryMix,openRouteScheduleEditor,saveRouteSchedule,requestRemoveJunction,confirmRemoveJunction,openFacilityUpgrade:window.openFacilityUpgrade,confirmFacilityUpgrade:window.confirmFacilityUpgrade};
+window.HF={...window.HF,openFacility,buildFacility,exportSave,importSave,planConnection,buildConnection:planConnection,planUpgrade,confirmProject,openConnectTo,openCityMenuPopup,closeModal,save,reset,performReset,buyVehicle,sellVehicle,openVehicleShop,shopBuyVehicle,shopSellVehicle,openTransportPopup,openRoutesPopup,openConnectionPopup,manageToggleRoute,manageDeleteRoute,toggleRoute,deleteRoute,startJunctionPlacement,cancelJunctionPlacement,selectJunction,openNetworkFromMap,openFoodFactorySettings,saveFoodFactoryMix,openRouteScheduleEditor,saveRouteSchedule,requestRemoveJunction,confirmRemoveJunction,openFacilityUpgrade:window.openFacilityUpgrade,confirmFacilityUpgrade:window.confirmFacilityUpgrade};
 const menuContent=document.getElementById('content');menuContent.addEventListener('wheel',e=>e.stopPropagation(),{passive:true});menuContent.addEventListener('touchmove',e=>e.stopPropagation(),{passive:true});menuContent.setAttribute('tabindex','0');
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{if(hfIsMobile()&&hfSheetState==='collapsed')hfApplySheetState('half');activeTab(t.dataset.tab)}));
+document.getElementById('hfMapNetworkButton')?.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();openNetworkFromMap()});
 document.getElementById('nextDayBtn').addEventListener('click',nextDay);document.getElementById('nextHourBtn').addEventListener('click',nextHour);document.getElementById('playBtn').addEventListener('click',togglePlay);document.getElementById('saveBtn').addEventListener('click',()=>save());document.getElementById('modalBack').addEventListener('click',e=>{if(e.target.id==='modalBack')closeModal()});window.addEventListener('beforeunload',()=>save(false));
 rebuildEdgeOccupancy();initBottomSheet();initMap();renderAll();setPlayButton();hydrateLegacyRoads();
 setTimeout(()=>toast('Starte in Zürich: Baue eine Straße, kaufe passende LKW und beobachte Transporte stundenbasiert direkt auf der Karte.','good'),500);
