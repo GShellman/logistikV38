@@ -81,12 +81,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 1350,
-            "max": 1350,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 760.445,
             "max": 760.445,
@@ -179,12 +173,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 266.667,
             "mult": 0.98,
             "dailyRate": 1
-          },
-          "food": {
-            "need": 342,
-            "max": 342,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 192.889,
@@ -279,12 +267,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 141,
-            "max": 141,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 78.667,
             "max": 78.667,
@@ -318,12 +300,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "food": {
-            "need": 27060,
-            "max": 39360,
-            "mult": 1.01,
-            "dailyRate": 0.22
-          },
           "tools": {
             "need": 5740,
             "max": 13940,
@@ -477,12 +453,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 159,
-            "max": 159,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 89.778,
             "max": 89.778,
@@ -516,12 +486,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "clothing": {
-            "need": 1230,
-            "max": 1845,
-            "mult": 1.18,
-            "dailyRate": 0.22
-          },
           "ravioli_veg": {
             "need": 4850.3,
             "max": 7462,
@@ -582,12 +546,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 540,
-            "max": 540,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 304,
             "max": 304,
@@ -621,12 +579,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "food": {
-            "need": 27060,
-            "max": 36900,
-            "mult": 1.14,
-            "dailyRate": 0.22
-          },
           "apples": {
             "need": 106,
             "max": 106,
@@ -732,12 +684,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.23,
             "dailyRate": 0.14
           },
-          "clothing": {
-            "need": 1107,
-            "max": 1476,
-            "mult": 0.94,
-            "dailyRate": 0.22
-          },
           "pork": {
             "need": 4059,
             "max": 7380,
@@ -780,12 +726,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 0.98,
             "dailyRate": 1
           },
-          "food": {
-            "need": 129,
-            "max": 129,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 72.444,
             "max": 72.444,
@@ -819,12 +759,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "clothing": {
-            "need": 1476,
-            "max": 2337,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "zucchini": {
             "need": 180,
             "max": 180,
@@ -878,12 +812,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 55.575,
             "mult": 1.1,
             "dailyRate": 0.14
-          },
-          "food": {
-            "need": 405,
-            "max": 405,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 228,
@@ -978,12 +906,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 0.98,
             "dailyRate": 1
           },
-          "food": {
-            "need": 129,
-            "max": 129,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 72.444,
             "max": 72.444,
@@ -1017,18 +939,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "clothing": {
-            "need": 615,
-            "max": 1722,
-            "mult": 1.06,
-            "dailyRate": 0.22
-          },
-          "food": {
-            "need": 19680,
-            "max": 24600,
-            "mult": 1.04,
-            "dailyRate": 0.22
-          },
           "fish": {
             "need": 13,
             "max": 13,
@@ -1170,12 +1080,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 0.95,
             "dailyRate": 1
           },
-          "food": {
-            "need": 36,
-            "max": 36,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 20.889,
             "max": 20.889,
@@ -1213,12 +1117,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "need": 5904,
             "max": 8528,
             "mult": 1.22,
-            "dailyRate": 0.22
-          },
-          "food": {
-            "need": 24600,
-            "max": 39360,
-            "mult": 0.92,
             "dailyRate": 0.22
           },
           "pork": {
@@ -1308,12 +1206,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "food": {
-            "need": 22140,
-            "max": 41820,
-            "mult": 1.16,
-            "dailyRate": 0.22
-          },
           "furniture": {
             "need": 7872,
             "max": 9840,
@@ -1467,12 +1359,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.03,
             "dailyRate": 1
           },
-          "food": {
-            "need": 99,
-            "max": 99,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 56,
             "max": 56,
@@ -1506,12 +1392,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "clothing": {
-            "need": 984,
-            "max": 1722,
-            "mult": 1.17,
-            "dailyRate": 0.22
-          },
           "apples": {
             "need": 94,
             "max": 94,
@@ -1571,12 +1451,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 43.875,
             "mult": 1.1,
             "dailyRate": 0.14
-          },
-          "food": {
-            "need": 120,
-            "max": 120,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 67.555,
@@ -1671,12 +1545,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 435,
-            "max": 435,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 244.889,
             "max": 244.889,
@@ -1710,12 +1578,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "clothing": {
-            "need": 1353,
-            "max": 1845,
-            "mult": 0.98,
-            "dailyRate": 0.22
-          },
           "tomato_cans": {
             "need": 2398.5,
             "max": 2878.2,
@@ -1775,12 +1637,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 117.333,
             "mult": 0.98,
             "dailyRate": 1
-          },
-          "food": {
-            "need": 150,
-            "max": 150,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 84.889,
@@ -1881,12 +1737,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 99,
-            "max": 99,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 56,
             "max": 56,
@@ -1924,12 +1774,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "need": 9840,
             "max": 14760,
             "mult": 0.99,
-            "dailyRate": 0.22
-          },
-          "food": {
-            "need": 29520,
-            "max": 39360,
-            "mult": 1.04,
             "dailyRate": 0.22
           },
           "ravioli_veg": {
@@ -2031,12 +1875,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 0.91,
             "dailyRate": 0.22
           },
-          "food": {
-            "need": 24600,
-            "max": 39360,
-            "mult": 1.24,
-            "dailyRate": 0.22
-          },
           "fish": {
             "need": 42,
             "max": 42,
@@ -2118,12 +1956,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "food": {
-            "need": 19680,
-            "max": 29520,
-            "mult": 1.23,
-            "dailyRate": 0.22
-          },
           "potatoes": {
             "need": 140,
             "max": 140,
@@ -2221,12 +2053,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "need": 3280,
             "max": 7380,
             "mult": 0.95,
-            "dailyRate": 0.22
-          },
-          "food": {
-            "need": 29520,
-            "max": 34440,
-            "mult": 1.23,
             "dailyRate": 0.22
           },
           "medicine": {
@@ -2376,12 +2202,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 0.98,
             "dailyRate": 1
           },
-          "food": {
-            "need": 180,
-            "max": 180,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 101.333,
             "max": 101.333,
@@ -2474,12 +2294,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 32.175,
             "mult": 1.1,
             "dailyRate": 0.14
-          },
-          "food": {
-            "need": 45,
-            "max": 45,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 25.778,
@@ -2574,12 +2388,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.01,
             "dailyRate": 1
           },
-          "food": {
-            "need": 255,
-            "max": 255,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 143.556,
             "max": 143.556,
@@ -2618,12 +2426,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 4317.3,
             "mult": 1.1,
             "dailyRate": 0.14
-          },
-          "food": {
-            "need": 19680,
-            "max": 31980,
-            "mult": 1.17,
-            "dailyRate": 0.22
           },
           "furniture": {
             "need": 5904,
@@ -2712,12 +2514,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "food": {
-            "need": 22140,
-            "max": 39360,
-            "mult": 1.04,
-            "dailyRate": 0.22
-          },
           "furniture": {
             "need": 5904,
             "max": 9184,
@@ -2877,12 +2673,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 48,
-            "max": 48,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 27.111,
             "max": 27.111,
@@ -2975,12 +2765,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 32.175,
             "mult": 1.1,
             "dailyRate": 0.14
-          },
-          "food": {
-            "need": 24,
-            "max": 24,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 13.334,
@@ -3081,12 +2865,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 15,
-            "max": 15,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 7.556,
             "max": 7.556,
@@ -3124,12 +2902,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "need": 3357.9,
             "max": 4477.2,
             "mult": 1.13,
-            "dailyRate": 0.22
-          },
-          "clothing": {
-            "need": 615,
-            "max": 1353,
-            "mult": 1.25,
             "dailyRate": 0.22
           },
           "fish": {
@@ -3179,12 +2951,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 32.175,
             "mult": 1.1,
             "dailyRate": 0.14
-          },
-          "food": {
-            "need": 21,
-            "max": 21,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 11.555,
@@ -3279,12 +3045,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 123,
-            "max": 123,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 68.889,
             "max": 68.889,
@@ -3371,12 +3131,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 43.875,
             "mult": 1.1,
             "dailyRate": 0.14
-          },
-          "food": {
-            "need": 156,
-            "max": 156,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 88,
@@ -3471,12 +3225,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 105,
-            "max": 105,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 59.556,
             "max": 59.556,
@@ -3570,12 +3318,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 165,
-            "max": 165,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 92.889,
             "max": 92.889,
@@ -3614,12 +3356,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 2878.2,
             "mult": 1.19,
             "dailyRate": 0.14
-          },
-          "clothing": {
-            "need": 1353,
-            "max": 1845,
-            "mult": 1.16,
-            "dailyRate": 0.22
           },
           "electronics": {
             "need": 2870,
@@ -3674,12 +3410,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 110.667,
             "mult": 0.98,
             "dailyRate": 1
-          },
-          "food": {
-            "need": 144,
-            "max": 144,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 80.445,
@@ -3767,12 +3497,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 55.575,
             "mult": 1.1,
             "dailyRate": 0.14
-          },
-          "food": {
-            "need": 240,
-            "max": 240,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 135.111,
@@ -3866,12 +3590,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 43.875,
             "mult": 1.1,
             "dailyRate": 0.14
-          },
-          "food": {
-            "need": 123,
-            "max": 123,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 68.889,
@@ -3972,12 +3690,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 39,
-            "max": 39,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 22.222,
             "max": 22.222,
@@ -4071,12 +3783,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 18,
-            "max": 18,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 9.778,
             "max": 9.778,
@@ -4110,12 +3816,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "food": {
-            "need": 24600,
-            "max": 36900,
-            "mult": 1.06,
-            "dailyRate": 0.22
-          },
           "pork": {
             "need": 9020,
             "max": 10660,
@@ -4215,12 +3915,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.23,
             "dailyRate": 1
           },
-          "food": {
-            "need": 19680,
-            "max": 36900,
-            "mult": 1.23,
-            "dailyRate": 0.22
-          },
           "fish": {
             "need": 9,
             "max": 9,
@@ -4308,12 +4002,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.22
           },
-          "clothing": {
-            "need": 1107,
-            "max": 2091,
-            "mult": 1.13,
-            "dailyRate": 0.22
-          },
           "electronics": {
             "need": 3280,
             "max": 6970,
@@ -4368,12 +4056,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 111,
-            "max": 111,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 62.667,
             "max": 62.667,
@@ -4411,18 +4093,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "need": 5904,
             "max": 9840,
             "mult": 1.13,
-            "dailyRate": 0.22
-          },
-          "food": {
-            "need": 22140,
-            "max": 31980,
-            "mult": 0.98,
-            "dailyRate": 0.22
-          },
-          "clothing": {
-            "need": 1107,
-            "max": 1968,
-            "mult": 1.15,
             "dailyRate": 0.22
           },
           "fish": {
@@ -4512,12 +4182,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "clothing": {
-            "need": 1107,
-            "max": 1599,
-            "mult": 0.92,
-            "dailyRate": 0.22
-          },
           "potatoes": {
             "need": 121.333,
             "max": 121.333,
@@ -4572,12 +4236,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 156,
-            "max": 156,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 88,
             "max": 88,
@@ -4616,12 +4274,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 62,
             "mult": 0.98,
             "dailyRate": 1
-          },
-          "food": {
-            "need": 24600,
-            "max": 39360,
-            "mult": 1.06,
-            "dailyRate": 0.22
           },
           "electronics": {
             "need": 4100,
@@ -4776,12 +4428,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 195,
-            "max": 195,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 109.778,
             "max": 109.778,
@@ -4815,12 +4461,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "food": {
-            "need": 22140,
-            "max": 31980,
-            "mult": 1.24,
-            "dailyRate": 0.22
-          },
           "tools": {
             "need": 6560,
             "max": 10660,
@@ -4974,12 +4614,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 36,
-            "max": 36,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 20,
             "max": 20,
@@ -5073,12 +4707,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 0.95,
             "dailyRate": 1
           },
-          "food": {
-            "need": 33,
-            "max": 33,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 18.667,
             "max": 18.667,
@@ -5165,12 +4793,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 43.875,
             "mult": 1.1,
             "dailyRate": 0.14
-          },
-          "food": {
-            "need": 123,
-            "max": 123,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 68.889,
@@ -5265,12 +4887,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 0.95,
             "dailyRate": 1
           },
-          "food": {
-            "need": 51,
-            "max": 51,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 28.889,
             "max": 28.889,
@@ -5364,12 +4980,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 0.95,
             "dailyRate": 1
           },
-          "food": {
-            "need": 24,
-            "max": 24,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 14.222,
             "max": 14.222,
@@ -5403,12 +5013,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "food": {
-            "need": 17220,
-            "max": 31980,
-            "mult": 1.03,
-            "dailyRate": 0.22
-          },
           "fish": {
             "need": 16,
             "max": 16,
@@ -5562,12 +5166,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 27,
-            "max": 27,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 15.555,
             "max": 15.555,
@@ -5606,12 +5204,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 33.333,
             "mult": 1.1,
             "dailyRate": 1
-          },
-          "food": {
-            "need": 19680,
-            "max": 31980,
-            "mult": 1.03,
-            "dailyRate": 0.22
           },
           "fish": {
             "need": 14,
@@ -5694,12 +5286,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "clothing": {
-            "need": 1107,
-            "max": 1599,
-            "mult": 1.08,
-            "dailyRate": 0.22
-          },
           "medicine": {
             "need": 2870,
             "max": 4100,
@@ -5759,12 +5345,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 32.175,
             "mult": 1.1,
             "dailyRate": 0.14
-          },
-          "food": {
-            "need": 30,
-            "max": 30,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 16.444,
@@ -5859,12 +5439,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 33,
-            "max": 33,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 17.778,
             "max": 17.778,
@@ -5903,12 +5477,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 16,
             "mult": 1.19,
             "dailyRate": 1
-          },
-          "food": {
-            "need": 17220,
-            "max": 24600,
-            "mult": 0.99,
-            "dailyRate": 0.22
           },
           "fish": {
             "need": 12,
@@ -6045,12 +5613,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 24,
-            "max": 24,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 13.334,
             "max": 13.334,
@@ -6143,12 +5705,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 29.333,
             "mult": 0.95,
             "dailyRate": 1
-          },
-          "food": {
-            "need": 39,
-            "max": 39,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 21.333,
@@ -6243,12 +5799,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 15,
-            "max": 15,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 8.889,
             "max": 8.889,
@@ -6342,12 +5892,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 129,
-            "max": 129,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 72.444,
             "max": 72.444,
@@ -6381,12 +5925,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "food": {
-            "need": 19680,
-            "max": 27060,
-            "mult": 1.13,
-            "dailyRate": 0.22
-          },
           "furniture": {
             "need": 5904,
             "max": 8528,
@@ -6485,12 +6023,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 33.333,
             "mult": 1.18,
             "dailyRate": 1
-          },
-          "food": {
-            "need": 12300,
-            "max": 36900,
-            "mult": 1.23,
-            "dailyRate": 0.22
           },
           "fish": {
             "need": 15,
@@ -6633,12 +6165,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 30,
-            "max": 30,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 17.333,
             "max": 17.333,
@@ -6731,12 +6257,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 43.875,
             "mult": 1.1,
             "dailyRate": 0.14
-          },
-          "food": {
-            "need": 123,
-            "max": 123,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 68.889,
@@ -6831,12 +6351,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 36,
-            "max": 36,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 20,
             "max": 20,
@@ -6923,12 +6437,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 32.175,
             "mult": 1.1,
             "dailyRate": 0.14
-          },
-          "food": {
-            "need": 24,
-            "max": 24,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 14.222,
@@ -7023,12 +6531,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 21,
-            "max": 21,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 12.444,
             "max": 12.444,
@@ -7067,12 +6569,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 3357.9,
             "mult": 1.15,
             "dailyRate": 0.14
-          },
-          "clothing": {
-            "need": 861,
-            "max": 2091,
-            "mult": 1.15,
-            "dailyRate": 0.22
           },
           "apples": {
             "need": 122,
@@ -7122,12 +6618,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 0.98,
             "dailyRate": 1
           },
-          "food": {
-            "need": 153,
-            "max": 153,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 86.667,
             "max": 86.667,
@@ -7161,12 +6651,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "food": {
-            "need": 12300,
-            "max": 24600,
-            "mult": 1.07,
-            "dailyRate": 0.22
-          },
           "pork": {
             "need": 4920,
             "max": 9840,
@@ -7254,12 +6738,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "clothing": {
-            "need": 861,
-            "max": 1845,
-            "mult": 1.05,
-            "dailyRate": 0.22
-          },
           "furniture": {
             "need": 5904,
             "max": 11808,
@@ -7319,12 +6797,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 43.875,
             "mult": 1.1,
             "dailyRate": 0.14
-          },
-          "food": {
-            "need": 180,
-            "max": 180,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 101.333,
@@ -7413,12 +6885,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 30,
-            "max": 30,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 16.444,
             "max": 16.444,
@@ -7452,12 +6918,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
         "inventory": {},
         "facilities": [],
         "demands": {
-          "food": {
-            "need": 14760,
-            "max": 31980,
-            "mult": 1.13,
-            "dailyRate": 0.22
-          },
           "electronics": {
             "need": 2870,
             "max": 5740,
@@ -7611,12 +7071,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 33,
-            "max": 33,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 19.111,
             "max": 19.111,
@@ -7716,12 +7170,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "mult": 1.1,
             "dailyRate": 0.14
           },
-          "food": {
-            "need": 48,
-            "max": 48,
-            "mult": 1,
-            "dailyRate": 0.22
-          },
           "corn": {
             "need": 27.111,
             "max": 27.111,
@@ -7766,12 +7214,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 113.333,
             "mult": 0.92,
             "dailyRate": 1
-          },
-          "food": {
-            "need": 29520,
-            "max": 31980,
-            "mult": 1.07,
-            "dailyRate": 0.22
           },
           "fish": {
             "need": 48,
@@ -7907,12 +7349,6 @@ window.HF_INITIAL_STATE_PACKAGE = {
             "max": 32.175,
             "mult": 1.1,
             "dailyRate": 0.14
-          },
-          "food": {
-            "need": 51,
-            "max": 51,
-            "mult": 1,
-            "dailyRate": 0.22
           },
           "corn": {
             "need": 28.889,
