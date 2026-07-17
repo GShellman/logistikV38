@@ -71,7 +71,7 @@
     return (targetState?.connections || []).some(edge => sameEndpoints(edge, a, b) && (!mode || transportSpec(edge).mode === mode));
   }
 
-  function getAvailableConnections(cityId, targetState = state) {
+  function getCandidateTargets(cityId, targetState = state) {
     const from = citiesById[cityId];
     if (!from) return [];
     return cities
@@ -82,7 +82,7 @@
 
   function openNetworkBuildMenu(fromCityId) {
     if (state) state.networkOriginNode = fromCityId;
-    return getAvailableConnections(fromCityId).map(city => ({
+    return getCandidateTargets(fromCityId).map(city => ({
       city,
       roadDistance: estimateRoadDistance(dist(citiesById[fromCityId], city)),
       hasRoad: connectionExists(fromCityId, city.id, 'road'),
@@ -157,5 +157,5 @@
     return renderedLines;
   }
 
-  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, getAvailableConnections, openNetworkBuildMenu, planConnection, confirmProject, renderNetworkLines};
+  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, planConnection, confirmProject, renderNetworkLines};
 })();
