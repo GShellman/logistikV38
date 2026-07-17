@@ -59,12 +59,10 @@
 <script src="assets/facilities/mine.js"></script>
 <script src="assets/facilities/aluminumworks.js"></script>
 <script src="assets/facilities/chemical.js"></script>
-<script src="assets/facilities/foodplant.js"></script>
 <script src="assets/facilities/furniture.js"></script>
 <script src="assets/facilities/toolworks.js"></script>
 <script src="assets/facilities/electronics.js"></script>
 <script src="assets/facilities/pharma.js"></script>
-<script src="assets/facilities/textile.js"></script>
 <script src="assets/vehicles/van.js"></script>
 <script src="assets/vehicles/light_truck.js"></script>
 <script src="assets/vehicles/heavy_truck.js"></script>
@@ -164,7 +162,7 @@ function hfSaveEnvelope(currentState){
   window.__HF_DID_STABILITY_WIPE__=true;
 })();
 
-const ASSETS = {"goods":{"grain":"__WINDOW_HF_GRAIN_ASSET_DATA_URI__","wood":"__WINDOW_HF_WOOD_ASSET_DATA_URI__","ore":"__WINDOW_HF_ORE_ASSET_DATA_URI__","chemicals":"__WINDOW_HF_CHEMICALS_ASSET_DATA_URI__","food":"__WINDOW_HF_FOOD_ASSET_DATA_URI__","clothing":"__WINDOW_HF_CLOTHING_ASSET_DATA_URI__"},"facilities":{"farm":window.HF_FARM_FACILITY_ASSET_DATA_URI,"forestry":window.HF_FORESTRY_FACILITY_ASSET_DATA_URI,"mine":window.HF_MINE_FACILITY_ASSET_DATA_URI,"chemical":window.HF_CHEMICAL_FACILITY_ASSET_DATA_URI,"foodplant":window.HF_FOODPLANT_FACILITY_ASSET_DATA_URI,"furniture":window.HF_FURNITURE_FACILITY_ASSET_DATA_URI,"toolworks":window.HF_TOOLWORKS_FACILITY_ASSET_DATA_URI,"electronics":window.HF_ELECTRONICS_FACILITY_ASSET_DATA_URI,"pharma":window.HF_PHARMA_FACILITY_ASSET_DATA_URI,"textile":window.HF_TEXTILE_FACILITY_ASSET_DATA_URI},"vehicles":{"van":window.HF_VAN_VEHICLE_ASSET_DATA_URI,"lightTruck":window.HF_LIGHT_TRUCK_VEHICLE_ASSET_DATA_URI,"heavyTruck":window.HF_HEAVY_TRUCK_VEHICLE_ASSET_DATA_URI,"artic":window.HF_ARTIC_VEHICLE_ASSET_DATA_URI,"freightTrain":window.HF_FREIGHT_TRAIN_VEHICLE_ASSET_DATA_URI}};
+const ASSETS = {"goods":{"grain":"__WINDOW_HF_GRAIN_ASSET_DATA_URI__","wood":"__WINDOW_HF_WOOD_ASSET_DATA_URI__","ore":"__WINDOW_HF_ORE_ASSET_DATA_URI__","chemicals":"__WINDOW_HF_CHEMICALS_ASSET_DATA_URI__","food":"__WINDOW_HF_FOOD_ASSET_DATA_URI__"},"facilities":{"farm":window.HF_FARM_FACILITY_ASSET_DATA_URI,"forestry":window.HF_FORESTRY_FACILITY_ASSET_DATA_URI,"mine":window.HF_MINE_FACILITY_ASSET_DATA_URI,"chemical":window.HF_CHEMICAL_FACILITY_ASSET_DATA_URI,"furniture":window.HF_FURNITURE_FACILITY_ASSET_DATA_URI,"toolworks":window.HF_TOOLWORKS_FACILITY_ASSET_DATA_URI,"electronics":window.HF_ELECTRONICS_FACILITY_ASSET_DATA_URI,"pharma":window.HF_PHARMA_FACILITY_ASSET_DATA_URI},"vehicles":{"van":window.HF_VAN_VEHICLE_ASSET_DATA_URI,"lightTruck":window.HF_LIGHT_TRUCK_VEHICLE_ASSET_DATA_URI,"heavyTruck":window.HF_HEAVY_TRUCK_VEHICLE_ASSET_DATA_URI,"artic":window.HF_ARTIC_VEHICLE_ASSET_DATA_URI,"freightTrain":window.HF_FREIGHT_TRAIN_VEHICLE_ASSET_DATA_URI}};
 ASSETS.goods.corn=window.HF_CORN_ASSET_DATA_URI;
 ASSETS.goods.pears=window.HF_PEARS_ASSET_DATA_URI;
 ASSETS.goods.canned_corn=window.HF_CANNED_CORN_ASSET_DATA_URI;
@@ -175,21 +173,23 @@ ASSETS.goods.electronics=window.HF_ELECTRONICS_ASSET_DATA_URI;
 ASSETS.goods.medicine=window.HF_MEDICINE_ASSET_DATA_URI;
 ASSETS.goods.aluminum=window.HF_ALUMINUM_ASSET_DATA_URI;
 ASSETS.facilities.aluminumworks=window.HF_ALUMINUMWORKS_FACILITY_ASSET_DATA_URI;
+// Bootstrap only needs stable object identities plus the fields used before the
+// content-pack import: goods need name/icon/raw/price and facilities need
+// name/icon/cost/input/output/raw/desc. The full active catalog lives in
+// scripts/hf-goods-database.js and is applied through externalGoodsContentPack.
 const GOODS = {
   grain:{name:'Getreide',icon:'🌾',raw:true}, wood:{name:'Holz',icon:'🪵',raw:true}, ore:{name:'Erz',icon:'⛏️',raw:true}, chemicals:{name:'Chemikalien',icon:'⚗️',raw:true},
-  food:{name:'Lebensmittel',icon:'🥫',price:3200}, furniture:{name:'Möbel',icon:'🪑',price:4300}, tools:{name:'Werkzeuge',icon:'🔧',price:4700}, electronics:{name:'Elektronik',icon:'💻',price:6500}, medicine:{name:'Medizin',icon:'💊',price:6900}, clothing:{name:'Kleidung',icon:'🧥',price:4100}
+  food:{name:'Lebensmittel',icon:'🥫',price:3200}, furniture:{name:'Möbel',icon:'🪑',price:4300}, tools:{name:'Werkzeuge',icon:'🔧',price:4700}, electronics:{name:'Elektronik',icon:'💻',price:6500}, medicine:{name:'Medizin',icon:'💊',price:6900}
 };
 const FACILITIES = {
   farm:{name:'Landwirtschaft',icon:'🌾',cost:42000,output:{grain:5},inputs:{},raw:true,desc:'Erzeugt 5 Getreide pro Tag.'},
   forestry:{name:'Forstbetrieb',icon:'🌲',cost:48000,output:{wood:5},inputs:{},raw:true,desc:'Erzeugt 5 Holz pro Tag.'},
   mine:{name:'Bergwerk',icon:'⛏️',cost:65000,output:{ore:4},inputs:{},raw:true,desc:'Erzeugt 4 Erz pro Tag.'},
   chemical:{name:'Chemiewerk',icon:'⚗️',cost:85000,output:{chemicals:4},inputs:{},raw:true,desc:'Erzeugt 4 Chemikalien pro Tag.'},
-  foodplant:{name:'Lebensmittelfabrik',icon:'🥫',cost:78000,output:{food:4},inputs:{grain:3},desc:'3 Getreide → 4 Lebensmittel'},
   furniture:{name:'Möbelfabrik',icon:'🪑',cost:92000,output:{furniture:3},inputs:{wood:3},desc:'3 Holz → 3 Möbel'},
   toolworks:{name:'Werkzeugfabrik',icon:'🔧',cost:105000,output:{tools:3},inputs:{ore:2,wood:1},desc:'2 Erz + 1 Holz → 3 Werkzeuge'},
   electronics:{name:'Elektronikwerk',icon:'💻',cost:142000,output:{electronics:3},inputs:{ore:2,chemicals:1},desc:'2 Erz + 1 Chemikalien → 3 Elektronik'},
-  pharma:{name:'Pharmawerk',icon:'💊',cost:155000,output:{medicine:3},inputs:{chemicals:2},desc:'2 Chemikalien → 3 Medizin'},
-  textile:{name:'Textilfabrik',icon:'🧥',cost:88000,output:{clothing:4},inputs:{chemicals:1,grain:1},desc:'1 Chemikalie + 1 Getreide → 4 Kleidung'}
+  pharma:{name:'Pharmawerk',icon:'💊',cost:155000,output:{medicine:3},inputs:{chemicals:2},desc:'2 Chemikalien → 3 Medizin'}
 };
 const TRANSPORT_TYPES = {
   localroad:{name:'Gemeindestraße',short:'GEMEINDE',mode:'road',icon:'🛤️',capacity:3,capacityUnit:'Fahrzeuge',speed:35,baseCost:4000,buildKm:280,maintenanceKm:12,color:'#85796b',weight:2,desc:'Sehr günstig, aber langsam und mit geringer Tageskapazität.'},
@@ -233,7 +233,7 @@ const CITIES = (window.HF_CITY_CATALOG||[]).map(entry=>Array.isArray(entry)
   ? {id:entry[0],name:entry[1],lat:entry[2],lng:entry[3],tier:entry[4],slots:entry[5],population:entry[6],wealthFactor:entry[7],demandProfile:entry[8]}
   : {id:entry.id,name:entry.name,lat:entry.coordinates?.lat??entry.lat,lng:entry.coordinates?.lng??entry.lng,tier:entry.tier,slots:entry.slots,population:entry.population,wealthFactor:entry.wealthFactor,demandProfile:entry.demandProfile});
 const CITY = Object.fromEntries(CITIES.map(c=>[c.id,c]));
-const DEMAND_GOODS=['food','furniture','tools','electronics','medicine','clothing'];
+const DEMAND_GOODS=['food','furniture','tools','electronics','medicine'];
 const money=n=>'CHF '+Math.round(n).toLocaleString('de-CH');
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const HF_GAME_MECHANICS=window.HF_GAME_MECHANICS;
@@ -605,12 +605,12 @@ function renderCompany(root){
 
 // --- v13 / Android 1.0.3: physical cargo units, hourly production, visible locked-city demand ---
 const PHYSICAL_UNITS_VERSION=1;
-const LEGACY_CARGO_KG={grain:1000,wood:1000,ore:1000,chemicals:1100,food:1000,furniture:800,tools:1000,electronics:500,medicine:500,clothing:150,fish:1000};
+const LEGACY_CARGO_KG={grain:1000,wood:1000,ore:1000,chemicals:1100,food:1000,furniture:800,tools:1000,electronics:500,medicine:500,fish:1000};
 const GOOD_MEASURES={
   grain:{unit:'t',kgPerUnit:1000,step:.1},wood:{unit:'t',kgPerUnit:1000,step:.1},ore:{unit:'t',kgPerUnit:1000,step:.1},
   chemicals:{unit:'L',kgPerUnit:1.1,step:10},food:{unit:'kg',kgPerUnit:1,step:10},furniture:{unit:'Stk.',kgPerUnit:40,step:1},
   tools:{unit:'kg',kgPerUnit:1,step:10},electronics:{unit:'Stk.',kgPerUnit:5,step:1},medicine:{unit:'kg',kgPerUnit:1,step:10},
-  clothing:{unit:'Stk.',kgPerUnit:.6,step:1},fish:{unit:'kg',kgPerUnit:1,step:10}
+  fish:{unit:'kg',kgPerUnit:1,step:10}
 };
 function roundCargo(v){return Math.round((Number(v)||0)*1000)/1000}
 function measureFor(g){return GOOD_MEASURES[g]||{unit:'kg',kgPerUnit:1,step:1}}
@@ -1059,7 +1059,7 @@ const TOMATO_CAN_RECIPE={inputs:{tomatoes:1500,cans:300},outputs:{tomato_cans:30
 
 ASSETS.goods.aluminum_ore=ASSETS.goods.ore||ASSETS.goods.aluminum;
 ASSETS.facilities.aluminum_mine=ASSETS.facilities.mine||ASSETS.facilities.aluminumworks;
-ASSETS.facilities.foodfactory=ASSETS.facilities.ravioli_meat_factory||ASSETS.facilities.ravioli_veg_factory||ASSETS.facilities.foodplant;
+ASSETS.facilities.foodfactory=ASSETS.facilities.ravioli_meat_factory||ASSETS.facilities.ravioli_veg_factory||ASSETS.facilities.cannery||ASSETS.facilities.furniture;
 GOODS.aluminum_ore={name:'Aluminiumerz',icon:'🪨',raw:true};
 LEGACY_CARGO_KG.aluminum_ore=1000;
 GOOD_MEASURES.aluminum_ore={unit:'t',kgPerUnit:1000,step:.1};
@@ -1067,7 +1067,6 @@ FACILITIES.aluminum_mine={name:'Aluminiumerzmine',icon:'🪨',cost:84000,output:
 RAW_ALLOWED.aluminum_mine=new Set(RAW_ALLOWED.mine||[]);
 FACILITIES.aluminumworks.inputs={aluminum_ore:1800};
 FACILITIES.aluminumworks.desc='1.8 t Aluminiumerz → 1.4 t Aluminium pro Tag.';
-FACILITIES.foodplant.name='Grundnahrungsmittelfabrik';
 FACILITIES.foodfactory={name:'Lebensmittelfabrik',icon:'🍝',cost:236000,output:{},inputs:{},_physicalRates:true,desc:'Flexible Produktion von Fleischravioli, Vegi-Ravioli und Tomatenkonserven.'};
 
 function ensureFacilityConfigs(cityState){
@@ -1760,8 +1759,8 @@ save(false);
     {id:'agriculture',name:'Landwirtschaft',icon:'🌾',desc:'Felder, Plantagen und Tierhaltung',items:['farm','pigfarm','tomatofarm','zucchinifarm','appleorchard','pearorchard','potatofarm','cornfarm','peafarm']},
     {id:'natural',name:'Forst & Fischerei',icon:'🌲',desc:'Natürliche Rohstoffe',items:['forestry','fishery']},
     {id:'mines',name:'Minen',icon:'⛏️',desc:'Erz und Aluminiumerz',items:['mine','aluminum_mine']},
-    {id:'food',name:'Lebensmittel',icon:'🥫',desc:'Verarbeitung landwirtschaftlicher Waren',items:['foodplant','slaughterhouse','cannery','foodfactory','corn_cannery']},
-    {id:'industry',name:'Industrie',icon:'🏭',desc:'Metall, Möbel, Textilien und Werkzeuge',items:['aluminumworks','furniture','textile','toolworks']},
+    {id:'food',name:'Lebensmittel',icon:'🥫',desc:'Verarbeitung landwirtschaftlicher Waren',items:['slaughterhouse','cannery','foodfactory','corn_cannery']},
+    {id:'industry',name:'Industrie',icon:'🏭',desc:'Metall, Möbel, Textilien und Werkzeuge',items:['aluminumworks','furniture','toolworks']},
     {id:'tech',name:'Chemie & Technik',icon:'⚗️',desc:'Chemikalien, Medizin und Elektronik',items:['chemical','pharma','electronics']}
   ];
   function inventorySectionMarkup(s,locked=false){const inv=Object.entries(s.inventory||{}).filter(([,q])=>q>.001);return `<section class="card"><div class="compact-head"><h3>Lager</h3><span class="pill">${formatWeight(inv.reduce((n,[,q])=>n+q,0))}</span></div>${inv.length?`<div class="goods">${inv.map(([g,q])=>goodCard(g,q)).join('')}</div>`:`<div class="empty">📦 ${locked?'Noch kein zugängliches Lager':'Lager leer'}</div>`}</section>`}
@@ -3531,8 +3530,8 @@ function hfInstallAutosaveHooks(){
     {id:'agriculture',name:'Landwirtschaft',icon:'🌾',desc:'Felder, Plantagen und Tierhaltung',items:['farm','pigfarm','tomatofarm','zucchinifarm','appleorchard','pearorchard',CHERRY_ID,'potatofarm','cornfarm','peafarm']},
     {id:'natural',name:'Forst & Fischerei',icon:'🌲',desc:'Natürliche Rohstoffe',items:['forestry','fishery']},
     {id:'mines',name:'Minen',icon:'⛏️',desc:'Erz und Aluminiumerz',items:['mine','aluminum_mine']},
-    {id:'food',name:'Lebensmittel',icon:'🥫',desc:'Verarbeitung landwirtschaftlicher Waren',items:['foodplant','slaughterhouse','cannery','foodfactory']},
-    {id:'industry',name:'Industrie',icon:'🏭',desc:'Metall, Möbel, Textilien und Werkzeuge',items:['aluminumworks','furniture','textile','toolworks']},
+    {id:'food',name:'Lebensmittel',icon:'🥫',desc:'Verarbeitung landwirtschaftlicher Waren',items:['slaughterhouse','cannery','foodfactory']},
+    {id:'industry',name:'Industrie',icon:'🏭',desc:'Metall, Möbel, Textilien und Werkzeuge',items:['aluminumworks','furniture','toolworks']},
     {id:'tech',name:'Chemie & Technik',icon:'⚗️',desc:'Chemikalien, Medizin und Elektronik',items:['chemical','pharma','electronics']}
   ];
   openFacility=function(){
@@ -3840,7 +3839,7 @@ function hfInstallAutosaveHooks(){
     {id:'natural',name:'Forst & Fischerei',icon:'🌲',desc:'Natürliche Rohstoffe',items:['forestry','fishery']},
     {id:'mines',name:'Minen',icon:'⛏️',desc:'Erz und Aluminiumerz',items:['mine','aluminum_mine']},
     {id:'food',name:'Lebensmittel',icon:'🥫',desc:'Verarbeitung landwirtschaftlicher Waren',items:['slaughterhouse','cannery','foodfactory']},
-    {id:'industry',name:'Industrie',icon:'🏭',desc:'Metall, Möbel, Textilien und Werkzeuge',items:['aluminumworks','furniture','textile','toolworks']},
+    {id:'industry',name:'Industrie',icon:'🏭',desc:'Metall, Möbel, Textilien und Werkzeuge',items:['aluminumworks','furniture','toolworks']},
     {id:'tech',name:'Chemie & Technik',icon:'⚗️',desc:'Chemikalien, Medizin und Elektronik',items:['chemical','pharma','electronics']}
   ]}
   openFacility=function(){
@@ -4461,7 +4460,7 @@ function hfInstallAutosaveHooks(){
   const facilityAssignments={
     farm:['field_crop',{}],pigfarm:['livestock',{}],tomatofarm:['field_crop',{}],zucchinifarm:['greenhouse',{}],appleorchard:['orchard',{}],pearorchard:['orchard',{}],cherryorchard:['orchard',{}],potatofarm:['field_crop',{}],cornfarm:['field_crop',{}],peafarm:['field_crop',{}],
     forestry:['forest_resource',{}],fishery:['fish_resource',{}],mine:['ore_extraction',{}],aluminum_mine:['aluminum_extraction',{}],
-    slaughterhouse:['light_industry',{}],cannery:['light_industry',{}],foodfactory:['light_industry',{}],furniture:['light_industry',{}],textile:['light_industry',{}],toolworks:['light_industry',{}],
+    slaughterhouse:['light_industry',{}],cannery:['light_industry',{}],foodfactory:['light_industry',{}],furniture:['light_industry',{}],toolworks:['light_industry',{}],
     electronics:['medium_industry',{}],pharma:['medium_industry',{}],aluminumworks:['energy_intensive_industry',{}],chemical:['chemical_industry',{}]
   };
 
@@ -4527,7 +4526,7 @@ function hfInstallAutosaveHooks(){
     {id:'natural',name:'Forst & Fischerei',icon:'🌲',desc:'Natürliche Rohstoffe',items:['forestry','fishery']},
     {id:'mines',name:'Minen',icon:'⛏️',desc:'Erz und Aluminiumerz',items:['mine','aluminum_mine']},
     {id:'food',name:'Lebensmittel',icon:'🥫',desc:'Verarbeitung landwirtschaftlicher Waren',items:['slaughterhouse','cannery','foodfactory']},
-    {id:'industry',name:'Industrie',icon:'🏭',desc:'Metall, Möbel, Textilien und Werkzeuge',items:['aluminumworks','furniture','textile','toolworks']},
+    {id:'industry',name:'Industrie',icon:'🏭',desc:'Metall, Möbel, Textilien und Werkzeuge',items:['aluminumworks','furniture','toolworks']},
     {id:'tech',name:'Chemie & Technik',icon:'⚗️',desc:'Chemikalien, Medizin und Elektronik',items:['chemical','pharma','electronics']}
   ];
   openFacility=function(){
