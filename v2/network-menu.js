@@ -89,7 +89,7 @@
       const fullyConnected = state.road && state.rail;
       const distance = origin ? estimatedDistanceForType(origin, target, 'mainroad') : 0;
       return `
-        <button class="hf-v2-network-target${fullyConnected ? ' is-disabled' : ''}" type="button" data-network-target="${escapeHtml(target.id)}" ${fullyConnected ? 'disabled' : ''}>
+        <button class="hf-v2-network-target${fullyConnected ? ' is-disabled' : ''}" type="button" data-action="select-target" data-target="${escapeHtml(target.id)}" ${fullyConnected ? 'disabled' : ''}>
           <span>
             <strong>${escapeHtml(target.name)}</strong>
             <small>${formatKm(distance)} · Stufe ${escapeHtml(target.tier)}</small>
@@ -116,7 +116,7 @@
     const quote = hfNetwork.buildQuote?.(type, distance);
     const disabled = exists || !quote;
     return `
-      <button class="hf-v2-network-option${disabled ? ' is-disabled' : ''}" type="button" data-network-build="${escapeHtml(type)}" ${disabled ? 'disabled' : ''}>
+      <button class="hf-v2-network-option${disabled ? ' is-disabled' : ''}" type="button" data-action="plan-connection" data-origin="${escapeHtml(origin.id)}" data-target="${escapeHtml(target.id)}" data-type="${escapeHtml(type)}" ${disabled ? 'disabled' : ''}>
         <span class="hf-v2-network-icon" aria-hidden="true">${escapeHtml(spec.icon)}</span>
         <span>
           <strong>${escapeHtml(DISPLAY_NAMES[type] || spec.name)}</strong>
@@ -135,7 +135,7 @@
 
     return `
       <div class="hf-v2-network-menu" data-network-origin="${escapeHtml(originId)}" data-network-target-id="${escapeHtml(targetId)}">
-        <button class="hf-v2-network-back" type="button" data-network-target-picker>← Ziel ändern</button>
+        <button class="hf-v2-network-back" type="button" data-action="show-target-picker">← Ziel ändern</button>
         <p class="hf-v2-network-eyebrow">Bauoptionen</p>
         <h3>${escapeHtml(origin.name)} → ${escapeHtml(target.name)}</h3>
         <div class="hf-v2-network-grid">${BUILD_TYPES.map(type => renderBuildOption(origin, target, type)).join('')}</div>
@@ -147,8 +147,10 @@
     window.HFV2Modal?.setModalBody?.(html);
   }
 
-  async function handleBuild(type) {
-    const project = await network()?.planConnection?.(activeOriginId, activeTargetId, type);
+  async function handleBuild(type, originId = activeOriginId, targetId = activeTargetId) {
+    activeOriginId = originId;
+    activeTargetId = targetId;
+    const project = await window.HF_V2?.planConnection?.(originId, targetId, type);
     if (!project) return;
     const origin = cityById(project.a);
     const target = cityById(project.b);
@@ -157,44 +159,45 @@
         <p class="hf-v2-network-eyebrow">Projekt geplant</p>
         <h3>${escapeHtml(origin?.name || project.a)} → ${escapeHtml(target?.name || project.b)}</h3>
         <p class="hf-v2-network-hint">${escapeHtml(DISPLAY_NAMES[project.type] || network()?.TRANSPORT_TYPES?.[project.type]?.name || project.type)} · ${formatKm(project.distance)} · Baukosten ${formatMoney(project.cost)} · Unterhalt ${formatMoney(project.maintenance)}/Tag</p>
-        <button class="hf-v2-network-back" type="button" data-network-confirm>Bauen</button>
-        <button class="hf-v2-network-back" type="button" data-network-back>Weitere Option wählen</button>
+        <button class="hf-v2-network-back" type="button" data-action="confirm-project">Bauen</button>
+        <button class="hf-v2-network-back" type="button" data-action="back-to-build-options">Weitere Option wählen</button>
       </div>`);
   }
 
   function bindNetworkMenuEvents() {
     document.addEventListener('click', event => {
-      const targetButton = event.target.closest?.('[data-network-target]');
-      if (targetButton) {
-        event.preventDefault();
-        setBody(renderBuildOptions(activeOriginId, targetButton.dataset.networkTarget));
+      const actionButton = event.target.closest?.('[data-action]');
+      if (!actionButton) return;
+
+      const modalBody = document.getElementById('hfV2ModalBody');
+      if (modalBody && !modalBody.contains(actionButton)) return;
+
+      const {action, origin, target, type} = actionButton.dataset;
+      if (!action) return;
+
+      event.preventDefault();
+
+      if (action === 'select-target') {
+        setBody(renderBuildOptions(activeOriginId, target));
         return;
       }
 
-      const buildButton = event.target.closest?.('[data-network-build]');
-      if (buildButton) {
-        event.preventDefault();
-        handleBuild(buildButton.dataset.networkBuild);
+      if (action === 'plan-connection') {
+        handleBuild(type, origin, target);
         return;
       }
 
-      if (event.target.closest?.('[data-network-target-picker]')) {
-        event.preventDefault();
+      if (action === 'show-target-picker') {
         setBody(renderTargetPicker(activeOriginId));
         return;
       }
 
-      if (event.target.closest?.('[data-network-confirm]')) {
-        event.preventDefault();
-        const edge = network()?.confirmProject?.();
-        if (edge) {
-          window.HFV2Modal?.closeModal?.();
-        }
+      if (action === 'confirm-project') {
+        window.HF_V2?.confirmProject?.();
         return;
       }
 
-      if (event.target.closest?.('[data-network-back]')) {
-        event.preventDefault();
+      if (action === 'back-to-build-options') {
         setBody(activeTargetId ? renderBuildOptions(activeOriginId, activeTargetId) : renderTargetPicker(activeOriginId));
       }
     });
@@ -213,6 +216,5 @@
 
   bindNetworkMenuEvents();
 
-  window.openNetworkMenuForCity = openNetworkMenuForCity;
   window.HFNetworkMenu = {openNetworkMenuForCity, renderTargetPicker, renderBuildOptions};
 })();
