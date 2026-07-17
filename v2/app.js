@@ -77,6 +77,15 @@
     });
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>\"]/g, char => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '\"': '&quot;',
+    }[char]));
+  }
+
   function bindCityTooltip(marker, city) {
     marker.unbindTooltip();
     marker.bindTooltip(city.name, {
@@ -113,6 +122,47 @@
     ].join('');
   }
 
+  function networkMenuForCity(cityId) {
+    if (!window.HFNetwork?.openNetworkBuildMenu) return [];
+    return window.HFNetwork.openNetworkBuildMenu(cityId) || [];
+  }
+
+  function availableConnectionLabel(entry) {
+    const modes = [];
+    if (!entry.hasRoad) modes.push('Straße');
+    if (!entry.hasRail) modes.push('Bahn');
+    return modes.length ? modes.join(' / ') : 'keine neue Verbindung';
+  }
+
+  function openNetworkPopupForCity(city) {
+    if (!map || !window.L || !city) return;
+
+    const connections = networkMenuForCity(city.id);
+    const connectionRows = connections.length
+      ? connections.slice(0, 6).map(entry => `
+          <li>
+            <strong>${escapeHtml(entry.city.name)}</strong>
+            <span>${Math.round(entry.roadDistance).toLocaleString('de-CH')} km · ${escapeHtml(availableConnectionLabel(entry))}</span>
+          </li>`).join('')
+      : '<li><span>Keine neuen Verbindungen in Reichweite.</span></li>';
+
+    L.popup({
+      className: 'city-network-popup',
+      closeButton: true,
+      autoClose: true,
+      closeOnClick: true,
+      offset: [0, -10],
+    })
+      .setLatLng([city.lat, city.lng])
+      .setContent(`
+        <div class="city-network-menu">
+          <p class="city-network-menu__eyebrow">Netzwerk bauen</p>
+          <h3>${escapeHtml(city.name)}</h3>
+          <ul>${connectionRows}</ul>
+        </div>`)
+      .openOn(map);
+  }
+
   function renderMarkers(cities) {
     markerById.clear();
     for (const city of cities) {
@@ -124,14 +174,12 @@
       }).addTo(map);
       marker.on('click', () => {
         selectCity(city, cities);
-        window.hideCityNetworkAction?.();
-        window.showCityNetworkAction?.(city);
+        window.showCityActionMenu?.(city);
       });
       marker.on('keypress', event => {
         if (event.originalEvent?.key === 'Enter' || event.originalEvent?.key === ' ') {
           selectCity(city, cities);
-          window.hideCityNetworkAction?.();
-          window.showCityNetworkAction?.(city);
+          window.showCityActionMenu?.(city);
         }
       });
       bindCityTooltip(marker, city);
@@ -173,6 +221,14 @@
       detectRetina: false,
       attribution: '© OpenStreetMap-Mitwirkende',
     }).addTo(map);
+
+    window.initCityActionMenu?.({
+      map,
+      onNetworkClick: city => {
+        window.hideCityActionMenu?.();
+        openNetworkPopupForCity(city);
+      },
+    });
 
     renderMarkers(cities);
     if (window.HFNetwork && networkState) {
