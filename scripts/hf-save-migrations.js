@@ -40,7 +40,7 @@
       id: 'deprecated-goods-cleanup-v138',
       schemaKey: 'deprecatedGoodsSchema',
       schemaVersion: DEPRECATED_GOODS_SCHEMA,
-      buildVersion: '1.1.38',
+      buildVersion: global.hfCurrentBuildVersion?.() || global.HF_BUILD_VERSION || '1.1.38',
       description: 'Removes deprecated goods from city inventories and demand slots using HF_GOODS_DATABASE.',
       migrate: purgeDeprecatedGoods
     }),
