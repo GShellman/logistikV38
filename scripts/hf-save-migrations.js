@@ -35,6 +35,123 @@
     return target;
   }
 
+
+  function normalizeLegacySaveV1ToV8(source, context = {}) {
+    const target = source;
+    if (!target || ![1, 2, 3, 4, 5, 6, 7, 8].includes(target.version)) return null;
+    const oldVersion = target.version;
+    const transportTypes = context.transportTypes || global.TRANSPORT_TYPES || {};
+    const vehicles = context.vehicles || global.VEHICLES || {};
+    const cities = context.cities || global.CITIES || [];
+    const cityById = context.cityById || global.CITY || Object.fromEntries(cities.map(city => [city.id, city]));
+    const createCityState = context.createCityState || global.createCityState;
+    const normalizeInventory = context.normalizeInventory || (inventory => inventory || {});
+    const makeDemands = context.makeDemands || (() => ({}));
+
+    if (oldVersion === 1) {
+      target.connections = (target.connections || []).map(edge => ({
+        ...edge,
+        type: edge.type === 'road' ? 'mainroad' : edge.type,
+        geometry: edge.geometry || null
+      }));
+    }
+
+    target.connections = (target.connections || []).map(edge => {
+      const type = transportTypes[edge.type] ? edge.type : (edge.type === 'road' ? 'mainroad' : 'rail');
+      const transport = transportTypes[type] || transportTypes.mainroad || transportTypes.rail || {capacity: 1, maintenanceKm: 0};
+      return {
+        ...edge,
+        type,
+        capacity: oldVersion < 3 ? transport.capacity : (edge.capacity || transport.capacity),
+        maintenance: oldVersion < 3 ? Math.round(edge.distance * transport.maintenanceKm) : (edge.maintenance || Math.round(edge.distance * transport.maintenanceKm)),
+        geometry: edge.geometry || null
+      };
+    });
+
+    target.routes = (target.routes || []).map(route => {
+      const vehicle = vehicles[route.vehicleType] || vehicles.van || {load: 1};
+      const count = Math.max(1, Math.floor(route.vehicleCount || 1));
+      const amount = count * vehicle.load;
+      return {
+        ...route,
+        vehicleCount: count,
+        amountPerDay: amount,
+        returnPolicy: route.returnPolicy || 'empty',
+        returnGood: route.returnGood || null,
+        returnAmount: (route.returnPolicy && route.returnPolicy !== 'empty') ? amount : 0
+      };
+    });
+
+    target.fleet = target.fleet || {van: 2, lightTruck: 0, heavyTruck: 0, artic: 0, freightTrain: 0};
+    Object.keys(vehicles).forEach(key => { target.fleet[key] = target.fleet[key] || 0; });
+    target.usedCapacity = {};
+
+    target.shipments = (target.shipments || []).map(shipment => {
+      const remainingMinutes = shipment.remainingMinutes ?? Math.max(0, Math.round((shipment.remainingHours ?? shipment.eta ?? 1) * 60));
+      const totalMinutes = shipment.totalMinutes ?? Math.max(1, Math.round((shipment.totalHours ?? shipment.eta ?? 1) * 60));
+      const phase = shipment.phase || 'outbound';
+      const currentNode = shipment.currentNode || (phase === 'awaiting_return' ? (shipment.destination || shipment.to) : (shipment.from || shipment.home));
+      const next = {
+        ...shipment,
+        vehicleType: shipment.vehicleType || 'van',
+        remainingMinutes,
+        totalMinutes,
+        edgeIds: shipment.edgeIds || [],
+        trips: shipment.trips || 1,
+        home: shipment.home || shipment.from,
+        destination: shipment.destination || shipment.to,
+        phase,
+        returnPolicy: shipment.returnPolicy || 'empty',
+        returnGood: shipment.returnGood || null,
+        returnAmount: shipment.returnAmount || 0,
+        waitingReason: shipment.waitingReason || '',
+        movementStatus: phase === 'awaiting_return' ? 'waiting_return' : (oldVersion >= 8 ? (shipment.movementStatus || 'queued') : 'queued'),
+        currentEdgeIndex: oldVersion >= 8 ? (shipment.currentEdgeIndex || 0) : 0,
+        currentNode,
+        edgeRemainingMinutes: oldVersion >= 8 ? (shipment.edgeRemainingMinutes || 0) : 0,
+        edgeTotalMinutes: oldVersion >= 8 ? (shipment.edgeTotalMinutes || 0) : 0
+      };
+      delete next.eta;
+      delete next.remainingHours;
+      delete next.totalHours;
+      return next;
+    });
+
+    target.usedVehicles = {};
+    target.shipments.forEach(shipment => {
+      target.usedVehicles[shipment.vehicleType] = (target.usedVehicles[shipment.vehicleType] || 0) + (shipment.trips || 1);
+    });
+
+    target.cities = target.cities || {};
+    cities.forEach(city => {
+      if (!target.cities[city.id]) {
+        target.cities[city.id] = typeof createCityState === 'function' ? createCityState(city) : {inventory: {}, facilities: [], demands: {}};
+      } else {
+        target.cities[city.id].inventory = normalizeInventory(target.cities[city.id].inventory);
+        target.cities[city.id].facilities = target.cities[city.id].facilities || [];
+        target.cities[city.id].demands = target.cities[city.id].demands || makeDemands(city);
+        target.cities[city.id].sales = target.cities[city.id].sales || 0;
+      }
+    });
+
+    if (!target.selected || !cityById[target.selected]) target.selected = 'zurich';
+    target.hour = Number.isFinite(target.hour) ? Math.floor(target.hour) : 8;
+    target.minute = Number.isFinite(target.minute) ? Math.floor(target.minute) : 0;
+    target.version = 8;
+    return target;
+  }
+
+  function migrateSaveState(source, context = {}) {
+    const target = normalizeLegacySaveV1ToV8(source, context);
+    if (!target) return null;
+    for (const migration of global.HF_SAVE_MIGRATIONS || []) {
+      if (!migration?.schemaKey || !(Number(target?.[migration.schemaKey]) >= Number(migration.schemaVersion))) {
+        try { migration?.migrate?.(target); } catch (err) { console.warn('Save-Migration fehlgeschlagen', migration?.id, err); }
+      }
+    }
+    return target;
+  }
+
   global.HF_SAVE_MIGRATIONS = Object.freeze([
     Object.freeze({
       id: 'deprecated-goods-cleanup-v138',
@@ -79,4 +196,7 @@
       }
     })
   ]);
+
+  global.HF_NORMALIZE_SAVE_V1_TO_V8 = normalizeLegacySaveV1ToV8;
+  global.HF_MIGRATE_SAVE_STATE = migrateSaveState;
 })(window);
