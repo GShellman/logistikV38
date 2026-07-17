@@ -325,7 +325,7 @@ function initMap(){
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap-Mitwirkende'}).addTo(map);
   CITIES.forEach(c=>{
     const icon=L.divIcon({className:'',html:`<div id="mk-${c.id}" class="city-marker"></div>`,iconSize:[30,30],iconAnchor:[15,15]});
-    const m=L.marker([c.lat,c.lng],{icon,zIndexOffset:c.id==='zurich'?500:0}).addTo(map).on('click',()=>selectCity(c.id,false));
+    const m=L.marker([c.lat,c.lng],{icon,zIndexOffset:c.id==='zurich'?500:0}).addTo(map).on('click',()=>{state.selected=c.id;window.HF?.hfV1138OpenCitySupply?window.HF.hfV1138OpenCitySupply(c.id):selectCity(c.id,false)});
     m.bindTooltip(c.name,{permanent:state.cities[c.id].unlocked,direction:'top',offset:[0,-13],className:'city-label'});markers[c.id]=m;
   });
   renderMap();
@@ -718,7 +718,7 @@ function initMap(){
   const bounds=L.latLngBounds(HF_SWISS_BOUNDS);
   map=L.map('map',{zoomControl:true,minZoom:7,maxZoom:13,preferCanvas:true,zoomAnimation:false,fadeAnimation:false,markerZoomAnimation:false,maxBounds:bounds.pad(.08),maxBoundsViscosity:1}).setView([46.82,8.25],8);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{minZoom:7,maxZoom:13,maxNativeZoom:18,noWrap:true,bounds,keepBuffer:0,updateWhenIdle:true,updateWhenZooming:false,detectRetina:false,attribution:'© OpenStreetMap-Mitwirkende'}).addTo(map);
-  CITIES.forEach(c=>{const m=L.marker([c.lat,c.lng],{icon:hfCityIcon(c),zIndexOffset:c.id==='zurich'?500:(c.id==='sissach'?350:(c.tier===1?120:0))}).on('click',()=>selectCity(c.id,false));markers[c.id]=m});
+  CITIES.forEach(c=>{const m=L.marker([c.lat,c.lng],{icon:hfCityIcon(c),zIndexOffset:c.id==='zurich'?500:(c.id==='sissach'?350:(c.tier===1?120:0))}).on('click',()=>{state.selected=c.id;window.HF?.hfV1138OpenCitySupply?window.HF.hfV1138OpenCitySupply(c.id):selectCity(c.id,false)});markers[c.id]=m});
   let viewportTimer=0;
   const viewportChanged=()=>{clearTimeout(viewportTimer);viewportTimer=setTimeout(()=>{renderMap();},80)};
   map.on('moveend zoomend',viewportChanged);
