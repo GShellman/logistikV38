@@ -40,10 +40,20 @@
     </aside>
   </main>
 
+  <div id="hfV2ModalBack" class="hf-v2-modal-back" hidden>
+    <section id="hfV2Modal" class="hf-v2-modal" role="dialog" aria-modal="true" aria-labelledby="hfV2ModalTitle" aria-describedby="hfV2ModalSubtitle">
+      <button id="hfV2ModalClose" class="hf-v2-modal__close" type="button" aria-label="Modal schließen">×</button>
+      <p id="hfV2ModalSubtitle" class="hf-v2-modal__subtitle" hidden></p>
+      <h2 id="hfV2ModalTitle" class="hf-v2-modal__title"></h2>
+      <div id="hfV2ModalBody" class="hf-v2-modal__body"></div>
+    </section>
+  </div>
+
   <script src="../scripts/hf-city-catalog.js"></script>
   <script crossorigin="" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="network-logic.js"></script>
   <script src="city-action-menu.js"></script>
+  <script src="modal.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

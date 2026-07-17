@@ -134,8 +134,8 @@
     return modes.length ? modes.join(' / ') : 'keine neue Verbindung';
   }
 
-  function openNetworkPopupForCity(city) {
-    if (!map || !window.L || !city) return;
+  function openNetworkModalForCity(city) {
+    if (!city || !window.HFV2Modal?.openModal) return;
 
     const connections = networkMenuForCity(city.id);
     const connectionRows = connections.length
@@ -146,21 +146,15 @@
           </li>`).join('')
       : '<li><span>Keine neuen Verbindungen in Reichweite.</span></li>';
 
-    L.popup({
-      className: 'city-network-popup',
-      closeButton: true,
-      autoClose: true,
-      closeOnClick: true,
-      offset: [0, -10],
-    })
-      .setLatLng([city.lat, city.lng])
-      .setContent(`
+    window.HFV2Modal.openModal({
+      className: 'city-network-modal',
+      title: city.name,
+      subtitle: 'Netzwerk bauen',
+      bodyHtml: `
         <div class="city-network-menu">
-          <p class="city-network-menu__eyebrow">Netzwerk bauen</p>
-          <h3>${escapeHtml(city.name)}</h3>
           <ul>${connectionRows}</ul>
-        </div>`)
-      .openOn(map);
+        </div>`,
+    });
   }
 
   function renderMarkers(cities) {
@@ -226,7 +220,7 @@
       map,
       onNetworkClick: city => {
         window.hideCityActionMenu?.();
-        openNetworkPopupForCity(city);
+        openNetworkModalForCity(city);
       },
     });
 
