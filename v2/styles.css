@@ -224,10 +224,10 @@ code {
 }
 .hf-v2-city-action.leaflet-popup .leaflet-popup-content { margin: 0 !important; }
 .hf-v2-city-action-panel {
-  height: 84px;
+  height: 116px;
   pointer-events: none;
   position: relative;
-  width: 98px;
+  width: 116px;
 }
 .hf-v2-city-action-button {
   align-items: center;
@@ -243,22 +243,12 @@ code {
   justify-items: center;
   line-height: 1;
   pointer-events: auto;
+  left: var(--hf-action-x, 50%);
   position: absolute;
+  top: var(--hf-action-y, 50%);
   transform: translate(-50%, -50%);
   transition: background .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease;
   width: 38px;
-}
-.hf-v2-city-action-button--network {
-  left: 31%;
-  top: 58%;
-}
-.hf-v2-city-action-button--fleet {
-  left: 69%;
-  top: 42%;
-}
-.hf-v2-city-action-button--factory {
-  left: 50%;
-  top: 78%;
 }
 .hf-v2-city-action-button:hover,
 .hf-v2-city-action-button:focus-visible {
