@@ -37,7 +37,7 @@
 
   function bindPopupEvents() {
     const element = actionPopup?.getElement?.();
-    const button = element?.querySelector?.('.city-action-menu__network-button');
+    const button = element?.querySelector?.('.hf-v2-city-action-button');
     if (!element || !button) return;
 
     stopLeafletPropagation(element);
@@ -54,7 +54,7 @@
     hideCityActionMenu();
     activeCity = city;
     actionPopup = L.popup({
-      className: 'city-action-menu-popup',
+      className: 'hf-v2-city-action',
       closeButton: false,
       autoClose: false,
       closeOnClick: false,
@@ -62,8 +62,8 @@
     })
       .setLatLng([city.lat, city.lng])
       .setContent(`
-        <div class="city-action-menu" data-city-id="${escapeHtml(city.id)}">
-          <button class="city-action-menu__network-button" type="button" aria-label="Netzwerkoptionen für ${escapeHtml(city.name)} öffnen">
+        <div class="hf-v2-city-action" data-city-id="${escapeHtml(city.id)}">
+          <button class="hf-v2-city-action-button" type="button" aria-label="Netzwerkoptionen für ${escapeHtml(city.name)} öffnen">
             <span aria-hidden="true">🛣️</span>
           </button>
         </div>`)

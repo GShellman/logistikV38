@@ -34,7 +34,7 @@
     if (!modalBack || !modal) initModalElements();
     if (!modalBack || !modal) return;
 
-    modal.className = ['hf-v2-modal', className].filter(Boolean).join(' ');
+    modal.className = ['hf-v2-modal', 'show', className].filter(Boolean).join(' ');
     if (modalTitle) modalTitle.textContent = title;
     if (modalSubtitle) {
       modalSubtitle.textContent = subtitle;
@@ -48,6 +48,7 @@
   function closeModal() {
     if (!modalBack) initModalElements();
     if (modalBack) modalBack.hidden = true;
+    modal?.classList.remove('show');
   }
 
   window.HFV2Modal = {
