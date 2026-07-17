@@ -157,6 +157,7 @@
         <p class="network-menu__eyebrow">Projekt geplant</p>
         <h3>${escapeHtml(origin?.name || project.a)} → ${escapeHtml(target?.name || project.b)}</h3>
         <p class="network-menu__hint">${escapeHtml(DISPLAY_NAMES[project.type] || network()?.TRANSPORT_TYPES?.[project.type]?.name || project.type)} · ${formatKm(project.distance)} · Baukosten ${formatMoney(project.cost)} · Unterhalt ${formatMoney(project.maintenance)}/Tag</p>
+        <button class="network-menu__back" type="button" data-network-confirm>Bauen</button>
         <button class="network-menu__back" type="button" data-network-back>Weitere Option wählen</button>
       </div>`);
   }
@@ -180,6 +181,15 @@
       if (event.target.closest?.('[data-network-target-picker]')) {
         event.preventDefault();
         setBody(renderTargetPicker(activeOriginId));
+        return;
+      }
+
+      if (event.target.closest?.('[data-network-confirm]')) {
+        event.preventDefault();
+        const edge = network()?.confirmProject?.();
+        if (edge) {
+          window.HFV2Modal?.closeModal?.();
+        }
         return;
       }
 
