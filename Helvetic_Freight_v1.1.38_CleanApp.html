@@ -618,13 +618,9 @@ function renderCompany(root){
 
 // --- v13 / Android 1.0.3: physical cargo units, hourly production, visible locked-city demand ---
 const PHYSICAL_UNITS_VERSION=1;
-const LEGACY_CARGO_KG={grain:1000,wood:1000,ore:1000,chemicals:1100,food:1000,furniture:800,tools:1000,electronics:500,medicine:500,fish:1000};
-const GOOD_MEASURES={
-  grain:{unit:'t',kgPerUnit:1000,step:.1},wood:{unit:'t',kgPerUnit:1000,step:.1},ore:{unit:'t',kgPerUnit:1000,step:.1},
-  chemicals:{unit:'L',kgPerUnit:1.1,step:10},food:{unit:'kg',kgPerUnit:1,step:10},furniture:{unit:'Stk.',kgPerUnit:40,step:1},
-  tools:{unit:'kg',kgPerUnit:1,step:10},electronics:{unit:'Stk.',kgPerUnit:5,step:1},medicine:{unit:'kg',kgPerUnit:1,step:10},
-  fish:{unit:'kg',kgPerUnit:1,step:10}
-};
+const HF_LEGACY_PHYSICAL_UNITS={food:{unit:'kg',kgPerUnit:1,step:10}};
+const GOOD_MEASURES=Object.fromEntries([...(HF_BOOTSTRAP_CONTENT_PACK?.goods||[]).map(def=>[def.id,{unit:def.unit?.unit||'kg',kgPerUnit:Number(def.unit?.kgPerUnit)||1,step:Number(def.unit?.step)||1}]),...Object.entries(HF_LEGACY_PHYSICAL_UNITS)]);
+const LEGACY_CARGO_KG=Object.fromEntries(Object.entries(GOOD_MEASURES).map(([id,m])=>[id,Number(m.kgPerUnit)||1]));
 function roundCargo(v){return Math.round((Number(v)||0)*1000)/1000}
 function measureFor(g){return GOOD_MEASURES[g]||{unit:'kg',kgPerUnit:1,step:1}}
 function toDisplayAmount(g,kg){return (Number(kg)||0)/measureFor(g).kgPerUnit}
@@ -786,16 +782,8 @@ ASSETS.goods.pork=window.HF_PORK_ASSET_DATA_URI;
 ASSETS.facilities.pigfarm=window.HF_PIGFARM_FACILITY_ASSET_DATA_URI;
 ASSETS.facilities.slaughterhouse=window.HF_SLAUGHTERHOUSE_FACILITY_ASSET_DATA_URI;
 
-GOODS.pigs = {name:'Schweine',icon:'🐖',raw:true};
-GOODS.pork = {name:'Schweinefleisch',icon:'🥩',price:7.6,perishable:true,_physicalPrice:true};
-FACILITIES.pigfarm = {name:'Schweinemast',icon:'🐖',cost:112000,output:{pigs:900},inputs:{grain:1200},raw:true,_physicalRates:true,desc:'Verbraucht täglich 1.2 t Getreide und erzeugt 900 kg Schweine.'};
-FACILITIES.slaughterhouse = {name:'Schlachthof',icon:'🥩',cost:168000,output:{pork:720},inputs:{pigs:1000},_physicalRates:true,desc:'Verarbeitet täglich 1 t Schweine zu 720 kg Schweinefleisch.'};
-LEGACY_CARGO_KG.pigs = 1000;
-LEGACY_CARGO_KG.pork = 1000;
-GOOD_MEASURES.pigs = {unit:'kg',kgPerUnit:1,step:10};
-GOOD_MEASURES.pork = {unit:'kg',kgPerUnit:1,step:10};
-if(!DEMAND_GOODS.includes('pork')) DEMAND_GOODS.push('pork');
-RAW_ALLOWED.pigfarm = new Set(CITIES.map(c=>c.id));
+// Active pork-chain definitions are imported from HF_GOODS_CONTENT_PACK via HF_CONTENT.applyContentPack.
+// This block only keeps legacy save migration and asset compatibility.
 
 vehicleCanCarryGood = function(vehicleId,goodId){
   if(!vehicleId||!goodId||!GOODS[goodId]) return true;
@@ -841,9 +829,7 @@ GOODS.ravioli_meat = {name:'Ravioli mit Fleisch',icon:'🥫',price:10.6,_physica
 GOODS.ravioli_veg = {name:'Ravioli ohne Fleisch',icon:'🥫',price:9.4,_physicalPrice:true};
 
 FACILITIES.tomatofarm = {name:'Tomatenfarm',icon:'🍅',cost:126000,output:{tomatoes:1800},inputs:{},raw:true,_physicalRates:true,desc:'Erzeugt 1.8 t Tomaten pro Tag.'};
-FACILITIES.aluminumworks = {name:'Aluminiumwerk',icon:'⚙️',cost:210000,output:{aluminum:1400},inputs:{ore:1800},raw:true,_physicalRates:true,desc:'Verarbeitet 1.8 t Erz zu 1.4 t Aluminium pro Tag.'};
 FACILITIES.cannery = {name:'Dosenfabrik',icon:'🥫',cost:188000,output:{cans:720},inputs:{aluminum:900},_physicalRates:true,desc:'Formt aus 900 kg Aluminium täglich 9’000 Konservendosen.'};
-FACILITIES.ravioli_meat_factory = {name:'Ravioliwerk Fleisch',icon:'🍝',cost:236000,output:{ravioli_meat:742.5},inputs:{tomatoes:900,pork:720,cans:132},_physicalRates:true,desc:'Kocht Ravioli mit Fleisch aus Tomaten, Schweinefleisch und Konservendosen.'};
 FACILITIES.ravioli_veg_factory = {name:'Ravioliwerk Vegi',icon:'🍝',cost:228000,output:{ravioli_veg:819},inputs:{tomatoes:1100,cans:144},_physicalRates:true,desc:'Kocht fleischlose Ravioli aus Tomaten und Konservendosen.'};
 
 LEGACY_CARGO_KG.tomatoes = 1000;
@@ -1064,23 +1050,12 @@ reset=requestReset;
 
 // --- v1.0.8: flexible food factory and dedicated aluminium ore chain ---
 const FLEX_FOOD_FACTORY_VERSION=1;
-const FOOD_FACTORY_BASE={
-  meat:{inputs:{tomatoes:900,pork:720,cans:132},outputs:{ravioli_meat:742.5}},
-  veg:{inputs:{tomatoes:1100,cans:144},outputs:{ravioli_veg:819}}
-};
-const TOMATO_CAN_RECIPE={inputs:{tomatoes:1500,cans:300},outputs:{tomato_cans:3000}};
+function hfRecipeFromPack(id){const recipe=(HF_BOOTSTRAP_CONTENT_PACK?.recipes||[]).find(r=>r.id===id);return recipe?{inputs:{...(recipe.inputs||{})},outputs:{...(recipe.outputs||{})}}:{inputs:{},outputs:{}}}
 
 ASSETS.goods.aluminum_ore=ASSETS.goods.ore||ASSETS.goods.aluminum;
 ASSETS.facilities.aluminum_mine=ASSETS.facilities.mine||ASSETS.facilities.aluminumworks;
 ASSETS.facilities.foodfactory=ASSETS.facilities.ravioli_meat_factory||ASSETS.facilities.ravioli_veg_factory||ASSETS.facilities.cannery||ASSETS.facilities.furniture;
-GOODS.aluminum_ore={name:'Aluminiumerz',icon:'🪨',raw:true};
-LEGACY_CARGO_KG.aluminum_ore=1000;
-GOOD_MEASURES.aluminum_ore={unit:'t',kgPerUnit:1000,step:.1};
-FACILITIES.aluminum_mine={name:'Aluminiumerzmine',icon:'🪨',cost:84000,output:{aluminum_ore:2200},inputs:{},raw:true,_physicalRates:true,desc:'Fördert 2.2 t Aluminiumerz pro Tag.'};
-RAW_ALLOWED.aluminum_mine=new Set(RAW_ALLOWED.mine||[]);
-FACILITIES.aluminumworks.inputs={aluminum_ore:1800};
-FACILITIES.aluminumworks.desc='1.8 t Aluminiumerz → 1.4 t Aluminium pro Tag.';
-FACILITIES.foodfactory={name:'Lebensmittelfabrik',icon:'🍝',cost:236000,output:{},inputs:{},_physicalRates:true,desc:'Flexible Produktion von Fleischravioli, Vegi-Ravioli und Tomatenkonserven.'};
+// Active aluminum and food-factory definitions are supplied by HF_GOODS_CONTENT_PACK.
 
 function ensureFacilityConfigs(cityState){
   cityState.facilityConfigs=Array.isArray(cityState.facilityConfigs)?cityState.facilityConfigs:[];
@@ -1106,9 +1081,9 @@ function normalizedFoodFactoryMix(config){
 function foodFactoryRecipe(config){
   const mix=normalizedFoodFactoryMix(config),inputs={},outputs={};
   const recipes=[
-    {pct:mix.meatPct,recipe:FOOD_FACTORY_BASE.meat},
-    {pct:mix.vegPct,recipe:FOOD_FACTORY_BASE.veg},
-    {pct:mix.tomatoPct,recipe:TOMATO_CAN_RECIPE}
+    {pct:mix.meatPct,recipe:hfRecipeFromPack('foodfactory_meat')},
+    {pct:mix.vegPct,recipe:hfRecipeFromPack('foodfactory_veg')},
+    {pct:mix.tomatoPct,recipe:hfRecipeFromPack('foodfactory_tomato')}
   ];
   for(const item of recipes){const factor=item.pct/100;if(!factor)continue;for(const [g,q] of Object.entries(item.recipe.inputs||{}))inputs[g]=(inputs[g]||0)+q*factor;for(const [g,q] of Object.entries(item.recipe.outputs||{}))outputs[g]=(outputs[g]||0)+q*factor}
   for(const obj of [inputs,outputs])for(const g of Object.keys(obj)){obj[g]=roundCargo(obj[g]);if(obj[g]<.0001)delete obj[g]}
@@ -3747,9 +3722,9 @@ function hfInstallAutosaveHooks(){
   foodFactoryRecipe=function(config){
     const mix=independentMix(config),inputs={},outputs={};
     const recipes=[
-      {field:'meatPct',recipe:FOOD_FACTORY_BASE.meat},
-      {field:'vegPct',recipe:FOOD_FACTORY_BASE.veg},
-      {field:'tomatoPct',recipe:TOMATO_CAN_RECIPE},
+      {field:'meatPct',recipe:hfRecipeFromPack('foodfactory_meat')},
+      {field:'vegPct',recipe:hfRecipeFromPack('foodfactory_veg')},
+      {field:'tomatoPct',recipe:hfRecipeFromPack('foodfactory_tomato')},
       {field:'cornPct',recipe:{inputs:{corn:1350,cans:400},outputs:{canned_corn:1700}}},
       {field:'peasPct',recipe:{inputs:{peas:1350,cans:400},outputs:{canned_peas:1700}}}
     ];
@@ -3807,8 +3782,6 @@ function hfInstallAutosaveHooks(){
 
   // Remove the old Grundnahrungsmittelfabrik from definitions and all build menus.
   delete FACILITIES.foodplant;delete RAW_ALLOWED.foodplant;if(ASSETS.facilities)delete ASSETS.facilities.foodplant;
-  FACILITIES.foodfactory.name='Lebensmittelfabrik';
-  FACILITIES.foodfactory.desc='Flexible Produktion von Ravioli sowie Tomaten-, Mais- und Erbsenkonserven. Die Produktlinien können unabhängig zwischen 0 und insgesamt 100 % ausgelastet werden.';
   const priorFlowV130=facilityFlowText;
   facilityFlowText=function(fid,hourly=true){if(fid==='foodfactory')return '5 Produktlinien · unabhängig regelbar · insgesamt maximal 100 %';return priorFlowV130(fid,hourly)};
 
@@ -4107,9 +4080,9 @@ function hfInstallAutosaveHooks(){
     }
     if(FACILITIES.foodfactory&&!skipFoodFactoryRecipes){
       const recipeRows=[
-        {id:'foodfactory_meat',name:'Ravioli mit Fleisch',mixField:'meatPct',recipe:FOOD_FACTORY_BASE.meat},
-        {id:'foodfactory_veg',name:'Ravioli ohne Fleisch',mixField:'vegPct',recipe:FOOD_FACTORY_BASE.veg},
-        {id:'foodfactory_tomato',name:'Tomatenkonserven',mixField:'tomatoPct',recipe:TOMATO_CAN_RECIPE},
+        {id:'foodfactory_meat',name:'Ravioli mit Fleisch',mixField:'meatPct',recipe:hfRecipeFromPack('foodfactory_meat')},
+        {id:'foodfactory_veg',name:'Ravioli ohne Fleisch',mixField:'vegPct',recipe:hfRecipeFromPack('foodfactory_veg')},
+        {id:'foodfactory_tomato',name:'Tomatenkonserven',mixField:'tomatoPct',recipe:hfRecipeFromPack('foodfactory_tomato')},
         {id:'foodfactory_corn',name:'Maiskonserven',mixField:'cornPct',recipe:{inputs:{corn:1350,cans:400},outputs:{canned_corn:1700}}},
         {id:'foodfactory_peas',name:'Erbsenkonserven',mixField:'peasPct',recipe:{inputs:{peas:1350,cans:400},outputs:{canned_peas:1700}}}
       ];
@@ -4343,18 +4316,8 @@ function hfInstallAutosaveHooks(){
   }
   function normalizeAll(){
     try{
-      if(typeof FOOD_FACTORY_BASE!=='undefined'){
-        FOOD_FACTORY_BASE.meat.inputs={...(FOOD_FACTORY_BASE.meat.inputs||{}),grain:165};
-        FOOD_FACTORY_BASE.veg.inputs={...(FOOD_FACTORY_BASE.veg.inputs||{}),grain:180};
-        normalizePackagedOutputs({id:'foodfactory_meat',facilityId:'foodfactory',mixField:'meatPct',inputs:FOOD_FACTORY_BASE.meat.inputs,outputs:FOOD_FACTORY_BASE.meat.outputs});
-        normalizePackagedOutputs({id:'foodfactory_veg',facilityId:'foodfactory',mixField:'vegPct',inputs:FOOD_FACTORY_BASE.veg.inputs,outputs:FOOD_FACTORY_BASE.veg.outputs});
-      }
-      if(typeof TOMATO_CAN_RECIPE!=='undefined')normalizePackagedOutputs({id:'foodfactory_tomato',facilityId:'foodfactory',mixField:'tomatoPct',inputs:TOMATO_CAN_RECIPE.inputs,outputs:TOMATO_CAN_RECIPE.outputs});
       const recipes=window.HF_CONTENT?.registry?.recipes||{};
       for(const recipe of Object.values(recipes))normalizePackagedOutputs(recipe);
-      if(typeof FACILITIES!=='undefined'&&FACILITIES.foodfactory){
-        FACILITIES.foodfactory.desc='Flexible Produktion von Ravioli sowie Tomaten-, Mais- und Erbsenkonserven. Jedes produzierte Stück benötigt genau eine leere Konservendose; Ravioli benötigen zusätzlich Getreide.';
-      }
       if(typeof state!=='undefined'&&state)state.foodFactoryRecipeSchema=SCHEMA;
     }catch(err){console.error('Lebensmittelfabrik-Rezeptmigration 1.1.33',err)}
   }

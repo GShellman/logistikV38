@@ -7,6 +7,29 @@
 
   const SCHEMA_VERSION = 1;
   const KG_UNIT = Object.freeze({unit: 'kg', kgPerUnit: 1, step: 1});
+  const TON_UNIT = Object.freeze({unit: 't', kgPerUnit: 1000, step: 0.1});
+  const LITER_CHEMICAL_UNIT = Object.freeze({unit: 'L', kgPerUnit: 1.1, step: 10});
+  const PIECE_40KG_UNIT = Object.freeze({unit: 'Stk.', kgPerUnit: 40, step: 1});
+  const PIECE_5KG_UNIT = Object.freeze({unit: 'Stk.', kgPerUnit: 5, step: 1});
+  const CAN_UNIT = Object.freeze({unit: 'Stk.', kgPerUnit: 0.08, step: 10});
+  const RAVIOLI_MEAT_UNIT = Object.freeze({unit: 'Stk.', kgPerUnit: 0.45, step: 10});
+  const RAVIOLI_VEG_UNIT = Object.freeze({unit: 'Stk.', kgPerUnit: 0.455, step: 10});
+
+  const unitByGood = Object.freeze({
+    grain: TON_UNIT,
+    wood: TON_UNIT,
+    ore: TON_UNIT,
+    aluminum_ore: TON_UNIT,
+    chemicals: LITER_CHEMICAL_UNIT,
+    furniture: PIECE_40KG_UNIT,
+    electronics: PIECE_5KG_UNIT,
+    cans: CAN_UNIT,
+    ravioli_meat: RAVIOLI_MEAT_UNIT,
+    ravioli_veg: RAVIOLI_VEG_UNIT,
+    tomato_cans: RAVIOLI_MEAT_UNIT,
+    canned_corn: RAVIOLI_MEAT_UNIT,
+    canned_peas: RAVIOLI_MEAT_UNIT
+  });
 
   const demandProfiles = Object.freeze({
     industrial: {id: 'industrial', name: 'Industrieware', enabled: false, dailyRate: 0},
@@ -164,7 +187,7 @@
       name,
       icon,
       category,
-      unit: KG_UNIT,
+      unit: unitByGood[id] || KG_UNIT,
       price,
       properties: {
         rawMaterial: false,
