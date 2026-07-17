@@ -113,6 +113,11 @@ h2 { font-size: 24px; }
   padding: 10px 12px;
 }
 
+
+.hf-v2-map .leaflet-tile {
+  filter: saturate(60%);
+}
+
 .leaflet-control-zoom a { color: var(--hf-ink) !important; }
 .leaflet-control-attribution { font-size: 9px !important; }
 .leaflet-popup-content-wrapper { border-radius: 12px !important; }
