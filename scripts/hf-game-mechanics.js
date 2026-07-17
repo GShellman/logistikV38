@@ -12,7 +12,57 @@ function activeGoods(goods={}){
   const deprecated=deprecatedGoods();
   return Object.fromEntries(Object.entries(goods||{}).filter(([id])=>!deprecated.has(id)));
 }
+function roundDemand(value){
+  return Math.round((Number(value)||0)*100)/100;
+}
+function enabledDemandGoods(demandGoods){
+  const deprecated=deprecatedGoods();
+  const goods=global.HF_GOODS_DATABASE?.goods||{};
+  return [...demandGoods]
+    .filter(id=>!deprecated.has(id))
+    .map(id=>goods[id]||{id,demand:{enabled:true}})
+    .filter(g=>g?.demand?.enabled===true);
+}
+function cityDemandPreset(cityId){
+  const profile=global.HF_DEMAND_DATABASE?.cityDemandProfiles?.[cityId];
+  return profile?.goods&&typeof profile.goods==='object'?profile.goods:null;
+}
+function demandProfileFactor(city,good){
+  const factors=global.HF_DEMAND_DATABASE?.demandProfileFactors?.[city?.demandProfile];
+  if(!factors||typeof factors!=='object')return 1;
+  return Number(factors[good.category]??factors[good.demand?.profile])||1;
+}
+function demandEntryFromDailyKg(dailyKg,dailyRate,mult=1){
+  const rate=Math.max(0.000001,Number(dailyRate)||1);
+  const need=roundDemand(dailyKg/rate);
+  return {need,max:roundDemand(need/0.62),mult:roundDemand(mult)||1,dailyRate:rate};
+}
+function makeDemandsV2(city,demandGoods,{minDailyKg=1}={}){
+  const preset=cityDemandPreset(city?.id);
+  if(preset){
+    return Object.fromEntries(Object.entries(preset).map(([id,d])=>{
+      const rate=Math.max(0.000001,Number(d.dailyRate)||1);
+      const max=roundDemand(Number(d.max)||0);
+      return [id,{need:roundDemand(Number(d.need)>0?Number(d.need):max*0.62),max,mult:roundDemand(Number(d.mult)||1),dailyRate:rate}];
+    }));
+  }
+  const population=Math.max(0,Number(city?.population)||0);
+  const wealthFactor=Math.max(0,Number(city?.wealthFactor)||1);
+  return Object.fromEntries(enabledDemandGoods(demandGoods).map(g=>{
+    const d=g.demand||{};
+    const base=Number(d.baseDemandPer100kKg)||0;
+    if(!(base>0))return null;
+    const elasticity=Number.isFinite(Number(d.wealthElasticity))?Number(d.wealthElasticity):0;
+    const profileFactor=demandProfileFactor(city,g);
+    const dailyKg=population/100000*base*Math.pow(wealthFactor,elasticity)*profileFactor;
+    const minimum=Number(d.minDailyKg??global.HF_DEMAND_DATABASE?.demandProfiles?.[d.profile]?.minDailyKg??minDailyKg)||minDailyKg;
+    if(dailyKg<minimum)return null;
+    return [g.id,demandEntryFromDailyKg(dailyKg,d.dailyRate,1)];
+  }).filter(Boolean));
+}
 function makeDemands(city,demandGoods){
+  const demands=makeDemandsV2(city,demandGoods);
+  if(Object.keys(demands).length)return demands;
   const r=seeded(city.id);
   const deprecated=deprecatedGoods();
   const picks=[...demandGoods].filter(g=>!deprecated.has(g)).sort(()=>r()-.5).slice(0,city.tier+1);
@@ -63,5 +113,5 @@ function createFreshStateFromPackage(initialPackage,{goods={},demandGoods=[],cit
   state.usedVehicles=state.usedVehicles&&typeof state.usedVehicles==='object'?state.usedVehicles:{};
   return state;
 }
-global.HF_GAME_MECHANICS={seeded,makeDemands,createInventoryDefaults,normalizeInventory,createCityState,createFreshStateFromPackage};
+global.HF_GAME_MECHANICS={seeded,makeDemands,makeDemandsV2,createInventoryDefaults,normalizeInventory,createCityState,createFreshStateFromPackage};
 })(window);
