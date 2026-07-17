@@ -101,7 +101,7 @@ window.__HF_CLEAN_APP__=true;
 </script>
 <script src="scripts/hf-boot-state.js"></script>
 <script crossorigin="" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="scripts/hf-supply-contracts.js?v=city-menu-popup-20260717c"></script>
+<script src="scripts/hf-supply-contracts.js?v=city-menu-popup-20260717d"></script>
 <script>
 (() => {
 'use strict';
@@ -360,7 +360,8 @@ const tabScroll={city:0,network:0,logistics:0,company:0};
 function rememberMenuScroll(){const root=document.getElementById('content');if(root&&root.dataset.tab)tabScroll[root.dataset.tab]=root.scrollTop||0}
 function selectCity(id,pan=false){rememberMenuScroll();state.selected=id;state.tab='city';if(map)map.stop();renderAll()}
 function cityPopulationLabel(city){const n=Number(city?.population)||0;return n>0?`${n.toLocaleString('de-CH')} Einwohner`:'Einwohnerzahl unbekannt'}
-function cityPopupModules(cityId){return (window.HF_CITY_POPUP_SECTIONS||[]).map(fn=>{try{return fn(cityId,state.cities?.[cityId])||''}catch(err){console.warn('Stadtpopup-Modul konnte nicht gerendert werden',cityId,err);return '<section class="card"><div class="compact-note">Ein Stadtmenü-Modul konnte nicht geladen werden.</div></section>'}}).filter(Boolean).join('')}
+function ensureCityPopupModules(){const fn=window.HF?.hfV1138SupplyPopupSection;if(typeof fn==='function'&&!window.HF_CITY_POPUP_SECTIONS.includes(fn))registerCityPopupSection(fn)}
+function cityPopupModules(cityId){ensureCityPopupModules();return (window.HF_CITY_POPUP_SECTIONS||[]).map(fn=>{try{return fn(cityId,state.cities?.[cityId])||''}catch(err){console.warn('Stadtpopup-Modul konnte nicht gerendert werden',cityId,err);return '<section class="card"><div class="compact-note">Ein Stadtmenü-Modul konnte nicht geladen werden.</div></section>'}}).filter(Boolean).join('')}
 function openCityMenuPopup(id){rememberMenuScroll();state.selected=id;const city=CITY[id],cs=state.cities?.[id],modal=document.getElementById('modal'),back=document.getElementById('modalBack');if(!city||!modal||!back)return selectCity(id,false);const modules=cityPopupModules(id)||'<section class="card"><div class="compact-note">Für diese Stadt sind noch keine Stadtmenü-Module verfügbar.</div></section>';modal.className='modal route-manager-open hf-city-menu-popup';modal.innerHTML=`<div class="logistics-popup-header"><div><h2>${city.name}</h2><div class="sub">${cityPopulationLabel(city)} · ${cs?.unlocked?'freigeschaltet':'noch nicht freigeschaltet'}</div></div><button class="btn secondary logistics-popup-close" onclick="window.HF.closeModal()">✕</button></div><div class="logistics-popup-scroll">${modules}</div>`;back.classList.add('show');requestAnimationFrame(()=>{const scroller=modal.querySelector('.logistics-popup-scroll')||modal;scroller.scrollTop=0})}
 function openCityMarkerMenu(id){openCityMenuPopup(id)}
 function activeTab(tab){rememberMenuScroll();state.tab=tab;renderAll()}
