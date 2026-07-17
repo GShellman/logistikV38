@@ -1,7 +1,10 @@
 (() => {
   'use strict';
 
+  let map = null;
+  let onNetworkClick = null;
   let actionPopup = null;
+  let activeCity = null;
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"]/g, char => ({
@@ -12,89 +15,76 @@
     }[char]));
   }
 
-  function currentMap() {
-    return window.HFV2Map || null;
+  function stopLeafletPropagation(element) {
+    if (!window.L?.DomEvent || !element) return;
+    L.DomEvent.disableClickPropagation(element);
+    L.DomEvent.disableScrollPropagation(element);
   }
 
-  function networkMenuForCity(cityId) {
-    if (!window.HFNetwork?.openNetworkBuildMenu) return [];
-    return window.HFNetwork.openNetworkBuildMenu(cityId) || [];
-  }
-
-  function availableConnectionLabel(entry) {
-    const modes = [];
-    if (!entry.hasRoad) modes.push('Straße');
-    if (!entry.hasRail) modes.push('Bahn');
-    return modes.length ? modes.join(' / ') : 'keine neue Verbindung';
-  }
-
-  function openNetworkPopupForCity(cityId) {
-    const map = currentMap();
-    const city = window.HFV2CitiesById?.[cityId];
-    if (!map || !window.L || !city) return;
-
-    const connections = networkMenuForCity(cityId);
-    const connectionRows = connections.length
-      ? connections.slice(0, 6).map(entry => `
-          <li>
-            <strong>${escapeHtml(entry.city.name)}</strong>
-            <span>${Math.round(entry.roadDistance).toLocaleString('de-CH')} km · ${escapeHtml(availableConnectionLabel(entry))}</span>
-          </li>`).join('')
-      : '<li><span>Keine neuen Verbindungen in Reichweite.</span></li>';
-
-    hideCityNetworkAction();
-    actionPopup = L.popup({
-      className: 'city-network-popup',
-      closeButton: true,
-      autoClose: true,
-      closeOnClick: false,
-      offset: [0, -10],
-    })
-      .setLatLng([city.lat, city.lng])
-      .setContent(`
-        <div class="city-network-menu">
-          <p class="city-network-menu__eyebrow">Netzwerk bauen</p>
-          <h3>${escapeHtml(city.name)}</h3>
-          <ul>${connectionRows}</ul>
-        </div>`)
-      .openOn(map);
-  }
-
-  function hideCityNetworkAction() {
-    const map = currentMap();
+  function hideCityActionMenu() {
     if (actionPopup && map) map.closePopup(actionPopup);
     actionPopup = null;
+    activeCity = null;
   }
 
-  function showCityNetworkAction(city) {
-    const map = currentMap();
+  function handleMapClick() {
+    hideCityActionMenu();
+  }
+
+  function handleKeydown(event) {
+    if (event.key === 'Escape') hideCityActionMenu();
+  }
+
+  function bindPopupEvents() {
+    const element = actionPopup?.getElement?.();
+    const button = element?.querySelector?.('.city-action-menu__network-button');
+    if (!element || !button) return;
+
+    stopLeafletPropagation(element);
+    button.addEventListener('click', event => {
+      L.DomEvent.stopPropagation(event);
+      event.preventDefault();
+      onNetworkClick?.(activeCity);
+    });
+  }
+
+  function showCityActionMenu(city) {
     if (!map || !window.L || !city) return;
 
-    hideCityNetworkAction();
+    hideCityActionMenu();
+    activeCity = city;
     actionPopup = L.popup({
-      className: 'city-network-action-popup',
+      className: 'city-action-menu-popup',
       closeButton: false,
-      autoClose: true,
+      autoClose: false,
       closeOnClick: false,
       offset: [0, -10],
     })
       .setLatLng([city.lat, city.lng])
       .setContent(`
-        <button class="city-network-action" type="button" data-city-id="${escapeHtml(city.id)}" aria-label="Netzwerkoptionen für ${escapeHtml(city.name)} öffnen">
-          <span aria-hidden="true">🛣️</span>
-        </button>`)
+        <div class="city-action-menu" data-city-id="${escapeHtml(city.id)}">
+          <button class="city-action-menu__network-button" type="button" aria-label="Netzwerkoptionen für ${escapeHtml(city.name)} öffnen">
+            <span aria-hidden="true">🛣️</span>
+          </button>
+        </div>`)
       .openOn(map);
+
+    bindPopupEvents();
   }
 
-  document.addEventListener('click', event => {
-    const button = event.target.closest?.('.city-network-action');
-    if (!button) return;
-    event.preventDefault();
-    event.stopPropagation();
-    openNetworkPopupForCity(button.dataset.cityId);
-  });
+  function initCityActionMenu(options) {
+    map = options?.map || null;
+    onNetworkClick = typeof options?.onNetworkClick === 'function' ? options.onNetworkClick : null;
+    hideCityActionMenu();
 
-  window.showCityNetworkAction = showCityNetworkAction;
-  window.hideCityNetworkAction = hideCityNetworkAction;
-  window.openNetworkPopupForCity = openNetworkPopupForCity;
+    if (!map) return;
+    map.off('click', handleMapClick);
+    map.on('click', handleMapClick);
+    document.removeEventListener('keydown', handleKeydown);
+    document.addEventListener('keydown', handleKeydown);
+  }
+
+  window.initCityActionMenu = initCityActionMenu;
+  window.showCityActionMenu = showCityActionMenu;
+  window.hideCityActionMenu = hideCityActionMenu;
 })();
