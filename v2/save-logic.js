@@ -3,6 +3,34 @@
 
   const SCHEMA_VERSION = 2;
   const SAVE_FILE_PREFIX = 'helvetic-freight-v2';
+  const STARTING_CASH = 500000;
+
+  let state = null;
+
+  function dispatchStateChanged(reason = 'state-updated') {
+    window.dispatchEvent?.(new CustomEvent('hf:v2:state-changed', {detail: {reason, state, cash: state?.cash}}));
+  }
+
+  function getState() {
+    if (!state) state = createDefaultState().state;
+    return state;
+  }
+
+  function getCash() {
+    return Number(getState().cash) || 0;
+  }
+
+  function setCash(value, reason = 'cash-changed') {
+    const nextCash = Number(value);
+    if (!Number.isFinite(nextCash)) return getCash();
+    getState().cash = nextCash;
+    dispatchStateChanged(reason);
+    return nextCash;
+  }
+
+  function changeCash(delta, reason = 'cash-changed') {
+    return setCash(getCash() + (Number(delta) || 0), reason);
+  }
 
   function deepClone(value) {
     return JSON.parse(JSON.stringify(value ?? null));
@@ -12,12 +40,12 @@
     if (window.HFNetwork?.createNetworkState) {
       return window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'});
     }
-    return {connections: [], pendingProject: null, networkOriginNode: 'zurich', cash: 1000000, selected: 'zurich', cities: {}, junctions: [], usedCapacity: {}};
+    return {connections: [], pendingProject: null, networkOriginNode: 'zurich', selected: 'zurich', cities: {}, junctions: [], usedCapacity: {}};
   }
 
   function defaultFleetState() {
     if (window.HFFleet?.createFleetState) return window.HFFleet.createFleetState();
-    return {cash: 500000, cityFleets: {}};
+    return {cityFleets: {}};
   }
 
   function normalizePackage(savePackage) {
@@ -30,13 +58,15 @@
     network.cities = network.cities && typeof network.cities === 'object' ? network.cities : {};
     network.usedCapacity = network.usedCapacity && typeof network.usedCapacity === 'object' ? network.usedCapacity : {};
     fleet.cityFleets = fleet.cityFleets && typeof fleet.cityFleets === 'object' ? fleet.cityFleets : {};
-    const cash = Number.isFinite(Number(sourceState.cash)) ? Number(sourceState.cash) : Number(fleet.cash);
-    fleet.cash = Number.isFinite(cash) ? cash : Number(defaultFleetState().cash);
+    delete network.cash;
+    delete fleet.cash;
+    const legacyCash = Number.isFinite(Number(sourceState.cash)) ? Number(sourceState.cash) : Number(sourceState.fleet?.cash ?? sourceState.network?.cash);
+    const cash = Number.isFinite(legacyCash) ? legacyCash : STARTING_CASH;
 
     return {
       schemaVersion: SCHEMA_VERSION,
       savedAt: source.savedAt || new Date().toISOString(),
-      state: {cash: fleet.cash, network, fleet},
+      state: {cash, network, fleet},
     };
   }
 
@@ -47,7 +77,7 @@
   function serializeState(savePackage = null) {
     const liveNetwork = window.HFNetwork?.getState?.();
     const liveFleet = window.HFFleet?.getState?.();
-    const source = savePackage || {state: {network: liveNetwork, fleet: liveFleet, cash: liveFleet?.cash}};
+    const source = savePackage || {state: {network: liveNetwork, fleet: liveFleet, cash: getCash()}};
     const normalized = normalizePackage(source);
     normalized.savedAt = new Date().toISOString();
     return deepClone(normalized);
@@ -56,6 +86,14 @@
   function hydrateState(savePackage) {
     const normalized = normalizePackage(savePackage);
     return deepClone(normalized);
+  }
+
+  function configureState(savePackageOrState) {
+    const nextState = savePackageOrState?.state || savePackageOrState || createDefaultState().state;
+    const normalized = normalizePackage({state: nextState});
+    state = normalized.state;
+    dispatchStateChanged('state-configured');
+    return state;
   }
 
   function downloadJson(savePackage) {
@@ -84,5 +122,5 @@
     return hydrateState(parsed);
   }
 
-  window.HFV2Save = {SCHEMA_VERSION, createDefaultState, serializeState, hydrateState, exportSave, importSave};
+  window.HFV2Save = {SCHEMA_VERSION, STARTING_CASH, createDefaultState, configureState, getState, getCash, setCash, changeCash, dispatchStateChanged, serializeState, hydrateState, exportSave, importSave};
 })();

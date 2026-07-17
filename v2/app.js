@@ -219,6 +219,7 @@
 
   function applySavePackage(nextPackage) {
     savePackage = window.HFV2Save?.hydrateState?.(nextPackage) || nextPackage;
+    window.HFV2Save?.configureState?.(savePackage);
     networkState = window.HFNetwork?.configure({state: savePackage.state.network, cities: Object.values(citiesById), citiesById});
     window.HFFleet?.configure?.({state: savePackage.state.fleet});
     renderCurrentNetworkLines();
@@ -258,11 +259,13 @@
     const cities = loadCities();
     citiesById = Object.fromEntries(cities.map(city => [city.id, city]));
     savePackage = window.HFV2Save?.createDefaultState?.() || {state: {network: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}), fleet: window.HFFleet?.createFleetState?.()}};
+    window.HFV2Save?.configureState?.(savePackage);
     networkState = window.HFNetwork?.configure({state: savePackage.state.network, cities, citiesById});
     window.HFFleet?.configure?.({state: savePackage.state.fleet});
     document.getElementById('hfV2CityCount').textContent = `${cities.length.toLocaleString('de-CH')} Orte`;
     bindSaveControls();
     window.addEventListener('hf:network:confirmed', renderCurrentNetworkLines);
+    window.addEventListener('hf:v2:state-changed', renderCurrentNetworkLines);
     if (!bootMap(cities)) return;
     const zurich = cities.find(city => city.id === 'zurich');
     if (zurich) selectCity(zurich, cities);

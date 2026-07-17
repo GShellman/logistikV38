@@ -51,7 +51,7 @@
     if (!api) return '<p class="hf-v2-fleet-empty">Der Fahrzeugkatalog ist nicht geladen.</p>';
 
     const fleet = api.getCityFleet?.(cityId) || {};
-    const cash = Number(api.getState?.().cash) || 0;
+    const cash = window.HFV2Save?.getCash?.() ?? 0;
     const vehicleTypes = api.VEHICLE_TYPES || [];
     const vehicles = api.VEHICLES || {};
 
@@ -86,13 +86,13 @@
   function renderFleetMenu(cityId) {
     const city = cityById(cityId);
     if (!city) return '<p class="hf-v2-fleet-empty">Stadt nicht gefunden.</p>';
-    const cash = Number(fleetApi()?.getState?.().cash) || 0;
+    const cash = window.HFV2Save?.getCash?.() ?? 0;
     return `
       <div class="hf-v2-fleet-menu" data-fleet-city-id="${escapeHtml(city.id)}">
         <p class="hf-v2-fleet-eyebrow">Fuhrpark</p>
         <h3>${escapeHtml(city.name)}</h3>
         <div class="hf-v2-fleet-cash" aria-label="Verfügbares Kapital"><span>Kapital</span><strong>${formatMoney(cash)}</strong></div>
-        <p class="hf-v2-fleet-hint">Kaufe Fahrzeuge und stationiere sie direkt in dieser Stadt. Käufe werden nur im Arbeitsspeicher vom V2-Kapital abgezogen.</p>
+        <p class="hf-v2-fleet-hint">Kaufe Fahrzeuge und stationiere sie direkt in dieser Stadt. Käufe werden vom gemeinsamen V2-Kapital abgezogen.</p>
         <div class="hf-v2-fleet-grid">${vehicleRows(city.id)}</div>
       </div>`;
   }

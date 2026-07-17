@@ -2,7 +2,7 @@
   'use strict';
 
   const MAX_CONNECTION_DISTANCE_KM = 105;
-  const TEST_STARTING_CASH = 1000000;
+  const STARTING_CASH = window.HFV2Save?.STARTING_CASH ?? 500000;
   const INTERSECTION_EPS = 1e-7;
 
   const TRANSPORT_TYPES = {
@@ -25,7 +25,6 @@
       connections: [],
       pendingProject: null,
       networkOriginNode: 'zurich',
-      cash: TEST_STARTING_CASH,
       selected: 'zurich',
       cities: {},
       junctions: [],
@@ -307,6 +306,11 @@
     const fallback = mode === 'road' ? {distance: estimateRoadDistance(dist(from, to)), duration: estimateRoadDistance(dist(from, to)) / t.speed, geometry: null} : {distance: dist(from, to), duration: dist(from, to) / t.speed, geometry: null};
     const route = mode === 'road' ? (await fetchRoadRoute(from, to).catch(() => null)) || fallback : fallback;
     const quote = buildQuote(type, route.distance);
+    const cash = window.HFV2Save?.getCash?.() ?? STARTING_CASH;
+    if (cash < quote.cost) {
+      state.pendingProject = null;
+      return {ok: false, reason: 'not-enough-cash', cost: quote.cost, cash};
+    }
     state.pendingProject = {kind: 'build', a: fromId, b: toId, type, distance: route.distance, duration: route.duration, geometry: route.geometry, cost: quote.cost, maintenance: quote.maintenance};
     return state.pendingProject;
   }
@@ -318,6 +322,9 @@
   function confirmProject() {
     const project = state?.pendingProject;
     if (!project || project.kind !== 'build') return null;
+    const cash = window.HFV2Save?.getCash?.() ?? STARTING_CASH;
+    if (cash < project.cost) return null;
+    window.HFV2Save?.changeCash?.(-project.cost, 'network-build');
     const edges = splitRoadsForAutomaticJunctions(project);
     state.connections.push(...edges);
     if (state.cities?.[project.a]) state.cities[project.a].unlocked = true;
@@ -328,5 +335,5 @@
     return edges[0];
   }
 
-  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, TEST_STARTING_CASH, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject};
+  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject};
 })();

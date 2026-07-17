@@ -3,7 +3,7 @@
 
   const VEHICLE_TYPES = window.HFVehicleCatalog?.VEHICLE_TYPES || [];
   const VEHICLES = window.HFVehicleCatalog?.VEHICLE_CATALOG || {};
-  const STARTING_CASH = 500000;
+  const STARTING_CASH = window.HFV2Save?.STARTING_CASH ?? 500000;
 
   let state = null;
 
@@ -13,7 +13,6 @@
 
   function createFleetState(overrides = {}) {
     return {
-      cash: STARTING_CASH,
       cityFleets: {},
       ...overrides,
     };
@@ -22,7 +21,7 @@
   function configure(options = {}) {
     state = options.state || state || createFleetState();
     state.cityFleets = state.cityFleets || {};
-    state.cash = Number.isFinite(state.cash) ? state.cash : STARTING_CASH;
+    delete state.cash;
     return state;
   }
 
@@ -58,8 +57,9 @@
     const vehicle = vehicleSpec(vehicleType);
     if (!vehicle) return {ok: false, reason: 'unknown-vehicle'};
     const fleet = getCityFleet(cityId);
-    if (Number.isFinite(state.cash) && state.cash < vehicle.cost) return {ok: false, reason: 'not-enough-cash'};
-    if (Number.isFinite(state.cash)) state.cash -= vehicle.cost;
+    const cash = window.HFV2Save?.getCash?.() ?? STARTING_CASH;
+    if (cash < vehicle.cost) return {ok: false, reason: 'not-enough-cash'};
+    window.HFV2Save?.changeCash?.(-vehicle.cost, 'fleet-buy');
     fleet[vehicleType] += 1;
     return {ok: true, cityId: String(cityId).trim(), vehicleType, owned: fleet[vehicleType], cost: vehicle.cost, state};
   }
@@ -71,7 +71,7 @@
     if (fleet[vehicleType] <= 0) return {ok: false, reason: 'none-owned'};
     fleet[vehicleType] -= 1;
     const refund = Math.round(vehicle.cost * .6);
-    if (Number.isFinite(state.cash)) state.cash += refund;
+    window.HFV2Save?.changeCash?.(refund, 'fleet-sell');
     return {ok: true, cityId: String(cityId).trim(), vehicleType, owned: fleet[vehicleType], refund, state};
   }
 
