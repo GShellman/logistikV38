@@ -36,6 +36,16 @@
     return window.HFFleet || null;
   }
 
+  function vehicleImage(vehicleId) {
+    return window.HFV2VehicleAssets?.vehicleImage?.(vehicleId) || '';
+  }
+
+  function vehicleVisual(vehicleId, vehicle) {
+    const image = vehicleImage(vehicleId);
+    if (!image) return `<span class="hf-v2-fleet-card__emoji">${escapeHtml(vehicle.icon || '🚚')}</span>`;
+    return `<img class="hf-v2-fleet-card__image" src="${escapeHtml(image)}" alt="" loading="lazy" decoding="async">`;
+  }
+
   function vehicleRows(cityId) {
     const api = fleetApi();
     if (!api) return '<p class="hf-v2-fleet-empty">Der Fahrzeugkatalog ist nicht geladen.</p>';
@@ -55,7 +65,7 @@
       const disabledText = canAfford ? '' : ' disabled aria-disabled="true" title="Nicht genug Kapital"';
       return `
         <article class="hf-v2-fleet-card">
-          <div class="hf-v2-fleet-card__icon" aria-hidden="true">${escapeHtml(vehicle.icon || '🚚')}</div>
+          <div class="hf-v2-fleet-card__icon" aria-hidden="true">${vehicleVisual(type, vehicle)}</div>
           <div class="hf-v2-fleet-card__main">
             <div class="hf-v2-fleet-card__head">
               <h4>${escapeHtml(vehicle.name || type)}</h4>
