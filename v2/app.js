@@ -196,6 +196,10 @@
         window.hideCityActionMenu?.();
         window.HF_V2?.openCityFleetForCity?.(city.id);
       },
+      onFactoryClick: city => {
+        window.hideCityActionMenu?.();
+        window.HFV2FactoryMenu?.openFactoryMenuForCity?.(city.id);
+      },
     });
 
     renderMarkers(cities);
