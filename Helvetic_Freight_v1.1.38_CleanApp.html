@@ -406,6 +406,14 @@ function renderCompanyLegacy(root){const unlocked=Object.values(state.cities).fi
   root.innerHTML+=`<section class="card"><h3>Spielstand</h3><div class="two"><button class="btn secondary" onclick="window.HF.save()">Speichern</button><button class="btn danger" onclick="window.HF.reset()">Neu starten</button></div></section>`;
   root.innerHTML+=`<section class="card"><h3>Spielprinzip</h3><p class="sub">1. Orte über fünf upgradefähige Straßenstufen oder Bahn erschließen.<br>2. Lieferwagen, LKW, Sattelzüge und Güterzüge selbst kaufen.<br>3. Alle Lieferwagen und LKW können jede Straßenstufe nutzen; Ausbauten erhöhen Tempo und Kapazität.<br>4. Einmalige Transporte disponieren oder Dauerrouten aktivieren.<br>5. Dauerroute fährt bei jedem Tageswechsel automatisch, solange eine volle Fahrzeugladung bereitsteht. Belegte Straßen werden nur von gleichzeitig fahrenden Fahrzeugen gezählt; bei Engpässen warten Fahrzeuge an Knotenpunkten.</p></section><section class="card"><h3>Reale Straßenführung</h3><p class="sub">Neue Straßen werden beim Bau über einen OpenStreetMap-basierten Routingdienst berechnet und als tatsächlicher Straßenverlauf gespeichert. Upgrades behalten exakt diese Trasse bei.</p></section>`;
 }
+window.HF_CITY_SECTIONS=window.HF_CITY_SECTIONS||[];
+function registerCitySection(fn){if(typeof fn==='function')window.HF_CITY_SECTIONS.push(fn);return fn}
+window.HF={...window.HF,registerCitySection};
+function renderCity(root){
+  const cityId=state.selected,result=renderCityBase(root,cityId);
+  for(const fn of window.HF_CITY_SECTIONS||[]){try{fn(root,cityId,state.cities?.[cityId])}catch(err){console.warn('Stadtansicht-Section konnte nicht gerendert werden',err)}}
+  return result;
+}
 function openFacility(){const c=CITY[state.selected],s=state.cities[c.id];if(!s.unlocked)return;if(s.facilities.length>=c.slots)return toast('Alle Bauplätze sind belegt.','bad');const modal=document.getElementById('modal');modal.innerHTML=window.HF_MODAL_MARKUP.facilityModalMarkup(c.id);document.getElementById('modalBack').classList.add('show')}
 function buildFacility(id){const c=CITY[state.selected],s=state.cities[c.id],f=FACILITIES[id];if(s.facilities.length>=c.slots||state.cash<f.cost||!facilityAllowed(c.id,id))return;state.cash-=f.cost;s.facilities.push(id);closeModal();toast(`${f.name} in ${c.name} eröffnet.`,'good');renderAll()}
 async function fetchRoadRoute(a,b){
@@ -639,8 +647,8 @@ function advanceMinutes(minutes,{quiet=false,live=false}={}){let arrivals=0,prod
 
 function goodCard(g,qty){return `<div class="good">${goodImg(g)}<div class="good-info"><b>${GOODS[g].name}</b><small>${formatGoodAmount(g,qty)}</small></div></div>`}
 function demandSectionMarkup(s,locked=false){return `<section class="card"><div class="compact-head"><h3>Nachfrage</h3><span class="pill ${locked?'blue':'live'}">${locked?'MARKTDATEN':'TAGESENDE'}</span></div><div class="demand-grid">${Object.entries(s.demands).map(([g,d])=>`<div class="demand-tile"><div class="demand-tile-head"><div class="demand-tile-name">${goodImg(g,'asset-img asset-xs')}<b>${GOODS[g].name}</b></div><small>${formatGoodAmount(g,d.need)} / ${formatGoodAmount(g,d.max)}</small></div><div class="bar"><i style="width:${d.max?d.need/d.max*100:0}%"></i></div><div class="demand-tile-price">${formatUnitPrice(g,d.mult)}</div></div>`).join('')}</div><div class="compact-note" style="margin-top:7px">${locked?'Nachfrage ist bereits sichtbar. Liefern kannst du nach dem Netzanschluss.':'Stadtverbrauch und Verkauf werden gesammelt am Ende des Tages verrechnet.'}</div></section>`}
-function renderCity(root){
-  const c=CITY[state.selected],s=state.cities[c.id],opportunities=Object.keys(RAW_ALLOWED).filter(fid=>facilityAllowed(c.id,fid)).map(fid=>FACILITIES[fid].icon+' '+FACILITIES[fid].name).join(' · ');
+function renderCityBase(root,cityId=state.selected){
+  const c=CITY[cityId],s=state.cities[c.id],opportunities=Object.keys(RAW_ALLOWED).filter(fid=>facilityAllowed(c.id,fid)).map(fid=>FACILITIES[fid].icon+' '+FACILITIES[fid].name).join(' · ');
   root.innerHTML+=`<section class="card"><div class="compact-head"><div><span class="pill ${s.unlocked?'live':'locked'}">${s.unlocked?'FREI':'GESPERRT'}</span><h2 style="margin-top:5px">${c.name}</h2><div class="sub">${c.tier===3?'Metropole':c.tier===2?'Regionalzentrum':'Standort'} · ${s.facilities.length}/${c.slots} Bauplätze</div></div><div class="progress-ring" style="--p:${Math.round((s.facilities.length/c.slots)*100)}%"><span>${s.facilities.length}/${c.slots}</span></div></div><div class="field" style="margin:0"><label>Ort wechseln</label><select id="cityPicker">${CITIES.map(x=>`<option value="${x.id}" ${x.id===c.id?'selected':''}>${state.cities[x.id].unlocked?'●':'○'} ${x.name}</option>`).join('')}</select></div>${opportunities?`<div class="compact-note" style="margin-top:6px">📍 ${opportunities}</div>`:''}</section>`;
   setTimeout(()=>document.getElementById('cityPicker')?.addEventListener('change',e=>selectCity(e.target.value,false)),0);
   root.innerHTML+=demandSectionMarkup(s,!s.unlocked);
@@ -1102,8 +1110,8 @@ produceHourly=function(){
   summary.made=roundCargo(summary.made);return summary;
 };
 
-renderCity=function(root){
-  const c=CITY[state.selected],s=state.cities[c.id];ensureFacilityConfigs(s);
+renderCityBase=function(root,cityId=state.selected){
+  const c=CITY[cityId],s=state.cities[c.id];ensureFacilityConfigs(s);
   const opportunities=Object.keys(RAW_ALLOWED).filter(fid=>FACILITIES[fid]&&facilityAllowed(c.id,fid)).map(fid=>FACILITIES[fid].icon+' '+FACILITIES[fid].name).join(' · ');
   root.innerHTML+=`<section class="card"><div class="compact-head"><div><span class="pill ${s.unlocked?'live':'locked'}">${s.unlocked?'FREI':'GESPERRT'}</span><h2 style="margin-top:5px">${c.name}</h2><div class="sub">${c.tier===3?'Metropole':c.tier===2?'Regionalzentrum':'Standort'} · ${s.facilities.length}/${c.slots} Bauplätze</div></div><div class="progress-ring" style="--p:${Math.round((s.facilities.length/c.slots)*100)}%"><span>${s.facilities.length}/${c.slots}</span></div></div><div class="field" style="margin:0"><label>Ort wechseln</label><select id="cityPicker">${CITIES.map(x=>`<option value="${x.id}" ${x.id===c.id?'selected':''}>${state.cities[x.id].unlocked?'●':'○'} ${x.name}</option>`).join('')}</select></div>${opportunities?`<div class="compact-note" style="margin-top:6px">📍 ${opportunities}</div>`:''}</section>`;
   setTimeout(()=>document.getElementById('cityPicker')?.addEventListener('change',e=>selectCity(e.target.value,false)),0);
@@ -1701,8 +1709,8 @@ save(false);
     {id:'tech',name:'Chemie & Technik',icon:'⚗️',desc:'Chemikalien, Medizin und Elektronik',items:['chemical','pharma','electronics']}
   ];
   function inventorySectionMarkup(s,locked=false){const inv=Object.entries(s.inventory||{}).filter(([,q])=>q>.001);return `<section class="card"><div class="compact-head"><h3>Lager</h3><span class="pill">${formatWeight(inv.reduce((n,[,q])=>n+q,0))}</span></div>${inv.length?`<div class="goods">${inv.map(([g,q])=>goodCard(g,q)).join('')}</div>`:`<div class="empty">📦 ${locked?'Noch kein zugängliches Lager':'Lager leer'}</div>`}</section>`}
-  renderCity=function(root){
-    const c=CITY[state.selected],s=state.cities[c.id];ensureFacilityConfigs(s);
+  renderCityBase=function(root,cityId=state.selected){
+    const c=CITY[cityId],s=state.cities[c.id];ensureFacilityConfigs(s);
     const opportunities=Object.keys(RAW_ALLOWED).filter(fid=>FACILITIES[fid]&&facilityAllowed(c.id,fid)).map(fid=>FACILITIES[fid].icon+' '+FACILITIES[fid].name).join(' · ');
     root.innerHTML+=`<section class="card"><div class="compact-head"><div><span class="pill ${s.unlocked?'live':'locked'}">${s.unlocked?'FREI':'GESPERRT'}</span><h2 style="margin-top:5px">${c.name}</h2><div class="sub">${c.tier===3?'Metropole':c.tier===2?'Regionalzentrum':'Standort'} · ${s.facilities.length}/${c.slots} Bauplätze</div></div><div class="progress-ring" style="--p:${Math.round((s.facilities.length/c.slots)*100)}%"><span>${s.facilities.length}/${c.slots}</span></div></div><div class="field" style="margin:0"><label>Ort wechseln</label><select id="cityPicker">${CITIES.map(x=>`<option value="${x.id}" ${x.id===c.id?'selected':''}>${state.cities[x.id].unlocked?'●':'○'} ${x.name}</option>`).join('')}</select></div>${opportunities?`<div class="compact-note" style="margin-top:6px">📍 ${opportunities}</div>`:''}</section>`;
     setTimeout(()=>document.getElementById('cityPicker')?.addEventListener('change',e=>selectCity(e.target.value,false)),0);
@@ -1894,8 +1902,8 @@ save(false);
   foodFactoryCard=function(cityId,index){return facilityCardV116(cityId,index,'foodfactory')};
   function cityInventoryMarkup(s,locked=false){const inv=Object.entries(s.inventory||{}).filter(([,q])=>q>.001);return `<section class="card"><div class="compact-head"><h3>Lager</h3><span class="pill">${formatWeight(inv.reduce((n,[,q])=>n+q,0))}</span></div>${inv.length?`<div class="goods">${inv.map(([g,q])=>goodCard(g,q)).join('')}</div>`:`<div class="empty">📦 ${locked?'Noch kein zugängliches Lager':'Lager leer'}</div>`}</section>`}
 
-  renderCity=function(root){
-    const c=CITY[state.selected],s=state.cities[c.id];ensureFacilityConfigs(s);ensureFacilityUpgradeState();
+  renderCityBase=function(root,cityId=state.selected){
+    const c=CITY[cityId],s=state.cities[c.id];ensureFacilityConfigs(s);ensureFacilityUpgradeState();
     root.innerHTML+=`<section class="card"><div class="compact-head"><div><span class="pill ${s.unlocked?'live':'locked'}">${s.unlocked?'FREI':'GESPERRT'}</span><h2 style="margin-top:5px">${c.name}</h2><div class="sub">${c.tier===3?'Metropole':c.tier===2?'Regionalzentrum':'Standort'} · ${s.facilities.length}/${c.slots} Bauplätze</div><div class="hf-population">👥 ${Math.round(c.population).toLocaleString('de-CH')} Einwohner</div></div><div class="progress-ring" style="--p:${Math.round((s.facilities.length/c.slots)*100)}%"><span>${s.facilities.length}/${c.slots}</span></div></div><div class="hf-city-built"><div class="hf-city-built-head"><b>Gebaute Betriebe</b><span>${s.facilities.length}</span></div>${builtFacilityIcons(s)}</div></section>`;
     // Always keep inventory and demand visible directly below the city header.
     root.innerHTML+=cityInventoryMarkup(s,!s.unlocked);
@@ -2707,9 +2715,7 @@ function hfV117AfterStateRestore(){
   for(const depot of state.depots||[]){if(depot.smartScheduleDay!==state.day){try{window.HF?.hfV148ReplanDepot?.(depot.id)}catch(_){}}hfV117AssessDepotSchedule(depot)}
 }
 (function hfInstallV117(){
-  const priorRenderCity=renderCity;renderCity=function(root){const result=priorRenderCity(root),cityId=state.selected,s=state.cities?.[cityId],cards=[...root.querySelectorAll('.facility-card')];if(s){(s.facilities||[]).forEach((fid,index)=>{const card=cards[index],info=card?.querySelector('.facility-info');if(!info)return;const stat=hfV117FacilityDisplayStat(cityId,index),pct=Math.max(0,Math.min(100,Number(stat.pct)||0)),requested=Math.max(0,Math.min(100,Number(stat.requestedPct)||0)),detail=stat.inputLimited?`${pct}% produziert · ${requested}% benötigt`:`${pct}% der Tageskapazität genutzt`;info.insertAdjacentHTML('beforeend',`<div class="hf-v117-util"><div class="hf-v117-util-head"><span>Produktionsauslastung</span><b>${pct}%</b></div><div class="hf-v117-util-bar ${stat.inputLimited?'limited':''}"><i style="width:${pct}%"></i></div><small>${detail} · ${stat.status}${stat.capacity?` · max. ${formatWeight(stat.capacity)}/Tag`:''}</small></div>`)});}
-    return result;
-  };
+  window.HF.registerCitySection((root,cityId,s)=>{const cards=[...root.querySelectorAll('.facility-card')];if(s){(s.facilities||[]).forEach((fid,index)=>{const card=cards[index],info=card?.querySelector('.facility-info');if(!info)return;const stat=hfV117FacilityDisplayStat(cityId,index),pct=Math.max(0,Math.min(100,Number(stat.pct)||0)),requested=Math.max(0,Math.min(100,Number(stat.requestedPct)||0)),detail=stat.inputLimited?`${pct}% produziert · ${requested}% benötigt`:`${pct}% der Tageskapazität genutzt`;info.insertAdjacentHTML('beforeend',`<div class="hf-v117-util"><div class="hf-v117-util-head"><span>Produktionsauslastung</span><b>${pct}%</b></div><div class="hf-v117-util-bar ${stat.inputLimited?'limited':''}"><i style="width:${pct}%"></i></div><small>${detail} · ${stat.status}${stat.capacity?` · max. ${formatWeight(stat.capacity)}/Tag`:''}</small></div>`)});}});
   const wrapDepotAction=name=>{const base=window.HF?.[name];if(!base)return;window.HF[name]=function(id,...args){const result=base(id,...args);setTimeout(()=>{const d=(state.depots||[]).find(x=>x.id===id);if(d){hfV117AssessDepotSchedule(d);try{renderMap()}catch(_){}}},120);return result}};
   ['hfSaveDepotConfig','hfDepotBuyVehicle','hfDepotSellVehicle','hfV148ReplanDepot'].forEach(wrapDepotAction);
   if(!document.getElementById('hf-v117-style')){const style=document.createElement('style');style.id='hf-v117-style';style.textContent=`
@@ -2837,7 +2843,7 @@ hfV117MidnightRecalculateDepots=function(){let incomplete=0,planned=0;for(const 
 const hfV118PriorAfterRestore=hfV117AfterStateRestore;hfV117AfterStateRestore=function(){hfV118PriorAfterRestore();hfV118AdjustCannedDemand(false);for(const d of state.depots||[]){hfV118EnsureDepot(d);if(d.autoOrderScheduleDay!==state.day)hfV118PlanSupplyOrders(d);if(d.smartScheduleDay!==state.day||!(d.smartSchedule||[]).every(p=>p?.arrivalAware))hfV118ReplanDepot(d.id)}};
 (function hfInstallV118(){
   hfV118AdjustCannedDemand(false);for(const d of state.depots||[]){hfV118EnsureDepot(d);if(d.autoOrderScheduleDay!==state.day)hfV118PlanSupplyOrders(d);if(d.smartScheduleDay!==state.day||!(d.smartSchedule||[]).every(p=>p?.arrivalAware))hfV118ReplanDepot(d.id)}
-  const priorRenderCity=renderCity;renderCity=function(root){const result=priorRenderCity(root),cityId=state.selected;if(state.cities?.[cityId]?.unlocked&&!state.cities?.[cityId]?.isDepot)root.insertAdjacentHTML('beforeend',hfV118CityTimetableMarkup(cityId));return result};
+  window.HF.registerCitySection((root,cityId)=>{if(state.cities?.[cityId]?.unlocked&&!state.cities?.[cityId]?.isDepot)root.insertAdjacentHTML('beforeend',hfV118CityTimetableMarkup(cityId))});
   const priorOpenDepot=window.HF?.hfOpenDepot;if(priorOpenDepot)window.HF.hfOpenDepot=function(id){const d=hfV118Depot(id);if(d){hfV118EnsureDepot(d);if(d.autoOrderScheduleDay!==state.day)hfV118PlanSupplyOrders(d);if(d.smartScheduleDay!==state.day||!(d.smartSchedule||[]).every(p=>p?.arrivalAware))hfV118ReplanDepot(id)}const result=priorOpenDepot(id);for(const delay of [0,40,120,260,520,900])setTimeout(()=>{hfV118RenderSupplyPanel(id);hfV118RefreshDepotScheduleNote(id)},delay);return result};
   const priorRefresh=refreshLiveTimeUi;refreshLiveTimeUi=function(...args){const result=priorRefresh(...args),id=document.getElementById('modal')?.dataset?.depotId;if(id)setTimeout(()=>{hfV118RenderSupplyPanel(id);hfV118RefreshDepotScheduleNote(id)},0);return result};
   const priorSaveDepot=window.HF?.hfSaveDepotConfig;if(priorSaveDepot)window.HF.hfSaveDepotConfig=function(id,...args){const result=priorSaveDepot(id,...args);setTimeout(()=>{const d=hfV118Depot(id);if(!d)return;hfV118EnsureDepot(d);hfV118PlanSupplyOrders(d);hfV118ReplanDepot(id);save(false);window.HF?.hfOpenDepot?.(id)},100);return result};
@@ -3828,16 +3834,14 @@ function hfInstallAutosaveHooks(){
     save(false);closeModal();renderAll();toast(`Produktionsplanung gespeichert · Gesamtauslastung ${mixTotal(mix)} %.`,'good');
   };
 
-  const priorRenderCityV130=renderCity;
-  renderCity=function(root){
-    const result=priorRenderCityV130(root),s=state.cities?.[state.selected];if(!s)return result;ensureFacilityConfigs(s);
+  window.HF.registerCitySection((root,cityId,s)=>{if(!s)return;ensureFacilityConfigs(s);
     const cards=[...root.querySelectorAll('.facility-card')];
     (s.facilities||[]).forEach((fid,index)=>{
       if(fid!=='foodfactory')return;const card=cards[index];if(!card)return;const cfg=s.facilityConfigs[index]||{},mix=independentMix(cfg),total=mixTotal(mix);
       let summary=card.querySelector('.hf-food-summary');if(summary)summary.innerHTML=MIX_ROWS.map(row=>`<span>${row.icon} ${mix[row.field]}%</span>`).join('')+`<span class="hf-v130-total-pill">Σ ${total}%</span>`;
       const button=[...card.querySelectorAll('button')].find(b=>/Produktionsanteile|Produktion einstellen/.test(b.textContent));if(button)button.textContent='Produktion & Bezugsquellen';
-    });return result;
-  };
+    });
+  });
 
   if(!document.getElementById('hf-v130-style')){const style=document.createElement('style');style.id='hf-v130-style';style.textContent=`
     .hf-v130-factory-modal{width:min(680px,calc(100vw - 18px));max-height:calc(100dvh - 18px)}
