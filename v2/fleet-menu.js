@@ -45,10 +45,18 @@
     return window.HFV2VehicleAssets?.vehicleImage?.(vehicleId) || '';
   }
 
+  function embeddedVehicleImage(vehicleId) {
+    return window.HFV2VehicleAssets?.embeddedVehicleImage?.(vehicleId) || '';
+  }
+
   function vehicleVisual(vehicleId, vehicle) {
     const image = vehicleImage(vehicleId);
+    const fallbackImage = embeddedVehicleImage(vehicleId);
+    const fallbackAttribute = fallbackImage
+      ? ` onerror="this.onerror=null;this.src='${escapeHtml(fallbackImage)}';"`
+      : '';
     if (!image) return `<span class="hf-v2-fleet-card__emoji">${escapeHtml(vehicle.icon || '🚚')}</span>`;
-    return `<img class="hf-v2-fleet-card__image" src="${escapeHtml(image)}" alt="" loading="lazy" decoding="async">`;
+    return `<img class="hf-v2-fleet-card__image" src="${escapeHtml(image)}" alt="" loading="lazy" decoding="async"${fallbackAttribute}>`;
   }
 
   function vehicleRows(cityId) {

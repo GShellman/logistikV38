@@ -416,7 +416,19 @@ window.HF_CITY_POPUP_SECTIONS=window.HF_CITY_POPUP_SECTIONS||[];
 window.HF_COMPANY_SECTIONS=window.HF_COMPANY_SECTIONS||[];
 function registerCitySection(fn){if(typeof fn==='function')window.HF_CITY_SECTIONS.push(fn);return fn}
 function registerCityPopupSection(fn){if(typeof fn==='function'&&!window.HF_CITY_POPUP_SECTIONS.includes(fn))window.HF_CITY_POPUP_SECTIONS.push(fn);return fn}
+function cityDemandDailyAmount(cityId,goodId,demand){
+  const actual=typeof hfActualDailyConsumption==='function'?Number(hfActualDailyConsumption(cityId,goodId)):0;
+  if(actual>0)return actual;
+  return Math.max(0,(Number(demand?.need)||0)*(Number(demand?.dailyRate)||1));
+}
+function hfCityDemandPopupSection(cityId,s){
+  if(!s||s.isDepot)return '';
+  const rows=Object.keys(s.demands||{}).filter(g=>GOODS[g]).map(g=>({good:g,demand:s.demands[g],daily:cityDemandDailyAmount(cityId,g,s.demands[g])})).sort((a,b)=>b.daily-a.daily||(GOODS[a.good].name||a.good).localeCompare(GOODS[b.good].name||b.good,'de'));
+  const total=rows.reduce((sum,row)=>sum+row.daily,0);
+  return `<section class="card hf-city-demand-panel"><div class="compact-head"><div><h3>Täglicher Bedarf</h3><div class="sub">Alle Nachfragewaren dieser Stadt, kompakt nach Tagesverbrauch sortiert.</div></div><span class="pill live">${formatWeight(total)}/Tag</span></div>${rows.length?`<div class="hf-city-demand-list">${rows.map(row=>{const d=row.demand||{},fill=Number(d.max)>0?clamp((Number(d.need)||0)/Number(d.max)*100,0,100):0;return `<article class="hf-city-demand-row">${goodImg(row.good,'asset-img asset-xs')}<div class="hf-city-demand-main"><div class="row"><b>${GOODS[row.good].name}</b><strong>${formatGoodAmount(row.good,row.daily)}/Tag</strong></div><div class="bar"><i style="width:${fill}%"></i></div></div><small>${formatGoodAmount(row.good,Number(d.need)||0)} offen</small></article>`}).join('')}</div>`:'<div class="compact-note">Für diese Stadt sind noch keine Nachfragewaren hinterlegt.</div>'}</section>`;
+}
 function hfCoreSupplyPopupSection(cityId,s){const fn=window.HF?.hfV1138SupplyPopupSection;if(typeof fn==='function')return '';if(s&&s.isDepot)return '';return '<section class="card hf-v1138-supply-section"><div class="compact-head"><div><h3>Warenbestellung</h3><div class="sub">Stadtmenü-Modul wird vorbereitet.</div></div><span class="pill orange">Lädt</span></div><div class="compact-note">Bitte öffne das Stadtmenü nach dem Laden des Spielstands erneut, falls die Warenliste nicht automatisch erscheint.</div></section>'}
+registerCityPopupSection(hfCityDemandPopupSection);
 registerCityPopupSection(hfCoreSupplyPopupSection);
 function registerCompanySection(fn){if(typeof fn==='function')window.HF_COMPANY_SECTIONS.push(fn);return fn}
 window.HF={...window.HF,registerCitySection,registerCityPopupSection,registerCompanySection};

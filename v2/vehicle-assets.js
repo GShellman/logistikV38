@@ -12,10 +12,30 @@
     freightTrain: 'HF_FREIGHT_TRAIN_VEHICLE_ASSET_DATA_URI',
   });
 
-  function vehicleImage(vehicleId) {
-    const assetGlobal = VEHICLE_ASSETS[String(vehicleId || '').trim()];
+  const VEHICLE_PNG_ASSETS = Object.freeze({
+    van: 'assets/vehicles/van.png',
+    largeVan: 'assets/vehicles/large_van.png',
+    lightTruck: 'assets/vehicles/light_truck.png',
+    heavyTruck: 'assets/vehicles/heavy_truck.png',
+    artic: 'assets/vehicles/artic.png',
+    reefer: 'assets/vehicles/reefer.png',
+    tipper: 'assets/vehicles/tipper.png',
+    freightTrain: 'assets/vehicles/freight_train.png',
+  });
+
+  function normalizeVehicleId(vehicleId) {
+    return String(vehicleId || '').trim();
+  }
+
+  function embeddedVehicleImage(vehicleId) {
+    const assetGlobal = VEHICLE_ASSETS[normalizeVehicleId(vehicleId)];
     return assetGlobal ? window[assetGlobal] || '' : '';
   }
 
-  window.HFV2VehicleAssets = Object.freeze({vehicleImage});
+  function vehicleImage(vehicleId) {
+    const pngAsset = VEHICLE_PNG_ASSETS[normalizeVehicleId(vehicleId)];
+    return pngAsset || embeddedVehicleImage(vehicleId);
+  }
+
+  window.HFV2VehicleAssets = Object.freeze({vehicleImage, embeddedVehicleImage});
 })();
