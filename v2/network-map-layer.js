@@ -33,6 +33,10 @@
       : [[start.lat, start.lng], [target.lat, target.lng]];
   }
 
+  function nodeInfo(id, citiesById) {
+    return citiesById[id] || window.HFNetwork?.nodeInfo?.(id) || null;
+  }
+
   function initNetworkLayer(map) {
     if (!map || !window.L) return null;
 
@@ -61,8 +65,8 @@
     clearNetworkLines();
 
     connections.forEach(connection => {
-      const start = citiesById[connection.a];
-      const target = citiesById[connection.b];
+      const start = nodeInfo(connection.a, citiesById);
+      const target = nodeInfo(connection.b, citiesById);
       if (!start || !target) return;
 
       const spec = transportSpec(connection.type);
