@@ -101,7 +101,7 @@ window.__HF_CLEAN_APP__=true;
 </script>
 <script src="scripts/hf-boot-state.js"></script>
 <script crossorigin="" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="scripts/hf-supply-contracts.js?v=city-orders-20260717b"></script>
+<script src="scripts/hf-supply-contracts.js"></script>
 <script>
 (() => {
 'use strict';
@@ -4064,7 +4064,7 @@ function hfInstallAutosaveHooks(){
         if(def.demand?.enabled&&(def.demand?.canonical||!cs.demands[id]))cs.demands[id]=demandStateFor(city.id,id);
       }
       const kept=[],configs=[];
-      cs.facilities.forEach((id,index)=>{if(registry.deprecations.facilities.includes(id)||!registry.facilities[id])return;kept.push(id);configs.push(cs.facilityConfigs[index]||null)});
+      cs.facilities.forEach((id,index)=>{if(registry.deprecations.facilities.includes(id))return;if(!registry.facilities[id]&&!FACILITIES[id]){console.warn('Unbekannter Betrieb im Spielstand bleibt erhalten, bis Inhaltsdaten geladen sind',id);kept.push(id);configs.push(cs.facilityConfigs[index]||null);return}kept.push(id);configs.push(cs.facilityConfigs[index]||null)});
       cs.facilities=kept;cs.facilityConfigs=configs;
     }
     state.contentRegistrySchema=SCHEMA;state.contentRegistryBuild=BUILD;
