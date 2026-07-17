@@ -1,16 +1,8 @@
 (() => {
   'use strict';
 
-  const VEHICLE_TYPES = ['van', 'lightTruck', 'heavyTruck', 'artic', 'reefer', 'tipper'];
-
-  const VEHICLES = {
-    van: {name: 'Lieferwagen', icon: '🚐', mode: 'road', load: 2, speed: 80, minRoad: 'localroad', cost: 28000, daily: 180, kmCost: 4.2, desc: 'Klein, flexibel und auf jeder Straße einsetzbar.'},
-    lightTruck: {name: 'Leicht-LKW', icon: '🚚', mode: 'road', load: 5, speed: 85, minRoad: 'localroad', cost: 65000, daily: 420, kmCost: 6.2, desc: 'Flexibler LKW, der auf allen Straßen eingesetzt werden kann.'},
-    heavyTruck: {name: 'Schwer-LKW', icon: '🚛', mode: 'road', load: 9, speed: 80, minRoad: 'localroad', cost: 115000, daily: 760, kmCost: 8.8, desc: 'Hohe Nutzlast und auf allen Straßen einsetzbar.'},
-    artic: {name: 'Sattelzug', icon: '🚛', mode: 'road', load: 14, speed: 78, minRoad: 'localroad', cost: 175000, daily: 1180, kmCost: 11.8, desc: 'Effizient für große Mengen und auf allen Straßen einsetzbar.'},
-    reefer: {name: 'Kühl-LKW', icon: '🧊', mode: 'road', load: 8, speed: 82, minRoad: 'localroad', cost: 118000, daily: 2100, kmCost: 8.8, desc: 'Für Fisch und Kühlwaren. Auf allen Straßen einsetzbar und mit 8 Paletten Kühlkapazität.'},
-    tipper: {name: 'Kipplaster', icon: '🚛', mode: 'road', load: 16000, speed: 72, minRoad: 'localroad', cost: 152000, daily: 940, kmCost: 9.6, desc: 'Spezialfahrzeug für Schüttgut wie Getreide, Erz und Aluminiumerz. Auf allen Straßen einsetzbar.', physicalLoad: true},
-  };
+  const VEHICLE_TYPES = window.HFVehicleCatalog?.VEHICLE_TYPES || [];
+  const VEHICLES = window.HFVehicleCatalog?.VEHICLE_CATALOG || {};
 
   let state = null;
 
