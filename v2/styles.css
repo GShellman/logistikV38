@@ -317,3 +317,100 @@ code {
 }
 .hf-v2-modal__title { margin-right: 46px; }
 .hf-v2-modal__body { margin-top: 18px; }
+
+.network-menu {
+  display: grid;
+  gap: 12px;
+}
+.network-menu__eyebrow {
+  color: var(--hf-accent);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  margin: 0;
+  text-transform: uppercase;
+}
+.network-menu h3 { margin: 0; }
+.network-menu__hint,
+.network-menu__empty {
+  color: var(--hf-muted);
+  font-size: 13px;
+  margin: 0;
+}
+.network-menu__targets,
+.network-menu__build-options {
+  display: grid;
+  gap: 8px;
+  max-height: min(54vh, 460px);
+  overflow: auto;
+  padding-right: 4px;
+}
+.network-menu__target,
+.network-menu__build-option,
+.network-menu__back {
+  background: #fff;
+  border: 1px solid var(--hf-line);
+  border-radius: 14px;
+  color: var(--hf-ink);
+  cursor: pointer;
+  font: inherit;
+}
+.network-menu__target,
+.network-menu__build-option {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 12px;
+  text-align: left;
+  width: 100%;
+}
+.network-menu__target:hover:not(:disabled),
+.network-menu__target:focus-visible:not(:disabled),
+.network-menu__build-option:hover:not(:disabled),
+.network-menu__build-option:focus-visible:not(:disabled),
+.network-menu__back:hover,
+.network-menu__back:focus-visible {
+  border-color: var(--hf-accent);
+  box-shadow: 0 0 0 3px rgba(230,138,46,.18);
+  outline: none;
+}
+.network-menu__target small,
+.network-menu__build-option small {
+  color: var(--hf-muted);
+  display: block;
+  font-size: 12px;
+  margin-top: 2px;
+}
+.network-menu__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.network-menu__badge {
+  background: #edf5ef;
+  border-radius: 999px;
+  color: var(--hf-ink);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+.network-menu__badge--disabled {
+  background: #f3ebe5;
+  color: #8b5b44;
+}
+.network-menu__target.is-disabled,
+.network-menu__build-option.is-disabled {
+  cursor: not-allowed;
+  opacity: .62;
+}
+.network-menu__build-icon {
+  font-size: 22px;
+  width: 28px;
+}
+.network-menu__back {
+  justify-self: start;
+  padding: 8px 12px;
+}

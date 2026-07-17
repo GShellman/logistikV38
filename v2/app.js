@@ -122,39 +122,8 @@
     ].join('');
   }
 
-  function networkMenuForCity(cityId) {
-    if (!window.HFNetwork?.openNetworkBuildMenu) return [];
-    return window.HFNetwork.openNetworkBuildMenu(cityId) || [];
-  }
-
-  function availableConnectionLabel(entry) {
-    const modes = [];
-    if (!entry.hasRoad) modes.push('Straße');
-    if (!entry.hasRail) modes.push('Bahn');
-    return modes.length ? modes.join(' / ') : 'keine neue Verbindung';
-  }
-
   function openNetworkModalForCity(city) {
-    if (!city || !window.HFV2Modal?.openModal) return;
-
-    const connections = networkMenuForCity(city.id);
-    const connectionRows = connections.length
-      ? connections.slice(0, 6).map(entry => `
-          <li>
-            <strong>${escapeHtml(entry.city.name)}</strong>
-            <span>${Math.round(entry.roadDistance).toLocaleString('de-CH')} km · ${escapeHtml(availableConnectionLabel(entry))}</span>
-          </li>`).join('')
-      : '<li><span>Keine neuen Verbindungen in Reichweite.</span></li>';
-
-    window.HFV2Modal.openModal({
-      className: 'city-network-modal',
-      title: city.name,
-      subtitle: 'Netzwerk bauen',
-      bodyHtml: `
-        <div class="city-network-menu">
-          <ul>${connectionRows}</ul>
-        </div>`,
-    });
+    window.openNetworkMenuForCity?.(city?.id);
   }
 
   function renderMarkers(cities) {
