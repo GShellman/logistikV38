@@ -31,17 +31,6 @@
     canned_peas: RAVIOLI_MEAT_UNIT
   });
 
-  const demandProfiles = Object.freeze({
-    industrial: {id: 'industrial', name: 'Industrieware', enabled: false, dailyRate: 0},
-    staple_crop: {id: 'staple_crop', name: 'Grundnahrungsmittel', enabled: true, ratio: 1, referenceGoods: ['food'], minDailyKg: 5, dailyRate: 1},
-    common_vegetable: {id: 'common_vegetable', name: 'Gängiges Gemüse', enabled: true, ratio: 1, referenceGoods: ['zucchini', 'tomatoes'], minDailyKg: 5, dailyRate: 1},
-    common_fruit: {id: 'common_fruit', name: 'Gängiges Obst', enabled: true, ratio: 1, referenceGoods: ['apples', 'pears'], minDailyKg: 5, dailyRate: 1},
-    niche_fruit: {id: 'niche_fruit', name: 'Saisonales Obst', enabled: true, ratio: 0.4, referenceGoods: ['apples', 'pears'], capReferenceGood: 'zucchini', capRatio: 0.75, minDailyKg: 5, dailyRate: 1},
-    canned_food: {id: 'canned_food', name: 'Konserven', enabled: true, ratio: 0.14, referenceGoods: ['food'], minDailyKg: 1, dailyRate: 0.14},
-    fresh_food: {id: 'fresh_food', name: 'Frische Lebensmittel', enabled: true, ratio: 1, referenceGoods: ['fish'], minDailyKg: 5, dailyRate: 1},
-    consumer_good: {id: 'consumer_good', name: 'Konsumgut', enabled: true, ratio: 1, referenceGoods: [], minDailyKg: 1, dailyRate: 0.22}
-  });
-
   const vehicleGroups = Object.freeze({
     general: {id: 'general', name: 'Stückgut', vehicles: ['van', 'lightTruck', 'heavyTruck', 'artic', 'freightTrain']},
     refrigerated: {id: 'refrigerated', name: 'Kühltransport', vehicles: ['reefer', 'freightTrain']},
@@ -164,7 +153,6 @@
     goods,
     facilities,
     recipes,
-    demandProfiles,
     vehicleGroups,
     deprecations: Object.freeze({goods: ['food', 'clothing'], facilities: ['textile']})
   });
@@ -176,7 +164,6 @@
     goods: Object.values(goods),
     facilities: Object.values(facilities),
     recipes: Object.values(recipes),
-    demandProfiles: Object.values(demandProfiles),
     vehicleGroups: Object.values(vehicleGroups),
     deprecations: database.deprecations
   });

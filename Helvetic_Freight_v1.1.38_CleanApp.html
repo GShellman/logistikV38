@@ -15,6 +15,8 @@
 <script src="scripts/hf-city-catalog.js"></script>
 <script src="scripts/hf-initial-state.js"></script>
 <script src="scripts/hf-goods-database.js"></script>
+<script src="scripts/hf-demand-database.js"></script>
+<script src="scripts/hf-save-migrations.js"></script>
 <script src="scripts/hf-game-mechanics.js"></script>
 <script src="assets/goods/grain.js"></script>
 <script src="assets/goods/wood.js"></script>
@@ -3907,7 +3909,7 @@ function hfInstallAutosaveHooks(){
   };
   const hfContentLegacyActual=hfActualDailyConsumption;
   const hfContentLegacyDepot=globalThis.hfDepotDailyNeed;
-  const registry={schemaVersion:SCHEMA,buildVersion:BUILD,goods:{},facilities:{},recipes:{},demandProfiles,vehicleGroups,deprecations:{goods:[],facilities:['foodplant']},lastValidation:null};
+  const registry={schemaVersion:SCHEMA,buildVersion:BUILD,goods:{},facilities:{},recipes:{},demandProfiles,demandProfileFactors:{},cityDemandProfiles:{},vehicleGroups,deprecations:{goods:[],facilities:['foodplant']},lastValidation:null};
 
   function inferCategory(id,g){
     if(['apples','pears','cherries'].includes(id))return 'fruit';
@@ -4029,6 +4031,19 @@ function hfInstallAutosaveHooks(){
     const raw=plain(input);if(!idOk(raw.id))throw new Error('Ungültige Fahrzeuggruppen-ID: '+String(raw.id));
     registry.vehicleGroups[raw.id]={...registry.vehicleGroups[raw.id],...clone(raw),vehicles:unique(raw.vehicles)};return registry.vehicleGroups[raw.id];
   }
+  function registerCityDemandProfile(input){
+    const raw=plain(input),id=raw.id||raw.cityId;if(!idOk(id))throw new Error('Ungültige Stadtnachfrageprofil-ID: '+String(id));
+    registry.cityDemandProfiles[id]={...registry.cityDemandProfiles[id],...clone(raw),id,cityId:raw.cityId||id,goods:plain(raw.goods)};return registry.cityDemandProfiles[id];
+  }
+  function cityDemandOverride(cityId,goodId){return registry.cityDemandProfiles[cityId]?.goods?.[goodId]||null}
+  function applySaveMigrations(target=state){
+    for(const migration of globalThis.HF_SAVE_MIGRATIONS||[]){
+      if(!migration?.schemaKey||!(Number(target?.[migration.schemaKey])>=Number(migration.schemaVersion))){
+        try{migration?.migrate?.(target)}catch(err){console.warn('Save-Migration fehlgeschlagen',migration?.id,err)}
+      }
+    }
+    return target;
+  }
 
   function importLegacy({skipFoodFactoryRecipes=false}={}){
     for(const [id,g] of Object.entries(GOODS))registerGood(legacyGoodDefinition(id,g),{sync:false});
@@ -4056,19 +4071,12 @@ function hfInstallAutosaveHooks(){
     return 1+(r-.5)*2*Math.max(0,Number(variance)||0);
   }
   function profileDemandFactor(cityId,goodId){
+    const override=cityDemandOverride(cityId,goodId);if(Number(override?.mult)>0)return Number(override.mult);
     const city=CITY[cityId]||{},profile=city.demandProfile||'regional',def=registry.goods[goodId]||{},category=def.category||'other';
-    const table={
-      metropolis:{consumer_goods:1.12,processed_food:1.06,fruit:1.08,vegetable:1.04},
-      tourism:{processed_food:1.12,fresh_food:1.1,animal_products:1.08,fruit:1.08},
-      industrial:{consumer_goods:1.06,industrial_material:1.12,processed_food:.98},
-      alpine:{staple_crop:1.08,vegetable:.94,fruit:.96,processed_food:1.08},
-      rural:{staple_crop:1.1,vegetable:1.03,consumer_goods:.9,processed_food:1.04},
-      border:{consumer_goods:1.08,processed_food:1.06},
-      logistics:{processed_food:1.08,consumer_goods:1.04}
-    };
-    return Number(table[profile]?.[category])||1;
+    return Number(registry.demandProfileFactors[profile]?.[category])||1;
   }
   function demandDailyKg(cityId,goodId){
+    const override=cityDemandOverride(cityId,goodId);if(override&&Number(override.max)>0)return round((Number(override.max)||0)*(Number(override.dailyRate)||1));
     const def=registry.goods[goodId],d=def?.demand||{},profile=registry.demandProfiles[d.profile]||registry.demandProfiles.legacy;
     if(!d.enabled||profile.enabled===false)return 0;
     if(Number(d.baseDemandPer100kKg)>0){
@@ -4087,11 +4095,13 @@ function hfInstallAutosaveHooks(){
     return round(Math.max(Number(d.minDailyKg??profile.minDailyKg)||0,result));
   }
   function demandStateFor(cityId,goodId){
-    const def=registry.goods[goodId],daily=demandDailyKg(cityId,goodId),rate=Math.max(EPS,Number(def?.demand?.dailyRate??registry.demandProfiles[def?.demand?.profile]?.dailyRate)||1);
-    const max=round(daily/rate);return {need:max,max,mult:1,dailyRate:rate};
+    const override=cityDemandOverride(cityId,goodId);
+    const def=registry.goods[goodId],daily=demandDailyKg(cityId,goodId),rate=Math.max(EPS,Number(override?.dailyRate??def?.demand?.dailyRate??registry.demandProfiles[def?.demand?.profile]?.dailyRate)||1);
+    const max=round(Number(override?.max)>0?Number(override.max):daily/rate),mult=Number(override?.mult)>0?Number(override.mult):1;return {need:max,max,mult,dailyRate:rate};
   }
   function migrateState(){
     if(!state?.cities)return;
+    applySaveMigrations(state);
     for(const city of CITIES){
       const cs=state.cities[city.id];if(!cs)continue;
       cs.inventory=plain(cs.inventory);cs.demands=plain(cs.demands);cs.facilities=Array.isArray(cs.facilities)?cs.facilities:[];cs.facilityConfigs=Array.isArray(cs.facilityConfigs)?cs.facilityConfigs:[];
@@ -4129,10 +4139,10 @@ function hfInstallAutosaveHooks(){
       if(!Object.keys(r.outputs||{}).length)warnings.push(`Rezept ${id}: kein Output`);
     }
     if(typeof HF_FACILITY_GROUPS!=='undefined')for(const group of HF_FACILITY_GROUPS)for(const id of group.items||[])if(!registry.facilities[id])warnings.push(`Baumenü ${group.id}: unbekannter Betrieb ${id}`);
-    const report={ok:errors.length===0,build:BUILD,schema:SCHEMA,counts:{goods:Object.keys(registry.goods).length,facilities:Object.keys(registry.facilities).length,recipes:Object.keys(registry.recipes).length,demandProfiles:Object.keys(registry.demandProfiles).length,vehicleGroups:Object.keys(registry.vehicleGroups).length},errors,warnings};
+    const report={ok:errors.length===0,build:BUILD,schema:SCHEMA,counts:{goods:Object.keys(registry.goods).length,facilities:Object.keys(registry.facilities).length,recipes:Object.keys(registry.recipes).length,demandProfiles:Object.keys(registry.demandProfiles).length,cityDemandProfiles:Object.keys(registry.cityDemandProfiles).length,vehicleGroups:Object.keys(registry.vehicleGroups).length},errors,warnings};
     registry.lastValidation=report;return clone(report);
   }
-  function contentManifest(){return clone({schemaVersion:SCHEMA,buildVersion:BUILD,goods:registry.goods,facilities:registry.facilities,recipes:registry.recipes,demandProfiles:registry.demandProfiles,vehicleGroups:registry.vehicleGroups,deprecations:registry.deprecations})}
+  function contentManifest(){return clone({schemaVersion:SCHEMA,buildVersion:BUILD,goods:registry.goods,facilities:registry.facilities,recipes:registry.recipes,demandProfiles:registry.demandProfiles,demandProfileFactors:registry.demandProfileFactors,cityDemandProfiles:registry.cityDemandProfiles,vehicleGroups:registry.vehicleGroups,deprecations:registry.deprecations})}
   function purgeDeprecatedContent(){
     for(const id of registry.deprecations.goods||[]){
       delete registry.goods[id];delete GOODS[id];delete GOOD_MEASURES[id];delete LEGACY_CARGO_KG[id];if(ASSETS.goods)delete ASSETS.goods[id];
@@ -4154,6 +4164,8 @@ function hfInstallAutosaveHooks(){
     registry.deprecations.goods=unique([...registry.deprecations.goods,...(p.deprecations?.goods||[])]);
     registry.deprecations.facilities=unique([...registry.deprecations.facilities,...(p.deprecations?.facilities||[])]);
     for(const x of p.demandProfiles||[])registerDemandProfile(x);
+    if(p.demandProfileFactors)registry.demandProfileFactors={...registry.demandProfileFactors,...clone(p.demandProfileFactors)};
+    for(const x of p.cityDemandProfiles||[])registerCityDemandProfile(x);
     for(const x of p.vehicleGroups||[])registerVehicleGroup(x);
     for(const x of p.goods||[])registerGood(x);
     for(const x of p.facilities||[])registerFacility(x);
@@ -4167,10 +4179,15 @@ function hfInstallAutosaveHooks(){
   function newGoodTemplate(){return {goods:[{id:'new_good',name:'Neue Ware',icon:'📦',category:'other',unit:{unit:'kg',kgPerUnit:1,step:1},price:1,properties:{rawMaterial:false,perishable:false,refrigeratedRequired:false},demand:{enabled:true,profile:'legacy',canonical:false,dailyRate:1},transport:{allowedVehicleGroups:['general']},assetKey:'new_good'}],facilities:[{id:'new_factory',name:'Neuer Betrieb',icon:'🏭',cost:50000,groupId:'processing',inputs:{},outputs:{new_good:1000},allowedEverywhere:true,assetKey:'new_factory'}],recipes:[{id:'new_factory_default',facilityId:'new_factory',name:'Standardproduktion',inputs:{},outputs:{new_good:1000}}]}}
 
   const externalGoodsContentPack=globalThis.HF_GOODS_CONTENT_PACK;
+  const externalDemandContentPack=globalThis.HF_DEMAND_CONTENT_PACK;
   importLegacy({skipFoodFactoryRecipes:!!externalGoodsContentPack});
   if(externalGoodsContentPack){
     applyContentPack(externalGoodsContentPack,{render:false,persist:false});
     registry.externalGoodsDatabase={schemaVersion:externalGoodsContentPack.schemaVersion||1,buildVersion:externalGoodsContentPack.buildVersion||BUILD};
+  }
+  if(externalDemandContentPack){
+    applyContentPack(externalDemandContentPack,{render:false,persist:false});
+    registry.externalDemandDatabase={schemaVersion:externalDemandContentPack.schemaVersion||1,buildVersion:externalDemandContentPack.buildVersion||BUILD};
   }
 
   // Any asynchronous save restoration or future reset is migrated before its first render.
@@ -4201,7 +4218,7 @@ function hfInstallAutosaveHooks(){
     return round(Math.max(0,daily-Math.min(daily,local)));
   };
 
-  const api={schemaVersion:SCHEMA,buildVersion:BUILD,registry,registerGood,registerFacility,registerRecipe,registerDemandProfile,registerVehicleGroup,applyContentPack,migrateState,validate,demandDailyKg,contentManifest,newGoodTemplate,cityGoodPrice};
+  const api={schemaVersion:SCHEMA,buildVersion:BUILD,registry,registerGood,registerFacility,registerRecipe,registerDemandProfile,registerCityDemandProfile,registerVehicleGroup,applyContentPack,migrateState,applySaveMigrations,validate,demandDailyKg,contentManifest,newGoodTemplate,cityGoodPrice};
   window.HF_CONTENT=api;
   window.HF={...window.HF,contentRegistry:api,contentAudit:validate,exportContentManifest:contentManifest,applyContentPack,newGoodTemplate};
   const audit=validate();
@@ -4509,62 +4526,7 @@ function hfInstallAutosaveHooks(){
   function mark(){try{window.__HF_BUILD__=BUILD;document.documentElement.dataset.hfVersion=BUILD;if(document.body){document.body.dataset.hfBuild=BUILD;document.body.dataset.hfLocationSchema=String(SCHEMA)}const badge=document.getElementById('hfStabilityBuild');if(badge)badge.textContent='HF 1.1.38 · Versorgungslogistik';}catch(_){ }}
   mark();setTimeout(()=>{syncAllAllowedSets();mark();try{renderAll()}catch(_){ }try{save(false)}catch(_){ }},950);setTimeout(mark,1700);
 
-// --- v1.1.37: stronger structured demand profile for Sissach ---
-(function hfSissachDemandV137(){
-  'use strict';
-  const BUILD='1.1.37',SCHEMA=137;
-  const PROFILE={
-    food:{max:72,mult:1.02,dailyRate:.22},
-    pork:{max:46,mult:1.08,dailyRate:.22},
-    fish:{max:20,mult:1.12,dailyRate:1},
-    tomatoes:{max:38,mult:1.05,dailyRate:1},
-    zucchini:{max:36,mult:1.02,dailyRate:1},
-    apples:{max:64,mult:1.04,dailyRate:1},
-    pears:{max:60,mult:1.04,dailyRate:1},
-    cherries:{max:24,mult:1.08,dailyRate:1},
-    potatoes:{max:62,mult:1.00,dailyRate:1},
-    corn:{max:46,mult:1.03,dailyRate:1},
-    ravioli_meat:{max:18,mult:1.17,dailyRate:.22},
-    ravioli_veg:{max:20,mult:1.14,dailyRate:.22},
-    tomato_cans:{max:14,mult:1.08,dailyRate:.14},
-    canned_corn:{max:12,mult:1.08,dailyRate:.14},
-    canned_peas:{max:12,mult:1.08,dailyRate:.14}
-  };
-  const r=v=>typeof roundCargo==='function'?roundCargo(Number(v)||0):Math.round((Number(v)||0)*1000)/1000;
-  function applyTo(target){
-    const s=target?.cities?.sissach;if(!s)return target;
-    s.inventory=s.inventory||{};s.demands=s.demands||{};
-    for(const [good,p] of Object.entries(PROFILE)){
-      if(!GOODS[good])continue;
-      if(!Number.isFinite(Number(s.inventory[good])))s.inventory[good]=0;
-      const old=s.demands[good]&&typeof s.demands[good]==='object'?s.demands[good]:{};
-      const oldMax=Math.max(0,Number(old.max)||0),oldNeed=Math.max(0,Number(old.need)||0);
-      const max=Math.max(oldMax,Number(p.max)||0);
-      const minimumFill=max*.62;
-      s.demands[good]={...old,max:r(max),need:r(Math.min(max,Math.max(oldNeed,minimumFill))),mult:Number(old.mult)>0?Math.max(Number(old.mult),Number(p.mult)||1):Number(p.mult)||1,dailyRate:Number(p.dailyRate)};
-    }
-    target.sissachDemandSchema=SCHEMA;
-    target.sissachDemandProfile='small_town_plus';
-    return target;
-  }
-  applyTo(state);
-  const priorFresh=freshState;
-  freshState=function(){return applyTo(priorFresh())};
-  function audit(){
-    const s=state?.cities?.sissach,errors=[];
-    if(!s)errors.push('Sissach fehlt im Spielstand');
-    for(const [good,p] of Object.entries(PROFILE)){
-      const d=s?.demands?.[good];
-      if(!d)errors.push(`${good}: Nachfrage fehlt`);
-      else if((Number(d.max)||0)<p.max)errors.push(`${good}: ${d.max} < ${p.max}`);
-    }
-    return {ok:errors.length===0,build:BUILD,schema:SCHEMA,city:'sissach',profile:'small_town_plus',goods:Object.keys(PROFILE).length,errors};
-  }
-  window.HF={...window.HF,hfV137:{version:BUILD,demandSchema:SCHEMA,city:'sissach',profile:'small_town_plus'},sissachDemandAudit:audit};
-  window.__HF_SISSACH_DEMAND_AUDIT__=audit();
-  function mark(){try{window.__HF_BUILD__=BUILD;document.documentElement.dataset.hfVersion=BUILD;if(document.body){document.body.dataset.hfBuild=BUILD;document.body.dataset.hfSissachDemand=String(SCHEMA)}const badge=document.getElementById('hfStabilityBuild');if(badge)badge.textContent='HF 1.1.38 · Versorgungslogistik';}catch(_){}}
-  mark();setTimeout(()=>{applyTo(state);mark();try{renderAll()}catch(_){ }try{save(false)}catch(_){ }},900);setTimeout(mark,1700);
-})();
+// --- v1.1.37: Sissach demand data moved to scripts/hf-demand-database.js; migration lives in scripts/hf-save-migrations.js ---
 
 
 // --- v1.1.38: city supply contracts, source-owned delivery fleets and rolling weekly plans ---
