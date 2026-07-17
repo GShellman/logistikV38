@@ -41,6 +41,7 @@
     if (!api) return '<p class="hf-v2-fleet-empty">Der Fahrzeugkatalog ist nicht geladen.</p>';
 
     const fleet = api.getCityFleet?.(cityId) || {};
+    const cash = Number(api.getState?.().cash) || 0;
     const vehicleTypes = api.VEHICLE_TYPES || [];
     const vehicles = api.VEHICLES || {};
 
@@ -50,6 +51,8 @@
       const vehicle = vehicles[type];
       if (!vehicle) return '';
       const owned = Number(fleet[type]) || 0;
+      const canAfford = cash >= (Number(vehicle.cost) || 0);
+      const disabledText = canAfford ? '' : ' disabled aria-disabled="true" title="Nicht genug Kapital"';
       return `
         <article class="hf-v2-fleet-card">
           <div class="hf-v2-fleet-card__icon" aria-hidden="true">${escapeHtml(vehicle.icon || '🚚')}</div>
@@ -65,7 +68,7 @@
               <div><dt>Geschwindigkeit</dt><dd>${formatSpeed(vehicle.speed)}</dd></div>
             </dl>
           </div>
-          <button class="hf-v2-fleet-buy" type="button" data-action="buy-fleet-vehicle" data-city-id="${escapeHtml(cityId)}" data-vehicle-type="${escapeHtml(type)}">Kaufen</button>
+          <button class="hf-v2-fleet-buy" type="button" data-action="buy-fleet-vehicle" data-city-id="${escapeHtml(cityId)}" data-vehicle-type="${escapeHtml(type)}"${disabledText}>${canAfford ? 'Kaufen' : 'Zu teuer'}</button>
         </article>`;
     }).join('');
   }
@@ -73,11 +76,13 @@
   function renderFleetMenu(cityId) {
     const city = cityById(cityId);
     if (!city) return '<p class="hf-v2-fleet-empty">Stadt nicht gefunden.</p>';
+    const cash = Number(fleetApi()?.getState?.().cash) || 0;
     return `
       <div class="hf-v2-fleet-menu" data-fleet-city-id="${escapeHtml(city.id)}">
         <p class="hf-v2-fleet-eyebrow">Fuhrpark</p>
         <h3>${escapeHtml(city.name)}</h3>
-        <p class="hf-v2-fleet-hint">Kaufe Fahrzeuge und stationiere sie direkt in dieser Stadt. Der Besitz wird pro Fahrzeugtyp und Stadt gezählt.</p>
+        <div class="hf-v2-fleet-cash" aria-label="Verfügbares Kapital"><span>Kapital</span><strong>${formatMoney(cash)}</strong></div>
+        <p class="hf-v2-fleet-hint">Kaufe Fahrzeuge und stationiere sie direkt in dieser Stadt. Käufe werden nur im Arbeitsspeicher vom V2-Kapital abgezogen.</p>
         <div class="hf-v2-fleet-grid">${vehicleRows(city.id)}</div>
       </div>`;
   }
