@@ -3888,37 +3888,11 @@ function hfInstallAutosaveHooks(){
   const registry={schemaVersion:SCHEMA,buildVersion:BUILD,goods:{},facilities:{},recipes:{},demandProfiles,demandProfileFactors:{},cityDemandProfiles:{},vehicleGroups,deprecations:{goods:[],facilities:['foodplant']},lastValidation:null};
 
   function inferCategory(id,g){
-    if(['apples','pears','cherries'].includes(id))return 'fruit';
-    if(['tomatoes','zucchini','potatoes','corn','peas'].includes(id))return 'vegetable';
-    if(['tomato_cans','canned_corn','canned_peas','ravioli_meat','ravioli_veg'].includes(id))return 'processed_food';
-    if(['fish','pigs','pork'].includes(id))return 'animal_products';
-    if(['grain','wood','ore','chemicals','aluminum_ore','aluminum','cans'].includes(id))return 'industrial_material';
-    if(['furniture','tools','electronics','medicine'].includes(id))return 'consumer_goods';
     return g?.raw?'raw_material':'other';
-  }
-  function inferDemand(id){
-    if(id==='cherries')return {enabled:true,profile:'niche_fruit',canonical:true,referenceGoods:['apples','pears'],ratio:.4,capReferenceGood:'zucchini',capRatio:.75,minDailyKg:5,dailyRate:1};
-    if(['apples','pears'].includes(id))return {enabled:true,profile:'common_fruit',canonical:false,dailyRate:1};
-    if(['zucchini','tomatoes','corn'].includes(id))return {enabled:true,profile:'common_vegetable',canonical:false,dailyRate:1};
-    if(id==='potatoes')return {enabled:true,profile:'staple_crop',canonical:false,dailyRate:1};
-    if(['tomato_cans','canned_corn','canned_peas','ravioli_meat','ravioli_veg'].includes(id))return {enabled:true,profile:'canned_food',canonical:false,dailyRate:.14};
-    if(['fish','pork'].includes(id))return {enabled:true,profile:'fresh_food',canonical:false,dailyRate:id==='fish'?1:.22};
-    if(DEMAND_GOODS.includes(id))return {enabled:true,profile:'consumer_good',canonical:false,dailyRate:.22};
-    return {enabled:false,profile:'industrial',canonical:false,dailyRate:0};
-  }
-  function inferTransport(id,g){
-    if(['grain','ore','aluminum_ore','corn','peas'].includes(id))return {allowedVehicleGroups:['bulk'],legacy:true};
-    if(['fish','pork','ravioli_meat','ravioli_veg'].includes(id))return {allowedVehicleGroups:['refrigerated'],legacy:true};
-    if(id==='pigs')return {allowedVehicleGroups:['livestock'],legacy:true};
-    if(g?.perishable)return {allowedVehicleGroups:['general','refrigerated'],legacy:true};
-    return {allowedVehicleGroups:['general'],legacy:true};
   }
   function measureForCatalog(id){
     const m=GOOD_MEASURES?.[id]||{};
     return {unit:m.unit||'kg',kgPerUnit:Number(m.kgPerUnit)||1,step:Number(m.step)||1};
-  }
-  function legacyGoodDefinition(id,g){
-    return {id,name:g.name||id,icon:g.icon||'📦',category:inferCategory(id,g),unit:measureForCatalog(id),price:Number(g.price)||0,properties:{rawMaterial:!!g.raw,perishable:!!g.perishable,refrigeratedRequired:false},demand:inferDemand(id),transport:inferTransport(id,g),assetKey:id,legacy:{...clone(g)}};
   }
   function groupForFacility(id,f){
     const group=typeof HF_FACILITY_GROUPS!=='undefined'?HF_FACILITY_GROUPS.find(x=>(x.items||[]).includes(id)):null;
@@ -4021,22 +3995,10 @@ function hfInstallAutosaveHooks(){
     return target;
   }
 
-  function importLegacy({skipFoodFactoryRecipes=false}={}){
-    for(const [id,g] of Object.entries(GOODS))registerGood(legacyGoodDefinition(id,g),{sync:false});
-    for(const [id,f] of Object.entries(FACILITIES)){
-      registerFacility({id,name:f.name,icon:f.icon,cost:f.cost,inputs:f.inputs||{},outputs:f.output||{},raw:!!f.raw,description:f.desc||'',groupId:groupForFacility(id,f),assetKey:id,allowedCities:allowedCitiesFor(id),allowedEverywhere:RAW_ALLOWED?.[id]?.size===CITIES.length},{sync:false});
-      if(id!=='foodfactory')registerRecipe({id:'facility_'+id,facilityId:id,name:f.name,inputs:f.inputs||{},outputs:f.output||{}});
-    }
-    if(FACILITIES.foodfactory&&!skipFoodFactoryRecipes){
-      const recipeRows=[
-        {id:'foodfactory_meat',name:'Ravioli mit Fleisch',mixField:'meatPct',recipe:hfRecipeFromPack('foodfactory_meat')},
-        {id:'foodfactory_veg',name:'Ravioli ohne Fleisch',mixField:'vegPct',recipe:hfRecipeFromPack('foodfactory_veg')},
-        {id:'foodfactory_tomato',name:'Tomatenkonserven',mixField:'tomatoPct',recipe:hfRecipeFromPack('foodfactory_tomato')},
-        {id:'foodfactory_corn',name:'Maiskonserven',mixField:'cornPct',recipe:{inputs:{corn:1350,cans:400},outputs:{canned_corn:1700}}},
-        {id:'foodfactory_peas',name:'Erbsenkonserven',mixField:'peasPct',recipe:{inputs:{peas:1350,cans:400},outputs:{canned_peas:1700}}}
-      ];
-      for(const row of recipeRows)registerRecipe({id:row.id,facilityId:'foodfactory',name:row.name,mixField:row.mixField,inputs:row.recipe.inputs,outputs:row.recipe.outputs});
-    }
+  function importLegacy(contentPacks=[]){
+    const packs=(Array.isArray(contentPacks)?contentPacks:[contentPacks]).filter(Boolean);
+    for(const pack of packs)applyContentPack(pack,{render:false,persist:false});
+    return packs.length;
   }
 
   function referenceDaily(cityId,goodId){
@@ -4156,14 +4118,16 @@ function hfInstallAutosaveHooks(){
 
   const externalGoodsContentPack=globalThis.HF_GOODS_CONTENT_PACK;
   const externalDemandContentPack=globalThis.HF_DEMAND_CONTENT_PACK;
-  importLegacy({skipFoodFactoryRecipes:!!externalGoodsContentPack});
+  importLegacy([externalGoodsContentPack,externalDemandContentPack]);
   if(externalGoodsContentPack){
-    applyContentPack(externalGoodsContentPack,{render:false,persist:false});
     registry.externalGoodsDatabase={schemaVersion:externalGoodsContentPack.schemaVersion||1,buildVersion:externalGoodsContentPack.buildVersion||BUILD};
+  }else{
+    console.warn('HF_GOODS_CONTENT_PACK fehlt; Content Registry startet ohne rekonstruierte Legacy-Waren.');
   }
   if(externalDemandContentPack){
-    applyContentPack(externalDemandContentPack,{render:false,persist:false});
     registry.externalDemandDatabase={schemaVersion:externalDemandContentPack.schemaVersion||1,buildVersion:externalDemandContentPack.buildVersion||BUILD};
+  }else{
+    console.warn('HF_DEMAND_CONTENT_PACK fehlt; Content Registry startet mit internen Basis-Nachfrageprofilen.');
   }
 
   // Any asynchronous save restoration or future reset is migrated before its first render.
