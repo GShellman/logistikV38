@@ -17,7 +17,6 @@
   let state = null;
   let cities = [];
   let citiesById = {};
-  let renderedLines = {};
 
   function createNetworkState(overrides = {}) {
     return {
@@ -130,32 +129,9 @@
     if (state.cities?.[project.b]) state.cities[project.b].unlocked = true;
     state.selected = project.b;
     state.pendingProject = null;
+    window.dispatchEvent?.(new CustomEvent('hf:network:confirmed', {detail: {edge, state}}));
     return edge;
   }
 
-  function edgeMidpoint(coords) {
-    return coords?.length ? coords[Math.floor(coords.length / 2)] : null;
-  }
-
-  function renderNetworkLines(map, targetState = state, targetCitiesById = citiesById) {
-    if (!map || !window.L) return {};
-    Object.values(renderedLines).forEach(line => map.removeLayer(line));
-    renderedLines = {};
-    (targetState?.connections || []).forEach(edge => {
-      const a = targetCitiesById[edge.a];
-      const b = targetCitiesById[edge.b];
-      if (!a || !b) return;
-      const t = transportSpec(edge);
-      const coords = edge.geometry?.length > 1 ? edge.geometry : [[a.lat, a.lng], [b.lat, b.lng]];
-      const used = targetState.usedCapacity?.[edge.id] || 0;
-      const line = L.polyline(coords, {color: t.color, weight: t.weight + 2, dashArray: t.dashArray || null, opacity: 1, lineCap: 'round', lineJoin: 'round'});
-      const badge = L.marker(edgeMidpoint(coords), {interactive: false, icon: L.divIcon({className: 'route-badge-wrap', html: `<div class="route-badge idle">${used}/${edge.capacity}</div>`, iconSize: [44, 20], iconAnchor: [22, 10]})});
-      const group = L.layerGroup([line, badge]).addTo(map);
-      line.bindTooltip(`${t.name} · ${Math.round(edge.distance)} km · ${used}/${edge.capacity} ${t.capacityUnit}`);
-      renderedLines[edge.id] = group;
-    });
-    return renderedLines;
-  }
-
-  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, planConnection, confirmProject, renderNetworkLines};
+  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, planConnection, confirmProject};
 })();

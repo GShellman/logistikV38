@@ -194,11 +194,17 @@
     });
 
     renderMarkers(cities);
-    if (window.HFNetwork && networkState) {
-      window.HFNetwork.renderNetworkLines(map, networkState, citiesById);
+    window.HFNetwork?.initNetworkLayer?.(map);
+    if (networkState) {
+      window.HFNetwork?.renderNetworkLines?.(networkState.connections, citiesById);
     }
     map.fitBounds(bounds, {padding: [16, 16], animate: false});
     return true;
+  }
+
+  function renderCurrentNetworkLines() {
+    if (!networkState) return;
+    window.HFNetwork?.renderNetworkLines?.(networkState.connections, citiesById);
   }
 
   function boot() {
@@ -210,6 +216,7 @@
       citiesById,
     });
     document.getElementById('hfV2CityCount').textContent = `${cities.length.toLocaleString('de-CH')} Orte`;
+    window.addEventListener('hf:network:confirmed', renderCurrentNetworkLines);
     if (!bootMap(cities)) return;
     const zurich = cities.find(city => city.id === 'zurich');
     if (zurich) selectCity(zurich, cities);
