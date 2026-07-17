@@ -16,7 +16,7 @@ assert(/HF_CITY_SECTIONS\s*=\s*window\.HF_CITY_SECTIONS\s*\|\|\s*\[\]/.test(html
 assert(/registerCitySection/.test(html), 'registerCitySection API is missing from the app shell');
 assert(/registerCitySection/.test(supply), 'supply contracts must register a city section');
 assert(!/renderCity\s*=\s*function/.test(html + supply), 'legacy renderCity=function reassignment remains');
-for (const text of ['Warenversorgung', 'Bezugsquellen und Lieferrhythmus', 'Ausgehende Logistik']) {
+for (const text of ['Warenbestellung', 'Produzierte Waren und Lieferaufträge', 'Ausgehende Logistik']) {
   assert(supply.includes(text), `supply city section text missing: ${text}`);
 }
 const citySection = supply.match(/function\s+renderSupplyCitySections\s*\([^)]*\)\s*\{([\s\S]*?)\n\s*function\s+renderSupplyPopupSection/);
@@ -25,7 +25,7 @@ assert(!/supplySectionMarkup\(cityId\)/.test(citySection?.[1] || ''), 'normal ci
 assert(/outgoingSectionMarkup\(cityId\)/.test(citySection?.[1] || ''), 'normal city view must register Ausgehende Logistik');
 const popupSection = supply.match(/function\s+renderSupplyPopupSection\s*\([^)]*\)\s*\{([^}]+)\}/);
 assert(popupSection, 'renderSupplyPopupSection implementation is missing');
-assert(/supplySectionMarkup\(cityId\)/.test(popupSection?.[1] || ''), 'popup section must render Warenversorgung');
+assert(/supplySectionMarkup\(cityId\)/.test(popupSection?.[1] || ''), 'popup section must render Warenbestellung');
 assert(!/outgoingSectionMarkup\(cityId\)/.test(popupSection?.[1] || ''), 'popup section must not duplicate Ausgehende Logistik');
 if (process.exitCode) process.exit(process.exitCode);
 console.log('City composer smoke passed: supply popup and outgoing city section stay separated.');
