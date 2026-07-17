@@ -2,6 +2,7 @@
   'use strict';
 
   const MAX_CONNECTION_DISTANCE_KM = 105;
+  const TEST_STARTING_CASH = 1000000;
 
   const TRANSPORT_TYPES = {
     localroad: {name: 'Gemeindestraße', short: 'GEMEINDE', mode: 'road', icon: '🛤️', capacity: 3, capacityUnit: 'Fahrzeuge', speed: 35, baseCost: 4000, buildKm: 280, maintenanceKm: 12, color: '#85796b', weight: 2, desc: 'Sehr günstig, aber langsam und mit geringer Tageskapazität.'},
@@ -23,7 +24,7 @@
       connections: [],
       pendingProject: null,
       networkOriginNode: 'zurich',
-      cash: 0,
+      cash: TEST_STARTING_CASH,
       selected: 'zurich',
       cities: {},
       usedCapacity: {},
@@ -133,5 +134,5 @@
     return edge;
   }
 
-  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, planConnection, confirmProject};
+  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, TEST_STARTING_CASH, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, planConnection, confirmProject};
 })();
