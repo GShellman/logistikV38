@@ -107,6 +107,14 @@
       </div>`;
   }
 
+  function currentCash() {
+    return window.HFV2Save?.getCash?.() ?? 0;
+  }
+
+  function renderCashBadge() {
+    return `<div class="hf-v2-fleet-cash" aria-label="Verfügbares Kapital"><span>Kapital</span><strong>${formatMoney(currentCash())}</strong></div>`;
+  }
+
   function renderBuildOption(origin, target, type) {
     const hfNetwork = network();
     const spec = hfNetwork?.TRANSPORT_TYPES?.[type];
@@ -114,7 +122,8 @@
     const exists = hfNetwork.connectionExists?.(origin.id, target.id, spec.mode);
     const distance = estimatedDistanceForType(origin, target, type);
     const quote = hfNetwork.buildQuote?.(type, distance);
-    const disabled = exists || !quote;
+    const canAfford = !!quote && currentCash() >= quote.cost;
+    const disabled = exists || !quote || !canAfford;
     return `
       <button class="hf-v2-network-option${disabled ? ' is-disabled' : ''}" type="button" data-action="plan-connection" data-origin="${escapeHtml(origin.id)}" data-target="${escapeHtml(target.id)}" data-type="${escapeHtml(type)}" ${disabled ? 'disabled' : ''}>
         <span class="hf-v2-network-icon" aria-hidden="true">${escapeHtml(spec.icon)}</span>
@@ -122,7 +131,7 @@
           <strong>${escapeHtml(DISPLAY_NAMES[type] || spec.name)}</strong>
           <small>${formatKm(distance)} · ${formatMoney(quote?.cost || 0)} · Unterhalt ${formatMoney(quote?.maintenance || 0)}/Tag</small>
         </span>
-        ${exists ? '<span class="hf-v2-network-badge hf-v2-network-badge--disabled">besteht</span>' : '<span class="hf-v2-network-badge">planen</span>'}
+        ${exists ? '<span class="hf-v2-network-badge hf-v2-network-badge--disabled">besteht</span>' : canAfford ? '<span class="hf-v2-network-badge">planen</span>' : '<span class="hf-v2-network-badge hf-v2-network-badge--disabled">zu teuer</span>'}
       </button>`;
   }
 
@@ -138,6 +147,7 @@
         <button class="hf-v2-network-back" type="button" data-action="show-target-picker">← Ziel ändern</button>
         <p class="hf-v2-network-eyebrow">Bauoptionen</p>
         <h3>${escapeHtml(origin.name)} → ${escapeHtml(target.name)}</h3>
+        ${renderCashBadge()}
         <div class="hf-v2-network-grid">${BUILD_TYPES.map(type => renderBuildOption(origin, target, type)).join('')}</div>
         <p class="hf-v2-network-hint">Nach Auswahl wird das Projekt mit Kosten, Distanz und Route in der Netzwerklogik vorgemerkt.</p>
       </div>`;
@@ -152,12 +162,24 @@
     activeTargetId = targetId;
     const project = await window.HF_V2?.planConnection?.(originId, targetId, type);
     if (!project) return;
+    if (project.ok === false && project.reason === 'not-enough-cash') {
+      setBody(`
+        <div class="hf-v2-network-menu">
+          <p class="hf-v2-network-eyebrow">Nicht genug Kapital</p>
+          <h3>Projekt nicht planbar</h3>
+          ${renderCashBadge()}
+          <p class="hf-v2-network-hint">Benötigt ${formatMoney(project.cost)}, verfügbar ${formatMoney(project.cash)}.</p>
+          <button class="hf-v2-network-back" type="button" data-action="back-to-build-options">Weitere Option wählen</button>
+        </div>`);
+      return;
+    }
     const origin = cityById(project.a);
     const target = cityById(project.b);
     setBody(`
       <div class="hf-v2-network-menu">
         <p class="hf-v2-network-eyebrow">Projekt geplant</p>
         <h3>${escapeHtml(origin?.name || project.a)} → ${escapeHtml(target?.name || project.b)}</h3>
+        ${renderCashBadge()}
         <p class="hf-v2-network-hint">${escapeHtml(DISPLAY_NAMES[project.type] || network()?.TRANSPORT_TYPES?.[project.type]?.name || project.type)} · ${formatKm(project.distance)} · Baukosten ${formatMoney(project.cost)} · Unterhalt ${formatMoney(project.maintenance)}/Tag</p>
         <button class="hf-v2-network-back" type="button" data-action="confirm-project">Bauen</button>
         <button class="hf-v2-network-back" type="button" data-action="back-to-build-options">Weitere Option wählen</button>
