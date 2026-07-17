@@ -4,6 +4,7 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'Helvetic_Freight_v1.1.38_CleanApp.html'), 'utf8');
 const supply = fs.readFileSync(path.join(root, 'scripts/hf-supply-contracts.js'), 'utf8');
+const apkBuild = fs.readFileSync(path.join(root, 'tools/build_unsigned_apk_v138.py'), 'utf8');
 function assert(condition, message) {
   if (!condition) {
     console.error(`City composer smoke failed: ${message}`);
@@ -14,8 +15,9 @@ assert(/function\s+renderCityBase\s*\(\s*root\s*,\s*cityId/.test(html), 'renderC
 assert(/function\s+renderCity\s*\(\s*root\s*\)\s*\{[\s\S]*renderCityBase\(root,cityId\)[\s\S]*HF_CITY_SECTIONS/.test(html), 'renderCity must call the base renderer and registered city sections');
 assert(/HF_CITY_SECTIONS\s*=\s*window\.HF_CITY_SECTIONS\s*\|\|\s*\[\]/.test(html), 'HF_CITY_SECTIONS registry is missing');
 assert(/registerCitySection/.test(html), 'registerCitySection API is missing from the app shell');
-assert(/hf-supply-contracts-v1138-inline/.test(html), 'supply contracts installer must be embedded in the clean app HTML');
-assert(/HF_SUPPLY_CONTRACTS_V1138/.test(html), 'embedded supply contracts installer is missing');
+assert(/scripts\/hf-supply-contracts\.js\?v=city-orders-20260717b/.test(html), 'supply contracts script tag is missing from the clean app HTML');
+assert(!/hf-supply-contracts-v1138-inline/.test(html), 'supply contracts mechanics must stay in the external script, not inline HTML');
+assert(/for rel in \['scripts', 'assets'\]/.test(apkBuild), 'APK build must package external scripts/assets referenced by the HTML');
 assert(/hfCoreSupplyPopupSection/.test(html), 'core supply popup fallback module is missing');
 assert(/registerCitySection/.test(supply), 'supply contracts must register a city section');
 assert(!/renderCity\s*=\s*function/.test(html + supply), 'legacy renderCity=function reassignment remains');
