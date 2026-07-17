@@ -49,6 +49,7 @@
   }
 
   function defaultFactoryState() {
+    if (window.HFV2Factories?.createFactoryState) return window.HFV2Factories.createFactoryState();
     return {cityFactories: {}};
   }
 
@@ -85,7 +86,8 @@
   function serializeState(savePackage = null) {
     const liveNetwork = window.HFNetwork?.getState?.();
     const liveFleet = window.HFFleet?.getState?.();
-    const source = savePackage || {state: {network: liveNetwork, fleet: liveFleet, factories: getState().factories, cash: getCash()}};
+    const liveFactories = window.HFV2Factories?.getState?.();
+    const source = savePackage || {state: {network: liveNetwork, fleet: liveFleet, factories: liveFactories || getState().factories, cash: getCash()}};
     const normalized = normalizePackage(source);
     normalized.savedAt = new Date().toISOString();
     return deepClone(normalized);
