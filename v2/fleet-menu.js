@@ -24,6 +24,11 @@
     return `${Math.round(Number(value) || 0).toLocaleString('de-CH')} km/h`;
   }
 
+  function formatDailyCost(vehicle) {
+    const daily = Number(vehicle.daily) || Math.round((Number(vehicle.kmCost) || 0) * 100);
+    return `${formatMoney(daily)} / Tag`;
+  }
+
   function citiesById() {
     return window.HFV2CitiesById || {};
   }
@@ -69,20 +74,20 @@
           <div class="hf-v2-fleet-card__main">
             <div class="hf-v2-fleet-card__head">
               <span>
-                <small>Typ</small>
                 <h4>${escapeHtml(vehicle.name || type)}</h4>
               </span>
-              <span class="hf-v2-fleet-owned">${owned.toLocaleString('de-CH')} im Bestand</span>
+              <span class="hf-v2-fleet-owned" aria-label="Fahrzeuge im Bestand">${owned.toLocaleString('de-CH')} im Bestand</span>
             </div>
             <p>${escapeHtml(vehicle.desc || 'Kaufbares Fahrzeug für den städtischen Fuhrpark.')}</p>
             <dl class="hf-v2-fleet-stats">
               <div><dt>Kapazität</dt><dd>${formatLoad(vehicle.load)}</dd></div>
               <div><dt>Kosten</dt><dd>${formatMoney(vehicle.cost)}</dd></div>
-              <div><dt>Bestand</dt><dd>${owned.toLocaleString('de-CH')}</dd></div>
               <div><dt>Tempo</dt><dd>${formatSpeed(vehicle.speed)}</dd></div>
+              <div><dt>Betriebskosten</dt><dd>${formatDailyCost(vehicle)}</dd></div>
+              <div><dt>Bestand</dt><dd>${owned.toLocaleString('de-CH')}</dd></div>
             </dl>
           </div>
-          <button class="hf-v2-fleet-buy" type="button" data-action="buy-fleet-vehicle" data-city-id="${escapeHtml(cityId)}" data-vehicle-type="${escapeHtml(type)}"${disabledText}><span>${canAfford ? 'Kaufen' : 'Nicht leistbar'}</span><strong>${formatMoney(vehicle.cost)}</strong></button>
+          <button class="hf-v2-fleet-buy" type="button" data-action="buy-fleet-vehicle" data-city-id="${escapeHtml(cityId)}" data-vehicle-type="${escapeHtml(type)}"${disabledText}><span>${canAfford ? 'Kaufen' : 'Nicht leistbar'}</span><strong>${formatMoney(vehicle.cost)}</strong><i aria-hidden="true">→</i></button>
         </article>`;
     }).join('');
   }
@@ -93,11 +98,33 @@
     const cash = window.HFV2Save?.getCash?.() ?? 0;
     return `
       <div class="hf-v2-fleet-menu" data-fleet-city-id="${escapeHtml(city.id)}">
-        <p class="hf-v2-fleet-eyebrow">Fuhrparkbeschaffung</p>
-        <h3>Fahrzeuge für ${escapeHtml(city.name)}</h3>
-        <div class="hf-v2-fleet-cash" aria-label="Verfügbares Kapital"><span>Kapital</span><strong>${formatMoney(cash)}</strong></div>
-        <p class="hf-v2-fleet-hint">Kaufe Fahrzeuge und stationiere sie direkt in dieser Stadt. Käufe werden vom gemeinsamen V2-Kapital abgezogen.</p>
+        <section class="hf-v2-fleet-hero" aria-label="Fahrzeugkauf Übersicht">
+          <div class="hf-v2-fleet-hero__mark" aria-hidden="true">V2</div>
+          <div>
+            <p class="hf-v2-fleet-eyebrow">${escapeHtml(city.name)}</p>
+            <h3>Fuhrparkbeschaffung</h3>
+            <p class="hf-v2-fleet-subline">Erweitern Sie Ihre Flotte und bringen Sie Ihre Logistik auf die Überholspur.</p>
+          </div>
+        </section>
+        <div class="hf-v2-fleet-toolbar">
+          <div class="hf-v2-fleet-tabs" role="tablist" aria-label="Fahrzeugklassen">
+            <button class="is-active" type="button" role="tab" aria-selected="true">Straße</button>
+            <button type="button" role="tab" aria-selected="false" disabled>Schiene</button>
+            <button type="button" role="tab" aria-selected="false" disabled>Spezial</button>
+          </div>
+          <div class="hf-v2-fleet-cash" aria-label="Verfügbares Kapital"><span>Kapital</span><strong>${formatMoney(cash)}</strong></div>
+        </div>
+        <div class="hf-v2-fleet-info-row">
+          <p class="hf-v2-fleet-hint"><span aria-hidden="true">i</span>Kaufen Sie Fahrzeuge und stationieren Sie sie direkt in dieser Stadt. Käufe werden vom gemeinsamen V2-Kapital abgezogen.</p>
+          <button class="hf-v2-fleet-sort" type="button" disabled>Nach Kapazität</button>
+        </div>
         <div class="hf-v2-fleet-grid">${vehicleRows(city.id)}</div>
+        <div class="hf-v2-fleet-footer" aria-label="Vorteile des Fahrzeugkaufs">
+          <span><strong>Sofort verfügbar</strong><small>Direkt in dieser Stadt</small></span>
+          <span><strong>Lokale Stationierung</strong><small>Optimale Routen ab Stadt</small></span>
+          <span><strong>Vom V2-Kapital bezahlt</strong><small>Gemeinsames Budget nutzen</small></span>
+          <button type="button" disabled>Mehr über Fahrzeuge</button>
+        </div>
       </div>`;
   }
 
