@@ -1411,3 +1411,40 @@ code { background: #edf4f9; color: #174a78; }
   .hf-v2-panel { grid-template-columns: 1fr; }
   .hf-v2-fleet-hero { grid-template-columns: 1fr; padding-right: 52px; }
 }
+
+.hf-v2-inventory-card { margin-top: 16px; }
+
+.hf-v2-inventory-capacity { display: grid; gap: 6px; margin-bottom: 14px; }
+
+.hf-v2-inventory-capacity span {
+  background: rgba(15, 23, 42, .09);
+  border-radius: 999px;
+  display: block;
+  height: 9px;
+  overflow: hidden;
+}
+
+.hf-v2-inventory-capacity i {
+  background: linear-gradient(90deg, var(--hf-primary), var(--hf-primary-2));
+  display: block;
+  height: 100%;
+}
+
+.hf-v2-inventory-capacity small,
+.hf-v2-inventory-good span { color: var(--hf-muted); font-size: 12px; }
+
+.hf-v2-inventory-grid { display: grid; gap: 8px; }
+
+.hf-v2-inventory-good {
+  align-items: center;
+  background: rgba(255, 255, 255, .72);
+  border: 1px solid rgba(15, 23, 42, .08);
+  border-radius: 14px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto 1fr;
+  padding: 9px;
+}
+
+.hf-v2-inventory-good b { display: block; font-size: 13px; }
+.hf-v2-inventory-empty { margin-bottom: 0; }

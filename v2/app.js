@@ -70,6 +70,44 @@
     }).filter(row => row.dailyKg > 0).sort((a, b) => b.dailyKg - a.dailyKg || a.good.name.localeCompare(b.good.name, 'de-CH'));
   }
 
+
+  function formatWeightKg(value) {
+    const kg = Math.max(0, Number(value) || 0);
+    if (kg >= 1000) return `${(kg / 1000).toLocaleString('de-CH', {maximumFractionDigits: 1})} t`;
+    return `${kg.toLocaleString('de-CH', {maximumFractionDigits: kg >= 10 ? 0 : 1})} kg`;
+  }
+
+  function goodById(goodId) {
+    return (window.HFV2GoodsCatalog || []).find(good => good.id === goodId) || {id: goodId, name: goodId, icon: '📦'};
+  }
+
+  function formatGoodAmount(goodId, kg) {
+    const good = goodById(goodId);
+    const unit = good.unit || {unit: 'kg', kgPerUnit: 1};
+    const kgPerUnit = Math.max(Number(unit.kgPerUnit) || 1, 0.000001);
+    const amount = (Number(kg) || 0) / kgPerUnit;
+    if (unit.unit === 'kg') return formatWeightKg(kg);
+    if (unit.unit === 't') return `${amount.toLocaleString('de-CH', {maximumFractionDigits: 1})} t`;
+    return `${amount.toLocaleString('de-CH', {maximumFractionDigits: amount >= 10 ? 0 : 1})} ${unit.unit}`;
+  }
+
+  function cityInventoryMarkup(cityId) {
+    const inventory = window.HFV2Goods?.getCityInventory?.(cityId) || {};
+    const rows = Object.entries(inventory).filter(([, kg]) => Number(kg) > 0.001).sort(([a], [b]) => goodById(a).name.localeCompare(goodById(b).name, 'de-CH'));
+    return rows.length ? `<div class="hf-v2-inventory-grid">${rows.map(([goodId, kg]) => {
+      const good = goodById(goodId);
+      return `<article class="hf-v2-inventory-good"><div class="hf-v2-demand-icon">${goodIcon(good)}</div><div><b>${escapeHtml(good.name)}</b><span>${formatGoodAmount(goodId, kg)} · ${formatWeightKg(kg)}</span></div></article>`;
+    }).join('')}</div>` : '<p class="hf-v2-muted hf-v2-inventory-empty">📦 Lager leer</p>';
+  }
+
+  function inventorySectionMarkup(city) {
+    window.HFV2Goods?.ensureCityInventory?.(city.id);
+    const usedKg = window.HFV2Goods?.getUsedCapacityKg?.(city.id) || 0;
+    const capacityKg = window.HFV2Goods?.getCapacityKg?.(city.id) || 0;
+    const fill = capacityKg > 0 ? Math.min(100, Math.max(0, usedKg / capacityKg * 100)) : 0;
+    return `<section class="hf-v2-demand-card hf-v2-inventory-card" aria-labelledby="hfV2InventoryTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Güter / Lager</p><h3 id="hfV2InventoryTitle">Lager</h3></div><strong>${formatWeightKg(usedKg)}</strong></div><div class="hf-v2-inventory-capacity"><span><i style="width:${fill}%"></i></span><small>${formatWeightKg(usedKg)} von ${formatWeightKg(capacityKg)} belegt</small></div>${cityInventoryMarkup(city.id)}</section>`;
+  }
+
   function demandPanel(city) {
     const rows = v2DemandRows(city);
     const total = rows.reduce((sum, row) => sum + row.dailyKg, 0);
@@ -148,7 +186,7 @@
       fact('Wohlstandsfaktor', city.wealthFactor.toFixed(2)),
       fact('Nachfrageprofil', city.demandProfile),
       fact('Koordinaten', `${city.lat.toFixed(4)}, ${city.lng.toFixed(4)}`),
-    ].join('') + demandPanel(city);
+    ].join('') + inventorySectionMarkup(city) + demandPanel(city);
   }
 
   function openNetworkModalForCity(city) {
@@ -255,6 +293,7 @@
     networkState = window.HFNetwork?.configure({state: savePackage.state.network, cities: Object.values(citiesById), citiesById});
     window.HFFleet?.configure?.({state: savePackage.state.fleet});
     window.HFV2Factories?.configure?.({state: savePackage.state.factories});
+    window.HFV2Goods?.configure?.({state: savePackage.state.goods, cities: Object.values(citiesById)});
     renderCurrentNetworkLines();
     return savePackage;
   }
@@ -291,11 +330,12 @@
   function boot() {
     const cities = loadCities();
     citiesById = Object.fromEntries(cities.map(city => [city.id, city]));
-    savePackage = window.HFV2Save?.createDefaultState?.() || {state: {network: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}), fleet: window.HFFleet?.createFleetState?.(), factories: window.HFV2Factories?.createFactoryState?.()}};
+    savePackage = window.HFV2Save?.createDefaultState?.() || {state: {network: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}), fleet: window.HFFleet?.createFleetState?.(), factories: window.HFV2Factories?.createFactoryState?.(), goods: window.HFV2Goods?.createGoodsState?.()}};
     window.HFV2Save?.configureState?.(savePackage);
     networkState = window.HFNetwork?.configure({state: savePackage.state.network, cities, citiesById});
     window.HFFleet?.configure?.({state: savePackage.state.fleet});
     window.HFV2Factories?.configure?.({state: savePackage.state.factories});
+    window.HFV2Goods?.configure?.({state: savePackage.state.goods, cities});
     document.getElementById('hfV2CityCount').textContent = `${cities.length.toLocaleString('de-CH')} Orte`;
     bindSaveControls();
     window.addEventListener('hf:network:confirmed', renderCurrentNetworkLines);
