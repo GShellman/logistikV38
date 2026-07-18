@@ -255,6 +255,7 @@
 
 
   function productionCommitmentDebugMarkup(city) {
+    if (!window.HFV2_DEBUG_PRODUCTION) return '';
     const rows = window.HFV2Goods?.productionDebugRows?.(city.id) || [];
     if (!rows.length) return '';
     return `<section class="hf-v2-production-debug" aria-label="Produktionsplanung externe Commitments"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Debug</p><h3>Produktionsplanung · Commitments</h3></div><strong>${rows.length.toLocaleString('de-CH')}</strong></div><div class="hf-v2-production-debug-grid">${rows.map(row => {
