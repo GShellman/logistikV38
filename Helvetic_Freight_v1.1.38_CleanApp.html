@@ -2720,7 +2720,7 @@ function hfV117ProduceDaily(){
     s.facilityUtilization=stats;s.facilityUtilizationDay=state.day;s.externalDailyNeed={};s.externalDailyNeedDay=state.day;
     for(const good of Object.keys(s.demands||{})){const daily=Math.max(0,Number(hfActualDailyConsumption(c.id,good))||0),stock=Math.max(0,Number(s.inventory[good])||0);s.externalDailyNeed[good]=hfV117Round(Math.max(0,daily-Math.min(daily,stock)))}
   }
-  summary.made=hfV117Round(summary.made);state.productionPlanningVersion=117;state.lastDailyProductionDay=state.day;state.lastDailyProduction={day:state.day,made:summary.made,blocked:summary.blocked,idle:summary.idle,minute:0};return summary;
+  summary.made=hfV117Round(summary.made);if(summary.made>HF_V117_EPS){state.hfSupplyWeekPlan=state.hfSupplyWeekPlan&&typeof state.hfSupplyWeekPlan==='object'?state.hfSupplyWeekPlan:{generatedDay:-1,rows:[],unresolved:[]};state.hfSupplyWeekPlan.needsReplanAfterProduction=true;}state.productionPlanningVersion=117;state.lastDailyProductionDay=state.day;state.lastDailyProduction={day:state.day,made:summary.made,blocked:summary.blocked,idle:summary.idle,minute:0};return summary;
 }
 function hfV117FacilityDisplayStat(cityId,index){
   const s=state.cities?.[cityId],stored=s?.facilityUtilizationDay===state.day?s.facilityUtilization?.[index]:null;if(stored)return stored;const plan=hfV117PlanCity(cityId,hfV117BuildCommitments()),entry=plan.entries.find(x=>x.index===index),capacity=hfV117Round(Object.values(entry?.recipe?.outputs||{}).reduce((n,q)=>n+(Number(q)||0),0)),pct=Math.round((entry?.requestedFactor||0)*100);return {day:state.day,pct,requestedPct:pct,capacity,made:hfV117Round(capacity*pct/100),status:'Prognose für die nächste Produktion',forecast:true,inputLimited:false};
