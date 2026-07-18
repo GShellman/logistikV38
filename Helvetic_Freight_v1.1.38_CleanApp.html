@@ -2516,7 +2516,7 @@ setTimeout(()=>toast('Starte in Zürich: Baue eine Straße, kaufe passende LKW u
     if(!sh?.isMultiStop)return hfV131BaseCompleteShipmentLeg(sh);
     if(sh.phase==='tour_outbound'){
       const stop=sh.tourStops[sh.tourStopIndex],arrived=stop?.cityId||sh.currentNode,delivered=stop?hfV131UnloadAtStop(sh,stop):[];sh.currentNode=arrived;sh.tourStopIndex++;
-      if(sh.tourStopIndex<sh.tourStops.length){const next=sh.tourStops[sh.tourStopIndex].cityId;hfV131SetLeg(sh,arrived,next,'tour_outbound');sh.waitingReason=delivered.length?`${hfV131CargoSummary(delivered,2)} ausgeladen · Weiterfahrt wird vorbereitet`:'Weiterfahrt wird vorbereitet';return false}
+      if(sh.tourStopIndex<sh.tourStops.length){const next=sh.tourStops[sh.tourStopIndex].cityId;if(!hfV131SetLeg(sh,arrived,next,'tour_outbound'))return false;sh.waitingReason=delivered.length?`${hfV131CargoSummary(delivered,2)} ausgeladen · Weiterfahrt wird vorbereitet`:'Weiterfahrt wird vorbereitet';return false}
       sh.phase='tour_waiting_return';sh.movementStatus='waiting_return';sh.remainingMinutes=0;sh.totalMinutes=0;sh.path=[arrived];sh.edgeIds=[];sh.currentEdgeIndex=0;sh.waitingReason=delivered.length?`${hfV131CargoSummary(delivered,2)} ausgeladen · Rückfahrt wird vorbereitet`:'Rückfahrt wird vorbereitet';hfV131TryStartTourReturn(sh);return false;
     }
     if(sh.phase==='tour_return'){
