@@ -157,6 +157,113 @@ h2 { font-size: 24px; }
   height: 100%;
 }
 
+
+.hf-v2-demand-tile--button {
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+}
+
+.hf-v2-demand-tile--button:hover,
+.hf-v2-demand-tile--button:focus-visible {
+  border-color: var(--hf-accent);
+  box-shadow: 0 0 0 3px rgba(230, 138, 46, .18);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.hf-v2-order-modal {
+  display: grid;
+  gap: 18px;
+}
+
+.hf-v2-order-hero {
+  align-items: center;
+  background: linear-gradient(135deg, #edf7f1, #eef5fb);
+  border: 1px solid #d8e7df;
+  border-radius: 16px;
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+}
+
+.hf-v2-order-hero h3,
+.hf-v2-order-hero p { margin: 0; }
+
+.hf-v2-order-stats {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.hf-v2-order-stats span,
+.hf-v2-order-source,
+.hf-v2-order-frequency label,
+.hf-v2-order-field {
+  background: #fff;
+  border: 1px solid var(--hf-line);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.hf-v2-order-stats small,
+.hf-v2-order-source small,
+.hf-v2-order-field span {
+  color: var(--hf-muted);
+  display: block;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.hf-v2-order-stats b { display: block; margin-top: 4px; }
+
+.hf-v2-order-modal h4 { margin: 0 0 10px; }
+
+.hf-v2-order-source-list,
+.hf-v2-order-frequency {
+  display: grid;
+  gap: 8px;
+}
+
+.hf-v2-order-source,
+.hf-v2-order-frequency label {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+}
+
+.hf-v2-order-source:hover,
+.hf-v2-order-source:focus-within,
+.hf-v2-order-frequency label:hover,
+.hf-v2-order-frequency label:focus-within,
+.hf-v2-order-field:focus-within {
+  border-color: var(--hf-accent);
+  box-shadow: 0 0 0 3px rgba(230, 138, 46, .14);
+}
+
+.hf-v2-order-field {
+  display: grid;
+  gap: 8px;
+}
+
+.hf-v2-order-field select {
+  background: #f8fafc;
+  border: 1px solid #dce5ee;
+  border-radius: 10px;
+  font: inherit;
+  padding: 10px;
+}
+
+@media (max-width: 560px) {
+  .hf-v2-order-stats { grid-template-columns: 1fr; }
+}
+
+
 .hf-v2-demand-list { display: grid; gap: 8px; }
 .hf-v2-demand-row {
   align-items: center;
