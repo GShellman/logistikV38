@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+
   let state = null;
 
   function defaultTimeState() {
@@ -41,7 +43,9 @@
 
   function formatClock() {
     const time = getState();
-    return `Tag ${time.day} · ${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`;
+    const weekday = WEEKDAYS[(time.day - 1) % 7];
+    const clock = `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`;
+    return `${weekday} · Tag ${time.day} · ${clock}`;
   }
 
   function dispatchTimeAdvanced(options = {}) {
