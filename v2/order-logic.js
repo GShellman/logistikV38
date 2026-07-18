@@ -68,8 +68,15 @@
       dailyDemandKg: normalizeNonNegative(order.dailyDemandKg),
       quantityKg: normalizeNonNegative(order.quantityKg ?? order.dailyDemandKg),
       deliveryDay: normalizeInteger(order.deliveryDay, 1, 1),
-      deliveryMinute: normalizeInteger(order.deliveryMinute, 0, 0, 1439),
+      deliveryMinute: normalizeInteger(order.deliveryMinute, 8 * 60, 0, 1439),
+      deliveryWeekday: normalizeInteger(order.deliveryWeekday ?? order.weekday ?? 4, 4, 0, 6),
+      weekday: normalizeInteger(order.weekday ?? order.deliveryWeekday ?? 4, 4, 0, 6),
+      targetStockDays: normalizeFrequency(order.frequency) === 'weekly' ? 7 : 1,
+      allowFallback: order.allowFallback !== false,
+      openQuantity: normalizeNonNegative(order.openQuantity),
+      primarySource: normalizePrimarySource(order.primarySource, order),
       status: normalizeStatus(order.status),
+      lastStatus: String(order.lastStatus || 'Noch nicht disponiert'),
     };
   }
 
@@ -91,6 +98,12 @@
       deliveryMinute: normalizeInteger(delivery.deliveryMinute, 0, 0, 1439),
       status: normalizeStatus(delivery.status || 'planned'),
     };
+  }
+
+  function normalizePrimarySource(primarySource, order = {}) {
+    const sourceType = String(primarySource?.type || order.sourceType || 'city').trim() || 'city';
+    const sourceId = String(primarySource?.id || order.sourceId || order.sourceCityId || '').trim();
+    return sourceId ? {type: sourceType, id: sourceId} : null;
   }
 
   function normalizeCounter(value, fallback) {
@@ -168,6 +181,34 @@
     return factory ? factoryRecipeOptions(factory).some(recipe => Number(recipe.outputs?.[goodId]) > 0) : false;
   }
 
+  function contractTarget(order) {
+    const daily = normalizeNonNegative(order?.dailyDemandKg || order?.quantityKg);
+    return Math.round(daily * (order?.frequency === 'weekly' ? 7 : 1));
+  }
+
+  function absoluteWeekday(day) {
+    return (Math.max(1, normalizeInteger(day, 1, 1)) - 1) % 7;
+  }
+
+  function contractDue(order, absoluteDay) {
+    if (normalizeNonNegative(order?.openQuantity) > 0) return true;
+    if (order?.frequency !== 'weekly') return true;
+    return absoluteWeekday(absoluteDay) === normalizeInteger(order.deliveryWeekday ?? order.weekday, 4, 0, 6);
+  }
+
+  function incomingTo(destinationCityId, goodId) {
+    return getState().deliveries.filter(delivery => delivery.destinationCityId === destinationCityId && delivery.goodId === goodId && ['planned', 'running'].includes(delivery.status)).reduce((sum, delivery) => sum + normalizeNonNegative(delivery.quantityKg), 0);
+  }
+
+  function contractRequired(order, absoluteDay, actualToday = false) {
+    if (!contractDue(order, absoluteDay)) return 0;
+    const target = contractTarget(order);
+    const open = normalizeNonNegative(order.openQuantity);
+    if (!actualToday) return Math.round(Math.max(target, open));
+    const stock = Math.max(0, Number(window.HFV2Goods?.getCityInventory?.(order.destinationCityId)?.[order.goodId]) || 0);
+    return Math.round(Math.max(open, target - stock - incomingTo(order.destinationCityId, order.goodId), 0));
+  }
+
   function sourceCandidates(destinationCityId, goodId) {
     const destinationId = String(destinationCityId || '').trim();
     const targetGoodId = String(goodId || '').trim();
@@ -197,7 +238,7 @@
         estimatedProductionKg,
         availableKg: inventoryKg + estimatedProductionKg,
         reachable,
-        transportReady: reachable,
+        transportReady: reachable && sourceCityId !== destinationId,
         path,
       };
     }).filter(Boolean).sort((a, b) => Number(b.transportReady) - Number(a.transportReady) || b.availableKg - a.availableKg || a.city.name.localeCompare(b.city.name, 'de-CH'));
@@ -210,6 +251,9 @@
       ...payload,
     });
     if (!order) throw new Error('destinationCityId and goodId are required');
+    if (!order.dailyDemandKg) order.dailyDemandKg = normalizeNonNegative(payload.dailyDemandKg || payload.quantityKg);
+    order.quantityKg = normalizeNonNegative(payload.quantityKg ?? contractTarget(order));
+    if (!order.primarySource && order.sourceId) order.primarySource = {type: order.sourceType, id: order.sourceId};
     current.orders.push(order);
     current.nextOrderId = Math.max(current.nextOrderId + 1, nextNumericId(current.orders, 'order') + 1);
     scheduleDeliveryForOrder(order);
@@ -257,5 +301,5 @@
     return getState().deliveries.filter(delivery => delivery.deliveryDay === targetDay);
   }
 
-  window.HFV2Orders = {createOrderState, configure, getState, sourceCandidates, createOrder, cancelOrder, getOrdersForCity, getDeliveriesForDay};
+  window.HFV2Orders = {createOrderState, configure, getState, normalizeOrderState, contractTarget, contractDue, contractRequired, sourceCandidates, createOrder, cancelOrder, getOrdersForCity, getDeliveriesForDay};
 })();

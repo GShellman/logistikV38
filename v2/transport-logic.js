@@ -6,6 +6,22 @@
   const DEFAULT_DEPARTURE_MINUTE = 8 * 60;
   const STATUS = Object.freeze({PLANNED: 'planned', COMPLETED: 'completed', PARTIAL: 'partial', BLOCKED: 'blocked', FAILED: 'failed'});
 
+  let transportState = null;
+
+  function createTransportState(overrides = {}) {
+    const source = overrides && typeof overrides === 'object' && !Array.isArray(overrides) ? overrides : {};
+    return {weekPlan: Array.isArray(source.weekPlan) ? source.weekPlan.filter(Boolean) : [], unresolved: Array.isArray(source.unresolved) ? source.unresolved.filter(Boolean) : [], sourceDepartures: source.sourceDepartures && typeof source.sourceDepartures === 'object' ? {...source.sourceDepartures} : {}, schemaVersion: Number.isFinite(Number(source.schemaVersion)) ? Number(source.schemaVersion) : 1};
+  }
+
+  function configure(options = {}) {
+    transportState = createTransportState(options.state || transportState || {});
+    return transportState;
+  }
+
+  function getState() {
+    return configure();
+  }
+
   function ordersState() {
     return window.HFV2Orders?.getState?.() || window.HFV2Save?.getState?.().orders || {orders: [], deliveries: [], nextDeliveryId: 1};
   }
@@ -120,6 +136,8 @@
   function sourceCityIdForOrder(order) {
     const explicit = String(order.sourceCityId || (order.sourceType === 'city' ? order.sourceId : '') || '').trim();
     if (explicit) return explicit;
+    const primary = order.primarySource?.type === 'city' ? String(order.primarySource.id || '').trim() : '';
+    if (primary) return primary;
     return window.HFV2Orders?.sourceCandidates?.(order.destinationCityId, order.goodId)?.find(candidate => candidate.transportReady)?.sourceCityId || '';
   }
 
@@ -152,7 +170,7 @@
   function createPlannedDelivery(order, day, minute) {
     const state = ordersState();
     const sourceCityId = sourceCityIdForOrder(order);
-    const quantityKg = deliveryQuantityForOrder(order);
+    const quantityKg = window.HFV2Orders?.contractRequired?.(order, day, false) || deliveryQuantityForOrder(order);
     const delivery = {
       id: createDeliveryId(state),
       orderId: order.id,
@@ -168,9 +186,9 @@
       tripIndex: 1,
       status: STATUS.PLANNED,
     };
-    if (!sourceCityId) return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine Lieferquelle gefunden.');
+    if (!sourceCityId) { getState().unresolved.push({orderId: order.id, day, goodId: order.goodId, amount: quantityKg, reason: 'Keine Lieferquelle gefunden.'}); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine Lieferquelle gefunden.'); }
     const chosen = chooseVehicle(sourceCityId, order.destinationCityId, quantityKg, day, minute);
-    if (!chosen) return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.');
+    if (!chosen) { getState().unresolved.push({orderId: order.id, day, goodId: order.goodId, amount: quantityKg, reason: 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.'}); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.'); }
     Object.assign(delivery, {
       vehicleType: chosen.vehicleType,
       vehicleCapacityKg: chosen.capacityKg,
@@ -199,6 +217,7 @@
         created += 1;
       }
     }
+    getState().weekPlan = (state.deliveries || []).filter(delivery => delivery.status === STATUS.PLANNED && normalizeInteger(delivery.scheduledDay ?? delivery.deliveryDay, 0) >= fromDay && normalizeInteger(delivery.scheduledDay ?? delivery.deliveryDay, 0) <= toDay).map(delivery => ({id: delivery.id, orderId: delivery.orderId, sourceCityId: delivery.sourceCityId, destinationCityId: delivery.destinationCityId, goodId: delivery.goodId, quantityKg: delivery.quantityKg, day: delivery.scheduledDay ?? delivery.deliveryDay, minute: delivery.scheduledMinute ?? delivery.deliveryMinute, vehicleType: delivery.vehicleType, tripCount: delivery.tripCount || 1, status: delivery.status}));
     if (created) dispatch('transport-scheduled');
     return created;
   }
@@ -208,7 +227,7 @@
     const requestedKg = normalizeNonNegative(delivery.quantityKg);
     const removal = window.HFV2Goods?.removeFromInventory?.(delivery.sourceCityId, delivery.goodId, requestedKg);
     const removedKg = normalizeNonNegative(removal?.removedKg ?? removal);
-    if (removedKg <= 0) return Object.assign(delivery, {status: STATUS.BLOCKED}, statusMessage(delivery, 'Keine Ware in der Quelle verfügbar.'));
+    if (removedKg <= 0) { bumpOpenQuantity(delivery, requestedKg); return Object.assign(delivery, {status: STATUS.BLOCKED}, statusMessage(delivery, 'Keine Ware in der Quelle verfügbar.')); }
     const addition = window.HFV2Goods?.addToInventory?.(delivery.destinationCityId, delivery.goodId, removedKg);
     const addedKg = normalizeNonNegative(addition?.addedKg ?? addition ?? removedKg);
     if (addedKg + 0.001 < removedKg) statusMessage(delivery, `Ziellager begrenzt: ${Math.round(addedKg)} von ${Math.round(removedKg)} kg eingelagert.`);
@@ -216,8 +235,15 @@
     if (bookedCost > 0) window.HFV2Save?.changeCash?.(-bookedCost, 'goods-delivery');
     delivery.deliveredKg = normalizeNonNegative(delivery.deliveredKg) + addedKg;
     delivery.bookedCost = normalizeNonNegative(delivery.bookedCost) + bookedCost;
+    const remainderKg = Math.max(0, requestedKg - addedKg);
+    if (remainderKg > 0.001) bumpOpenQuantity(delivery, remainderKg);
     delivery.status = addedKg + 0.001 < requestedKg ? STATUS.PARTIAL : STATUS.COMPLETED;
     return statusMessage(delivery, delivery.status === STATUS.PARTIAL ? `Teillieferung: ${Math.round(addedKg)} von ${Math.round(requestedKg)} kg geliefert.` : `Geliefert: ${Math.round(addedKg)} kg.`);
+  }
+
+  function bumpOpenQuantity(delivery, amountKg) {
+    const order = (ordersState().orders || []).find(item => item.id === delivery.orderId);
+    if (order) order.openQuantity = normalizeNonNegative(order.openQuantity) + normalizeNonNegative(amountKg);
   }
 
   function processDueDeliveries(timeBefore, timeAfter) {
@@ -237,5 +263,5 @@
     return {processed, deliveries: state.deliveries};
   }
 
-  window.HFV2Transport = {STATUS, normalizeVehicleCapacityKg, generatePlannedDeliveries, processDueDeliveries, completeDelivery};
+  window.HFV2Transport = {STATUS, createTransportState, configure, getState, normalizeVehicleCapacityKg, generatePlannedDeliveries, processDueDeliveries, completeDelivery, chooseVehicle, scheduledDatesForOrder};
 })();
