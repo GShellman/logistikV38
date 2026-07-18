@@ -58,6 +58,11 @@
     return {cityInventories: {}, producedGoods: {}, productionCycles: {}, lastProductionAt: null, salesTotals: {revenue: 0, soldKg: 0}, citySales: {}, dailyHistory: [], lastSalesAt: null, schemaVersion: 1};
   }
 
+  function defaultOrderState() {
+    if (window.HFV2Orders?.createOrderState) return window.HFV2Orders.createOrderState();
+    return {orders: [], deliveries: [], nextOrderId: 1, nextDeliveryId: 1, schemaVersion: 1};
+  }
+
   function defaultTimeState() {
     return {day: 1, hour: 8, minute: 0};
   }
@@ -78,6 +83,8 @@
     const factories = {...defaultFactoryState(), ...sourceFactories};
     const sourceGoods = sourceState.goods && typeof sourceState.goods === 'object' && !Array.isArray(sourceState.goods) ? sourceState.goods : {};
     const goods = {...defaultGoodsState(), ...sourceGoods};
+    const sourceOrders = sourceState.orders && typeof sourceState.orders === 'object' && !Array.isArray(sourceState.orders) ? sourceState.orders : {};
+    const orders = {...defaultOrderState(), ...sourceOrders};
     const sourceTime = sourceState.time && typeof sourceState.time === 'object' && !Array.isArray(sourceState.time) ? sourceState.time : {};
     const timeDefaults = defaultTimeState();
     const time = {
@@ -121,7 +128,13 @@
     delete network.cash;
     delete fleet.cash;
     delete factories.cash;
+    orders.orders = Array.isArray(orders.orders) ? orders.orders.filter(order => order && typeof order === 'object') : Object.values(orders.orders || {}).filter(order => order && typeof order === 'object');
+    orders.deliveries = Array.isArray(orders.deliveries) ? orders.deliveries.filter(delivery => delivery && typeof delivery === 'object') : Object.values(orders.deliveries || {}).filter(delivery => delivery && typeof delivery === 'object');
+    orders.nextOrderId = normalizeTimeUnit(orders.nextOrderId, 1, 1, Number.MAX_SAFE_INTEGER);
+    orders.nextDeliveryId = normalizeTimeUnit(orders.nextDeliveryId, 1, 1, Number.MAX_SAFE_INTEGER);
+    orders.schemaVersion = Number.isFinite(Number(orders.schemaVersion)) ? Number(orders.schemaVersion) : 1;
     delete goods.cash;
+    delete orders.cash;
     delete time.cash;
     const legacyCash = Number.isFinite(Number(sourceState.cash)) ? Number(sourceState.cash) : Number(sourceState.fleet?.cash ?? sourceState.network?.cash);
     const cash = Number.isFinite(legacyCash) ? legacyCash : STARTING_CASH;
@@ -129,12 +142,12 @@
     return {
       schemaVersion: SCHEMA_VERSION,
       savedAt: source.savedAt || new Date().toISOString(),
-      state: {cash, network, fleet, factories, goods, time},
+      state: {cash, network, fleet, factories, goods, orders, time},
     };
   }
 
   function createDefaultState() {
-    return normalizePackage({schemaVersion: SCHEMA_VERSION, state: {network: defaultNetworkState(), fleet: defaultFleetState(), factories: defaultFactoryState(), goods: defaultGoodsState(), time: defaultTimeState()}});
+    return normalizePackage({schemaVersion: SCHEMA_VERSION, state: {network: defaultNetworkState(), fleet: defaultFleetState(), factories: defaultFactoryState(), goods: defaultGoodsState(), orders: defaultOrderState(), time: defaultTimeState()}});
   }
 
   function serializeState(savePackage = null) {
@@ -142,8 +155,9 @@
     const liveFleet = window.HFFleet?.getState?.();
     const liveFactories = window.HFV2Factories?.getState?.();
     const liveGoods = window.HFV2Goods?.getState?.();
+    const liveOrders = window.HFV2Orders?.getState?.();
     const liveTime = window.HFV2Time?.getState?.();
-    const source = savePackage || {state: {network: liveNetwork, fleet: liveFleet, factories: liveFactories || getState().factories, goods: liveGoods || getState().goods, time: liveTime || getState().time, cash: getCash()}};
+    const source = savePackage || {state: {network: liveNetwork, fleet: liveFleet, factories: liveFactories || getState().factories, goods: liveGoods || getState().goods, orders: liveOrders || getState().orders, time: liveTime || getState().time, cash: getCash()}};
     const normalized = normalizePackage(source);
     normalized.savedAt = new Date().toISOString();
     return deepClone(normalized);
@@ -188,5 +202,5 @@
     return hydrateState(parsed);
   }
 
-  window.HFV2Save = {SCHEMA_VERSION, STARTING_CASH, defaultTimeState, createDefaultState, configureState, getState, getCash, setCash, changeCash, dispatchStateChanged, serializeState, hydrateState, exportSave, importSave};
+  window.HFV2Save = {SCHEMA_VERSION, STARTING_CASH, defaultOrderState, defaultTimeState, createDefaultState, configureState, getState, getCash, setCash, changeCash, dispatchStateChanged, serializeState, hydrateState, exportSave, importSave};
 })();
