@@ -79,6 +79,11 @@
     return Number(factory?.minTier ?? factory?.minCityTier ?? GROUP_MIN_TIERS[factory?.group] ?? 1) || 1;
   }
 
+  function isCityUnlocked(cityId) {
+    const id = assertCityId(cityId);
+    return id === 'zurich' || window.HFNetwork?.getState?.().cities?.[id]?.unlocked === true;
+  }
+
   function canBuildFactory(cityId, factoryId) {
     const id = assertCityId(cityId);
     const city = citySpec(id);
@@ -86,6 +91,8 @@
 
     const factory = factorySpec(factoryId);
     if (!factory) return {ok: false, reason: 'unknown-factory', cityId: id, factoryId};
+
+    if (!isCityUnlocked(id)) return {ok: false, reason: 'city-locked', cityId: id, factoryId};
 
     const usedSlots = getUsedSlots(id);
     const slots = Math.max(0, Math.floor(Number(city.slots) || 0));
@@ -112,5 +119,5 @@
     return {ok: true, cityId: check.cityId, factoryId: check.factoryId, owned: factories.length, cost: check.cost, state};
   }
 
-  window.HFV2Factories = {FACTORIES, GROUP_MIN_TIERS, createFactoryState, configure, getState, getCityFactories, getUsedSlots, canBuildFactory, buildFactory};
+  window.HFV2Factories = {FACTORIES, GROUP_MIN_TIERS, createFactoryState, configure, getState, getCityFactories, getUsedSlots, isCityUnlocked, canBuildFactory, buildFactory};
 })();
