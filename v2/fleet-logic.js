@@ -53,15 +53,22 @@
     return configure();
   }
 
+  function isCityUnlocked(cityId) {
+    const id = assertCityId(cityId);
+    return id === 'zurich' || window.HFNetwork?.getState?.().cities?.[id]?.unlocked === true;
+  }
+
   function buyVehicle(cityId, vehicleType) {
+    const id = assertCityId(cityId);
     const vehicle = vehicleSpec(vehicleType);
-    if (!vehicle) return {ok: false, reason: 'unknown-vehicle'};
-    const fleet = getCityFleet(cityId);
+    if (!vehicle) return {ok: false, reason: 'unknown-vehicle', cityId: id, vehicleType};
+    if (!isCityUnlocked(id)) return {ok: false, reason: 'city-locked', cityId: id, vehicleType};
+    const fleet = getCityFleet(id);
     const cash = window.HFV2Save?.getCash?.() ?? STARTING_CASH;
     if (cash < vehicle.cost) return {ok: false, reason: 'not-enough-cash'};
     window.HFV2Save?.changeCash?.(-vehicle.cost, 'fleet-buy');
     fleet[vehicleType] += 1;
-    return {ok: true, cityId: String(cityId).trim(), vehicleType, owned: fleet[vehicleType], cost: vehicle.cost, state};
+    return {ok: true, cityId: id, vehicleType, owned: fleet[vehicleType], cost: vehicle.cost, state};
   }
 
   function sellVehicle(cityId, vehicleType) {
