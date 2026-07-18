@@ -166,8 +166,8 @@
   function addToInventory(cityId, goodId, kg) {
     const id = assertGoodId(goodId);
     const amount = normalizeKg(kg);
-    const inventory = ensureCityInventory(cityId);
     const free = Math.max(0, getCapacityKg(cityId) - getUsedCapacityKg(cityId));
+    const inventory = ensureCityInventory(cityId);
     const added = Math.min(amount, free);
     if (added <= 0) return {ok: false, reason: 'capacity-full', addedKg: 0, requestedKg: amount, freeCapacityKg: free, inventory};
     inventory[id] = (Number(inventory[id]) || 0) + added;
@@ -189,5 +189,69 @@
     return {ok: removed === amount, reason: removed === amount ? null : 'stock-limited', removedKg: removed, requestedKg: amount, availableKg: current, inventory};
   }
 
-  window.HFV2Goods = {createGoodsState, configure, getState, ensureCityInventory, getCityInventory, addToInventory, removeFromInventory, getUsedCapacityKg, getCapacityKg, salePriceForCity, estimateDeliveryProfit};
+
+  function factoryDefinition(factoryId) {
+    const id = String(factoryId || '').trim();
+    if (!id) return null;
+    return (window.HFV2FactoryCatalog || []).find(factory => factory.id === id) || null;
+  }
+
+  function normalizeRecipeMap(value = {}) {
+    const normalized = {};
+    for (const [goodId, rawKg] of Object.entries(value || {})) {
+      const amount = Math.max(0, Number(rawKg) || 0);
+      if (amount > 0) normalized[String(goodId)] = amount;
+    }
+    return normalized;
+  }
+
+  function hasEnoughInputs(cityId, inputs) {
+    const inventory = ensureCityInventory(cityId);
+    return Object.entries(inputs).every(([goodId, kg]) => (Number(inventory[goodId]) || 0) >= kg);
+  }
+
+  function runDailyProduction() {
+    configure();
+    const summary = {madeKg: 0, blocked: 0, factories: 0};
+    const factoryApi = window.HFV2Factories;
+    if (!factoryApi?.getCityFactories) return summary;
+
+    const cityIds = new Set([
+      ...cities.map(city => String(city.id || '').trim()).filter(Boolean),
+      ...Object.keys(window.HFV2CitiesById || {}),
+      ...Object.keys(factoryApi.getState?.().cityFactories || {}),
+    ]);
+
+    for (const cityId of cityIds) {
+      const builtFactories = factoryApi.getCityFactories(cityId);
+      for (const factoryId of builtFactories) {
+        const factory = factoryDefinition(factoryId);
+        const inputs = normalizeRecipeMap(factory?.inputs);
+        const outputs = normalizeRecipeMap(factory?.outputs ?? factory?.output);
+        summary.factories += 1;
+
+        if (!factory || !Object.keys(outputs).length) continue;
+        if (Object.keys(inputs).length && !hasEnoughInputs(cityId, inputs)) {
+          summary.blocked += 1;
+          continue;
+        }
+
+        for (const [goodId, kg] of Object.entries(inputs)) {
+          removeFromInventory(cityId, goodId, kg);
+        }
+        for (const [goodId, kg] of Object.entries(outputs)) {
+          const result = addToInventory(cityId, goodId, kg);
+          summary.madeKg += Number(result.addedKg) || 0;
+        }
+      }
+    }
+
+    summary.madeKg = Math.round(summary.madeKg * 1000) / 1000;
+    state.lastProductionAt = new Date().toISOString();
+    state.productionCycles.daily = (Number(state.productionCycles.daily) || 0) + 1;
+    window.HFV2Save?.dispatchStateChanged?.('goods-daily-production');
+    return summary;
+  }
+
+  window.HFV2Goods = {createGoodsState, configure, getState, ensureCityInventory, getCityInventory, addToInventory, removeFromInventory, getUsedCapacityKg, getCapacityKg, salePriceForCity, estimateDeliveryProfit, runDailyProduction};
 })();
