@@ -55,12 +55,19 @@
           </button>`;
   }
 
+  function isCityUnlocked(city) {
+    return window.HFV2IsCityUnlocked?.(city?.id) === true;
+  }
+
   function cityActions(city) {
-    return [
+    const actions = [
       {action: 'network', label: 'Netzwerkoptionen'},
-      {action: 'fleet', label: 'Fuhrpark'},
-      {action: 'factory', label: 'Betriebe'},
-    ].map((item, index, actions) => actionButton(item.action, item.label, city, index, actions.length)).join('');
+      ...(isCityUnlocked(city) ? [
+        {action: 'fleet', label: 'Fuhrpark'},
+        {action: 'factory', label: 'Betriebe'},
+      ] : []),
+    ];
+    return actions.map((item, index) => actionButton(item.action, item.label, city, index, actions.length)).join('');
   }
 
   function bindPopupEvents() {

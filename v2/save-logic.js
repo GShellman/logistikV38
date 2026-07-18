@@ -40,7 +40,7 @@
     if (window.HFNetwork?.createNetworkState) {
       return window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'});
     }
-    return {connections: [], pendingProject: null, networkOriginNode: 'zurich', selected: 'zurich', cities: {}, junctions: [], usedCapacity: {}};
+    return {connections: [], pendingProject: null, networkOriginNode: 'zurich', selected: 'zurich', cities: {zurich: {unlocked: true}}, junctions: [], usedCapacity: {}};
   }
 
   function defaultFleetState() {
@@ -88,6 +88,7 @@
     network.connections = Array.isArray(network.connections) ? network.connections : [];
     network.junctions = Array.isArray(network.junctions) ? network.junctions : [];
     network.cities = network.cities && typeof network.cities === 'object' ? network.cities : {};
+    network.cities.zurich = {...(network.cities.zurich || {}), unlocked: true};
     network.usedCapacity = network.usedCapacity && typeof network.usedCapacity === 'object' ? network.usedCapacity : {};
     fleet.cityFleets = fleet.cityFleets && typeof fleet.cityFleets === 'object' ? fleet.cityFleets : {};
     factories.cityFactories = factories.cityFactories && typeof factories.cityFactories === 'object' && !Array.isArray(factories.cityFactories) ? factories.cityFactories : {};

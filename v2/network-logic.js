@@ -26,7 +26,7 @@
       pendingProject: null,
       networkOriginNode: 'zurich',
       selected: 'zurich',
-      cities: {},
+      cities: {zurich: {unlocked: true}},
       junctions: [],
       usedCapacity: {},
       ...overrides,
@@ -35,6 +35,8 @@
 
   function configure(options = {}) {
     state = options.state || state || createNetworkState();
+    state.cities = state.cities && typeof state.cities === 'object' ? state.cities : {};
+    state.cities.zurich = {...(state.cities.zurich || {}), unlocked: true};
     cities = options.cities || cities;
     citiesById = options.citiesById || citiesById;
     return state;
@@ -327,8 +329,9 @@
     window.HFV2Save?.changeCash?.(-project.cost, 'network-build');
     const edges = splitRoadsForAutomaticJunctions(project);
     state.connections.push(...edges);
-    if (state.cities?.[project.a]) state.cities[project.a].unlocked = true;
-    if (state.cities?.[project.b]) state.cities[project.b].unlocked = true;
+    state.cities = state.cities && typeof state.cities === 'object' ? state.cities : {};
+    state.cities[project.a] = {...(state.cities[project.a] || {}), unlocked: true};
+    state.cities[project.b] = {...(state.cities[project.b] || {}), unlocked: true};
     state.selected = project.b;
     state.pendingProject = null;
     window.dispatchEvent?.(new CustomEvent('hf:network:confirmed', {detail: {edge: edges[0], edges, state}}));
