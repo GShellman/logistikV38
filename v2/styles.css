@@ -1581,3 +1581,39 @@ code { background: #edf4f9; color: #174a78; }
   border-color: rgba(255, 255, 255, .24);
   color: rgba(255, 255, 255, .86);
 }
+
+.hf-v2-time-card,
+.hf-v2-time-card__head,
+.hf-v2-time-actions,
+.hf-v2-time-status {
+  display: grid;
+  visibility: visible;
+}
+
+.hf-v2-time-card {
+  gap: 14px;
+  min-height: 184px;
+  padding: 22px;
+}
+
+.hf-v2-time-card__head {
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.hf-v2-time-card__head .hf-v2-kicker { margin-bottom: 7px; }
+
+.hf-v2-time-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 0;
+}
+
+.hf-v2-time-actions .hf-v2-save-button {
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .hf-v2-time-card__head,
+  .hf-v2-time-actions { grid-template-columns: 1fr; }
+}
