@@ -2728,9 +2728,9 @@ function hfV117FacilityDisplayStat(cityId,index){
 const hfV117BaseFinishDay=finishDay;
 finishDay=function(){
   const result=hfV117BaseFinishDay();
+  try{result.depotReplan=hfV117MidnightRecalculateDepots?.()}catch(err){console.warn('Mitternachtsplanung konnte nicht ausgeführt werden',err)}
   const prod=hfV117ProduceDaily();
   result.prod={...(result.prod||{}),made:hfV117Round((Number(result.prod?.made)||0)+(Number(prod.made)||0)),blocked:(Number(result.prod?.blocked)||0)+(Number(prod.blocked)||0),idle:prod.idle,alreadyProduced:!!prod.alreadyProduced};
-  try{result.depotReplan=hfV117MidnightRecalculateDepots?.()}catch(err){console.warn('Mitternachtsplanung konnte nicht ausgeführt werden',err)}
   return result;
 };
 function hfV117AssessDepotSchedule(depot){
