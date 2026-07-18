@@ -263,6 +263,49 @@
     });
   }
 
+  function findPath(fromId, toId, options = {}) {
+    const start = String(fromId || '').trim();
+    const target = String(toId || '').trim();
+    if (!start || !target) return null;
+    const targetState = options.state || state || createNetworkState();
+    const mode = options.mode || null;
+    if (start === target) return {reachable: true, nodes: [start], edges: [], distance: 0, duration: 0};
+    const adjacency = new Map();
+    for (const edge of targetState.connections || []) {
+      if (!edge?.a || !edge?.b) continue;
+      if (mode && transportSpec(edge).mode !== mode) continue;
+      if (!adjacency.has(edge.a)) adjacency.set(edge.a, []);
+      if (!adjacency.has(edge.b)) adjacency.set(edge.b, []);
+      adjacency.get(edge.a).push({node: edge.b, edge});
+      adjacency.get(edge.b).push({node: edge.a, edge});
+    }
+    const queue = [{node: start, nodes: [start], edges: [], distance: 0, duration: 0}];
+    const visited = new Set([start]);
+    while (queue.length) {
+      const current = queue.shift();
+      for (const next of adjacency.get(current.node) || []) {
+        if (visited.has(next.node)) continue;
+        const edgeDistance = Math.max(0, Number(next.edge.distance) || 0);
+        const edgeDuration = Math.max(0, Number(next.edge.duration) || 0);
+        const candidate = {
+          node: next.node,
+          nodes: [...current.nodes, next.node],
+          edges: [...current.edges, next.edge],
+          distance: current.distance + edgeDistance,
+          duration: current.duration + edgeDuration,
+        };
+        if (next.node === target) return {reachable: true, nodes: candidate.nodes, edges: candidate.edges, distance: candidate.distance, duration: candidate.duration};
+        visited.add(next.node);
+        queue.push(candidate);
+      }
+    }
+    return null;
+  }
+
+  function isReachable(fromId, toId, options = {}) {
+    return findPath(fromId, toId, options)?.reachable === true;
+  }
+
   function getCandidateTargets(cityId, targetState = state) {
     const from = citiesById[cityId];
     if (!from) return [];
@@ -338,5 +381,5 @@
     return edges[0];
   }
 
-  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject};
+  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject};
 })();

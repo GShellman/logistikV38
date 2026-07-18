@@ -144,18 +144,8 @@
   }
 
   function sourceCitiesForGood(goodId, targetCityId) {
-    const state = window.HFV2Factories?.getState?.() || {};
-    const cityFactories = state.cityFactories || {};
-    return Object.entries(cityFactories).map(([cityId, factoryIds]) => {
-      const producesGood = (Array.isArray(factoryIds) ? factoryIds : []).some(factoryId => {
-        const factory = factoryById(factoryId);
-        return factory && factoryRecipeOptions(factory).some(recipe => Number(recipe.outputs?.[goodId]) > 0);
-      });
-      const inventoryKg = Math.max(0, Number(window.HFV2Goods?.getCityInventory?.(cityId)?.[goodId]) || 0);
-      if (!producesGood && inventoryKg <= 0 && cityId !== targetCityId) return null;
-      const city = window.HFV2CitiesById?.[cityId];
-      return city ? {city, producesGood, inventoryKg} : null;
-    }).filter(Boolean).sort((a, b) => a.city.name.localeCompare(b.city.name, 'de-CH'));
+    if (window.HFV2Orders?.sourceCandidates) return window.HFV2Orders.sourceCandidates(targetCityId, goodId);
+    return [];
   }
 
   function renderGoodOrderModal(cityId, goodId) {
@@ -165,7 +155,11 @@
     const demandMap = window.HFV2Goods?.getCityDailyDemandMap?.(cityId) || {};
     const dailyKg = Math.max(0, Number(demandMap[goodId]) || 0);
     const sources = sourceCitiesForGood(goodId, cityId);
-    const sourceOptions = sources.length ? sources.map(source => `<label class="hf-v2-order-source"><input type="radio" name="hfV2OrderSource" value="${escapeHtml(source.city.id)}"><span><b>${escapeHtml(source.city.name)}</b><small>${source.producesGood ? 'Produktion verfügbar' : 'Nur Lagerbestand'} · ${formatGoodAmount(goodId, source.inventoryKg)} im Lager</small></span></label>`).join('') : '<p class="hf-v2-muted">Keine passende Quelle mit Produktion oder Lagerbestand gefunden.</p>';
+    const sourceOptions = sources.length ? sources.map((source, index) => {
+      const transportLabel = source.transportReady ? 'transportbereit' : 'nicht verbunden';
+      const productionLabel = source.estimatedProductionKg > 0 ? ` · ca. ${formatGoodAmount(goodId, source.estimatedProductionKg)}/Tag` : '';
+      return `<label class="hf-v2-order-source${source.transportReady ? '' : ' hf-v2-order-source--unreachable'}"><input type="radio" name="hfV2OrderSource" value="${escapeHtml(source.city.id)}" ${index === 0 && source.transportReady ? 'checked' : ''} ${source.transportReady ? '' : 'disabled'}><span><b>${escapeHtml(source.city.name)}</b><small>${transportLabel} · Produktion verfügbar${productionLabel} · ${formatGoodAmount(goodId, source.inventoryKg)} im Lager</small></span></label>`;
+    }).join('') : '<p class="hf-v2-muted">Keine passende Quelle mit Produktion und erreichbarer Transportverbindung gefunden.</p>';
     return `<div class="hf-v2-order-modal" data-order-city-id="${escapeHtml(city.id)}" data-order-good-id="${escapeHtml(good.id)}"><div class="hf-v2-order-hero"><div class="hf-v2-demand-icon">${goodIcon(good)}</div><div><p class="hf-v2-kicker">Nachfrageware bestellen</p><h3>${escapeHtml(good.name)}</h3><p>${escapeHtml(city.name)}</p></div></div><div class="hf-v2-order-stats"><span><small>Tagesbedarf</small><b>${formatGoodAmount(goodId, dailyKg)}</b></span><span><small>Ziel täglich</small><b>${formatGoodAmount(goodId, dailyKg)}</b></span><span><small>Ziel wöchentlich</small><b>${formatGoodAmount(goodId, dailyKg * 7)}</b></span></div><section><h4>Quelle wählen</h4><div class="hf-v2-order-source-list">${sourceOptions}</div></section><section><h4>Frequenz</h4><div class="hf-v2-order-frequency"><label><input type="radio" name="hfV2OrderFrequency" value="daily" checked> Täglich · ${formatGoodAmount(goodId, dailyKg)}</label><label><input type="radio" name="hfV2OrderFrequency" value="weekly"> Wöchentlich · ${formatGoodAmount(goodId, dailyKg * 7)}</label></div></section><label class="hf-v2-order-field"><span>Lieferzeit</span><select name="hfV2OrderLeadTime"><option value="next-day">Nächster Tag</option><option value="two-days">2 Tage</option><option value="same-week">Diese Woche</option></select></label></div>`;
   }
 
