@@ -119,6 +119,11 @@
     return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">Alle Waren</h3></div><strong>${formatDailyKg(total)}</strong></div>${rows.length ? `<div class="hf-v2-demand-list">${rows.map(row => { const fill = Number(row.demand.max) > 0 ? Math.min(100, Math.max(0, (Number(row.demand.need) || 0) / Number(row.demand.max) * 100)) : 0; const salePrice = window.HFV2Goods?.salePriceForCity?.(city, row.good.id) ?? (Number(row.good.price) || 0); return `<article class="hf-v2-demand-row"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-main"><div><b>${escapeHtml(row.good.name)}</b><strong>${formatDailyKg(row.dailyKg)}</strong></div><div class="hf-v2-demand-price"><small>Verkaufspreis</small><b>${formatCurrency(salePrice)}/kg</b></div><span><i style="width:${fill}%"></i></span></div></article>`; }).join('')}</div>` : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
   }
 
+  function isCityUnlocked(cityId) {
+    const id = String(cityId || '').trim();
+    return id === 'zurich' || networkState?.cities?.[id]?.unlocked === true;
+  }
+
   function selectedClass(city) {
     return selectedId === city.id ? ' selected' : '';
   }
@@ -135,7 +140,7 @@
     const anchor = Math.round(size / 2);
     const classes = [
       'city-marker',
-      'unlocked',
+      isCityUnlocked(city.id) ? 'unlocked' : 'locked',
       small ? 'small-town' : '',
       city.id === 'zurich' ? 'hub' : '',
       selectedClass(city).trim(),
@@ -265,14 +270,15 @@
       },
       onFleetClick: city => {
         window.hideCityActionMenu?.();
-        window.HF_V2?.openCityFleetForCity?.(city.id);
+        if (isCityUnlocked(city.id)) window.HF_V2?.openCityFleetForCity?.(city.id);
       },
       onFactoryClick: city => {
         window.hideCityActionMenu?.();
-        window.HFV2FactoryMenu?.openFactoryMenuForCity?.(city.id);
+        if (isCityUnlocked(city.id)) window.HFV2FactoryMenu?.openFactoryMenuForCity?.(city.id);
       },
     });
 
+    window.HFV2IsCityUnlocked = isCityUnlocked;
     renderMarkers(cities);
     window.HFNetwork?.initNetworkLayer?.(map);
     if (networkState) {
@@ -285,6 +291,11 @@
   function renderCurrentNetworkLines() {
     if (!networkState) return;
     window.HFNetwork?.renderNetworkLines?.(networkState.connections, citiesById);
+  }
+
+  function refreshNetworkView() {
+    renderCurrentNetworkLines();
+    refreshMarkers(Object.values(citiesById));
   }
 
   function setSaveStatus(message) {
@@ -404,7 +415,7 @@
     window.HFFleet?.configure?.({state: savePackage.state.fleet});
     window.HFV2Factories?.configure?.({state: savePackage.state.factories});
     window.HFV2Goods?.configure?.({state: savePackage.state.goods, cities: Object.values(citiesById)});
-    renderCurrentNetworkLines();
+    refreshNetworkView();
     renderClock();
     refreshSelectedCity();
     return savePackage;
@@ -455,8 +466,8 @@
     bindTimeControls();
     renderClock();
     renderLiveButton();
-    window.addEventListener('hf:network:confirmed', renderCurrentNetworkLines);
-    window.addEventListener('hf:v2:state-changed', renderCurrentNetworkLines);
+    window.addEventListener('hf:network:confirmed', refreshNetworkView);
+    window.addEventListener('hf:v2:state-changed', refreshNetworkView);
     window.addEventListener('hf:v2:state-changed', renderClock);
     if (!bootMap(cities)) return;
     const zurich = cities.find(city => city.id === 'zurich');
