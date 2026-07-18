@@ -9,6 +9,7 @@
   let map = null;
   let savePackage = null;
   let networkState = null;
+  let liveTimer = null;
   let citiesById = {};
   const markerById = new Map();
 
@@ -291,14 +292,121 @@
     if (status) status.textContent = message;
   }
 
+  function setTimeStatus(message) {
+    const status = document.getElementById('hfV2TimeStatus');
+    if (status) status.textContent = message;
+  }
+
+  function renderClock() {
+    const clock = document.getElementById('hfV2Clock');
+    if (clock) clock.textContent = window.HFV2Time?.formatClock?.() || 'Tag 1 · 08:00';
+  }
+
+  function productionSummaryText(summary) {
+    if (!summary) return 'Keine Tagesproduktion ausgelöst.';
+    const made = formatWeightKg(summary.madeKg);
+    const factories = Number(summary.factories) || 0;
+    const blocked = Number(summary.blocked) || 0;
+    return `Produktion: ${made} hergestellt · ${factories.toLocaleString('de-CH')} Fabriken geprüft · ${blocked.toLocaleString('de-CH')} blockiert.`;
+  }
+
+  function runWithProductionSummary(action) {
+    const originalProduction = window.HFV2Goods?.runDailyProduction;
+    const summaries = [];
+    if (typeof originalProduction === 'function') {
+      window.HFV2Goods.runDailyProduction = function wrappedDailyProduction(...args) {
+        const summary = originalProduction.apply(this, args);
+        summaries.push(summary);
+        return summary;
+      };
+    }
+    try {
+      return {time: action(), summary: summaries[summaries.length - 1] || null};
+    } finally {
+      if (typeof originalProduction === 'function') window.HFV2Goods.runDailyProduction = originalProduction;
+    }
+  }
+
+  function refreshSelectedCity() {
+    if (!selectedId) return;
+    const city = citiesById[selectedId];
+    if (city) selectCity(city, Object.values(citiesById));
+  }
+
+  function updateAdvanceStatus(label, summary) {
+    renderClock();
+    refreshSelectedCity();
+    const message = `${label}: ${window.HFV2Time?.formatClock?.() || ''}. ${productionSummaryText(summary)}`;
+    setSaveStatus(message);
+    setTimeStatus(message);
+  }
+
+  function renderLiveButton() {
+    const liveButton = document.getElementById('hfV2LiveButton');
+    if (!liveButton) return;
+    const isLive = Boolean(liveTimer);
+    liveButton.classList.toggle('is-live', isLive);
+    liveButton.setAttribute('aria-pressed', String(isLive));
+    liveButton.textContent = isLive ? '⏸ Pause' : '▶ Live';
+  }
+
+  function stopLiveTime(message = '') {
+    if (liveTimer) {
+      window.clearInterval(liveTimer);
+      liveTimer = null;
+    }
+    renderLiveButton();
+    if (message) setTimeStatus(message);
+  }
+
+  function liveTick() {
+    const result = runWithProductionSummary(() => window.HFV2Time?.advanceMinutes?.(1, {reason: 'time-live'}));
+    renderClock();
+    refreshSelectedCity();
+    const message = `Live läuft: ${window.HFV2Time?.formatClock?.() || ''}. ${productionSummaryText(result.summary)}`;
+    setTimeStatus(message);
+    if (result.summary) setSaveStatus(message);
+  }
+
+  function toggleLiveTime() {
+    if (liveTimer) {
+      stopLiveTime(`Live pausiert: ${window.HFV2Time?.formatClock?.() || ''}.`);
+      return;
+    }
+    liveTimer = window.setInterval(liveTick, 1000);
+    renderLiveButton();
+    setTimeStatus('Live läuft: 1 Spielminute pro Sekunde.');
+  }
+
+  function bindTimeControls() {
+    const liveButton = document.getElementById('hfV2LiveButton');
+    const nextHourButton = document.getElementById('hfV2NextHourButton');
+    const nextDayButton = document.getElementById('hfV2NextDayButton');
+
+    liveButton?.addEventListener('click', toggleLiveTime);
+
+    nextHourButton?.addEventListener('click', () => {
+      const result = runWithProductionSummary(() => window.HFV2Time?.nextHour?.());
+      updateAdvanceStatus('+1 Stunde', result.summary);
+    });
+
+    nextDayButton?.addEventListener('click', () => {
+      const result = runWithProductionSummary(() => window.HFV2Time?.endDay?.());
+      updateAdvanceStatus('Tag beendet', result.summary);
+    });
+  }
+
   function applySavePackage(nextPackage) {
     savePackage = window.HFV2Save?.hydrateState?.(nextPackage) || nextPackage;
     window.HFV2Save?.configureState?.(savePackage);
+    window.HFV2Time?.configure?.({state: savePackage.state.time});
     networkState = window.HFNetwork?.configure({state: savePackage.state.network, cities: Object.values(citiesById), citiesById});
     window.HFFleet?.configure?.({state: savePackage.state.fleet});
     window.HFV2Factories?.configure?.({state: savePackage.state.factories});
     window.HFV2Goods?.configure?.({state: savePackage.state.goods, cities: Object.values(citiesById)});
     renderCurrentNetworkLines();
+    renderClock();
+    refreshSelectedCity();
     return savePackage;
   }
 
@@ -321,6 +429,7 @@
       if (!file) return;
       try {
         const imported = await window.HFV2Save.importSave(file);
+        stopLiveTime();
         applySavePackage(imported);
         setSaveStatus(`Spielstand vom ${new Date(imported.savedAt).toLocaleString('de-CH')} importiert.`);
       } catch (error) {
@@ -334,16 +443,21 @@
   function boot() {
     const cities = loadCities();
     citiesById = Object.fromEntries(cities.map(city => [city.id, city]));
-    savePackage = window.HFV2Save?.createDefaultState?.() || {state: {network: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}), fleet: window.HFFleet?.createFleetState?.(), factories: window.HFV2Factories?.createFactoryState?.(), goods: window.HFV2Goods?.createGoodsState?.()}};
+    savePackage = window.HFV2Save?.createDefaultState?.() || {state: {network: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}), fleet: window.HFFleet?.createFleetState?.(), factories: window.HFV2Factories?.createFactoryState?.(), goods: window.HFV2Goods?.createGoodsState?.(), time: window.HFV2Save?.defaultTimeState?.() || {day: 1, hour: 8, minute: 0}}};
     window.HFV2Save?.configureState?.(savePackage);
+    window.HFV2Time?.configure?.({state: savePackage.state.time});
     networkState = window.HFNetwork?.configure({state: savePackage.state.network, cities, citiesById});
     window.HFFleet?.configure?.({state: savePackage.state.fleet});
     window.HFV2Factories?.configure?.({state: savePackage.state.factories});
     window.HFV2Goods?.configure?.({state: savePackage.state.goods, cities});
     document.getElementById('hfV2CityCount').textContent = `${cities.length.toLocaleString('de-CH')} Orte`;
     bindSaveControls();
+    bindTimeControls();
+    renderClock();
+    renderLiveButton();
     window.addEventListener('hf:network:confirmed', renderCurrentNetworkLines);
     window.addEventListener('hf:v2:state-changed', renderCurrentNetworkLines);
+    window.addEventListener('hf:v2:state-changed', renderClock);
     if (!bootMap(cities)) return;
     const zurich = cities.find(city => city.id === 'zurich');
     if (zurich) selectCity(zurich, cities);
