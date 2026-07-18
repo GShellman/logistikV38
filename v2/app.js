@@ -129,6 +129,63 @@
     return `<section class="hf-v2-demand-card hf-v2-inventory-card" aria-labelledby="hfV2InventoryTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Güter / Lager</p><h3 id="hfV2InventoryTitle">Lager</h3></div><strong>${formatWeightKg(usedKg)}</strong></div><div class="hf-v2-inventory-capacity"><span><i style="width:${fill}%"></i></span><small>${formatWeightKg(usedKg)} von ${formatWeightKg(capacityKg)} belegt</small></div>${cityInventoryMarkup(city.id)}</section>`;
   }
 
+  function currentTimeState() {
+    return window.HFV2Time?.getState?.() || window.HFV2Save?.getState?.().time || {day: 1, hour: 0, minute: 0};
+  }
+
+  function timeDay(time) {
+    return Math.max(1, Math.trunc(Number(time?.day) || 1));
+  }
+
+  function timeMinuteOfDay(time) {
+    const hour = Math.min(23, Math.max(0, Math.trunc(Number(time?.hour) || 0)));
+    const minute = Math.min(59, Math.max(0, Math.trunc(Number(time?.minute) || 0)));
+    return hour * 60 + minute;
+  }
+
+  function deliveryArrivalDay(delivery) {
+    return Math.max(1, Math.trunc(Number(delivery?.scheduledDay ?? delivery?.deliveryDay) || 1));
+  }
+
+  function deliveryArrivalMinute(delivery) {
+    const minute = Number(delivery?.scheduledMinute ?? delivery?.deliveryMinute ?? delivery?.arrivalMinute ?? delivery?.etaMinute);
+    if (Number.isFinite(minute)) return Math.min(1439, Math.max(0, Math.trunc(minute)));
+    const hour = Math.min(23, Math.max(0, Math.trunc(Number(delivery?.arrivalHour ?? delivery?.hour) || 0)));
+    const fallbackMinute = Math.min(59, Math.max(0, Math.trunc(Number(delivery?.minute) || 0)));
+    return hour * 60 + fallbackMinute;
+  }
+
+  function isOpenDeliveryForProjection(delivery) {
+    const status = String(delivery?.status || delivery?.state || '').toLowerCase();
+    if (!['planned', 'running'].includes(status)) return false;
+    if (delivery?.blocked === true || delivery?.cancelled === true || delivery?.canceled === true || delivery?.completed === true || delivery?.processed === true || delivery?.processedAt || delivery?.processedAtMinute) return false;
+    return true;
+  }
+
+  function sameDayIncomingDeliveryKg(cityId, goodId, time) {
+    const currentDay = timeDay(time);
+    const currentMinute = timeMinuteOfDay(time);
+    return (window.HFV2Orders?.getState?.().deliveries || []).reduce((sum, delivery) => {
+      if (!isOpenDeliveryForProjection(delivery)) return sum;
+      if (String(delivery.destinationCityId || delivery.cityId || '').trim() !== String(cityId)) return sum;
+      if (String(delivery.goodId || '').trim() !== String(goodId)) return sum;
+      if (deliveryArrivalDay(delivery) !== currentDay) return sum;
+      const arrivalMinute = deliveryArrivalMinute(delivery);
+      if (arrivalMinute <= currentMinute || arrivalMinute > 1439) return sum;
+      const quantityKg = Math.max(0, Number(delivery.remainingKg ?? delivery.openKg ?? delivery.quantityKg) || 0);
+      const deliveredKg = Math.max(0, Number(delivery.deliveredKg ?? delivery.fulfilledKg) || 0);
+      return sum + Math.max(0, quantityKg - deliveredKg);
+    }, 0);
+  }
+
+  function projectedEndOfDayStockKg(cityId, goodId, currentInventoryKg, dailyDemandKg) {
+    const time = currentTimeState();
+    const remainingMinutes = Math.max(0, 1440 - timeMinuteOfDay(time));
+    const remainingDemandKg = Math.max(0, Number(dailyDemandKg) || 0) * (remainingMinutes / 1440);
+    const incomingKg = sameDayIncomingDeliveryKg(cityId, goodId, time);
+    return Math.max(0, Math.max(0, Number(currentInventoryKg) || 0) + incomingKg - remainingDemandKg);
+  }
+
   function demandPanel(city) {
     const allRows = v2DemandRows(city);
     const producedIds = producedGoodIds();
@@ -140,7 +197,7 @@
     const total = rows.reduce((sum, row) => sum + row.dailyKg, 0);
     const inventory = window.HFV2Goods?.getCityInventory?.(city.id) || {};
     const showAllButton = isFilterHidingGoods ? `<button class="hf-v2-demand-show-all" type="button" data-action="show-all-demand-goods">Alle Waren anzeigen</button>` : '';
-    return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">${title}</h3></div><strong>${formatDailyKg(total)}</strong></div>${showAllButton}${rows.length ? `<div class="hf-v2-demand-compact-grid">${rows.map(row => { const inventoryKg = Math.max(0, Number(inventory[row.good.id]) || 0); const coverage = row.dailyKg > 0 ? Math.min(100, inventoryKg / row.dailyKg * 100) : 100; const salePrice = window.HFV2Goods?.salePriceForCity?.(city, row.good.id) ?? (Number(row.good.price) || 0); const orderLabel = `Ware ${row.good.name} für Stadt ${city.name} bestellen`; return `<button class="hf-v2-demand-tile hf-v2-demand-tile--button" type="button" data-action="open-good-order" data-city-id="${escapeHtml(city.id)}" data-good-id="${escapeHtml(row.good.id)}" aria-label="${escapeHtml(orderLabel)}"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-tile__body"><b>${escapeHtml(row.good.name)}</b><strong>${formatDailyKg(row.dailyKg)}</strong><div class="hf-v2-demand-price"><small>Verkaufspreis</small><b>${formatCurrency(salePrice)}/kg</b></div><span class="hf-v2-demand-tile__bar"><i style="width:${coverage}%"></i></span></div></button>`; }).join('')}</div>` : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
+    return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">${title}</h3></div><strong>${formatDailyKg(total)}</strong></div>${showAllButton}${rows.length ? `<div class="hf-v2-demand-compact-grid">${rows.map(row => { const inventoryKg = Math.max(0, Number(inventory[row.good.id]) || 0); const projectedKg = projectedEndOfDayStockKg(city.id, row.good.id, inventoryKg, row.dailyKg); const coverage = row.dailyKg > 0 ? Math.min(100, projectedKg / row.dailyKg * 100) : 100; const salePrice = window.HFV2Goods?.salePriceForCity?.(city, row.good.id) ?? (Number(row.good.price) || 0); const orderLabel = `Ware ${row.good.name} für Stadt ${city.name} bestellen`; return `<button class="hf-v2-demand-tile hf-v2-demand-tile--button" type="button" data-action="open-good-order" data-city-id="${escapeHtml(city.id)}" data-good-id="${escapeHtml(row.good.id)}" aria-label="${escapeHtml(orderLabel)}"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-tile__body"><b>${escapeHtml(row.good.name)}</b><strong>${formatDailyKg(row.dailyKg)}</strong><div class="hf-v2-demand-price"><small>Verkaufspreis</small><b>${formatCurrency(salePrice)}/kg</b></div><span class="hf-v2-demand-tile__bar"><i style="width:${coverage}%"></i></span><small class="hf-v2-muted">Prognose Tagesende: ${formatGoodAmount(row.good.id, projectedKg)}</small></div></button>`; }).join('')}</div>` : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
   }
 
   function factoryById(factoryId) {
