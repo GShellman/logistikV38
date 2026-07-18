@@ -179,13 +179,17 @@
   function createPlannedDelivery(order, day, minute) {
     const state = ordersState();
     const sourceCityId = sourceCityIdForOrder(order);
-    const quantityKg = window.HFV2Orders?.contractRequired?.(order, day, false) || deliveryQuantityForOrder(order);
+    const requestedQuantityKg = window.HFV2Orders?.contractRequired?.(order, day, false) || deliveryQuantityForOrder(order);
+    let quantityKg = requestedQuantityKg;
     const delivery = {
       id: createDeliveryId(state),
       orderId: order.id,
+      sourceType: 'city',
+      sourceId: sourceCityId,
       sourceCityId,
       destinationCityId: order.destinationCityId,
       goodId: order.goodId,
+      requestedQuantityKg,
       quantityKg,
       scheduledDay: day,
       scheduledMinute: minute,
@@ -195,7 +199,12 @@
       tripIndex: 1,
       status: STATUS.PLANNED,
     };
-    if (!sourceCityId) { getState().unresolved.push({orderId: order.id, day, goodId: order.goodId, amount: quantityKg, reason: 'Keine Lieferquelle gefunden.'}); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine Lieferquelle gefunden.'); }
+    if (!sourceCityId) { getState().unresolved.push({orderId: order.id, day, goodId: order.goodId, amount: requestedQuantityKg, reason: 'Keine Lieferquelle gefunden.'}); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine Lieferquelle gefunden.'); }
+    const sourceInventory = window.HFV2Goods?.getCityInventory?.(sourceCityId) || {};
+    const availableKg = Math.max(0, Number(sourceInventory[order.goodId]) || 0);
+    if (availableKg <= 0) { getState().unresolved.push({orderId: order.id, day, goodId: order.goodId, amount: requestedQuantityKg, reason: 'Keine Ware in der Quelle verfügbar.'}); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine Ware in der Quelle verfügbar.'); }
+    if (quantityKg > availableKg) quantityKg = availableKg;
+    delivery.quantityKg = quantityKg;
     const chosen = chooseVehicle(sourceCityId, order.destinationCityId, quantityKg, day, minute);
     if (!chosen) { getState().unresolved.push({orderId: order.id, day, goodId: order.goodId, amount: quantityKg, reason: 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.'}); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.'); }
     Object.assign(delivery, {
@@ -207,6 +216,7 @@
       transportCost: transportCost(chosen.path, chosen.vehicle, quantityKg),
       status: STATUS.PLANNED,
     });
+    if (quantityKg + 0.001 < requestedQuantityKg) return statusMessage(delivery, chosen.trips > 1 ? `Teillieferung wegen Exporteur-Lagerbestand geplant: ${Math.round(quantityKg)} von ${Math.round(requestedQuantityKg)} kg in ${chosen.trips} Fahrten.` : `Teillieferung wegen Exporteur-Lagerbestand geplant: ${Math.round(quantityKg)} von ${Math.round(requestedQuantityKg)} kg.`);
     return statusMessage(delivery, chosen.trips > 1 ? `In ${chosen.trips} Fahrten geplant.` : 'Lieferung geplant.');
   }
 
@@ -233,14 +243,15 @@
 
   function completeDelivery(delivery) {
     if (!delivery.sourceCityId) return Object.assign(delivery, {status: STATUS.BLOCKED}, statusMessage(delivery, 'Keine Quelle hinterlegt.'));
-    const requestedKg = normalizeNonNegative(delivery.quantityKg);
-    const removal = window.HFV2Goods?.removeFromInventory?.(delivery.sourceCityId, delivery.goodId, requestedKg);
+    const plannedKg = normalizeNonNegative(delivery.quantityKg);
+    const requestedKg = Math.max(plannedKg, normalizeNonNegative(delivery.requestedQuantityKg));
+    const removal = window.HFV2Goods?.removeFromInventory?.(delivery.sourceCityId, delivery.goodId, plannedKg);
     const removedKg = normalizeNonNegative(removal?.removedKg ?? removal);
     if (removedKg <= 0) { bumpOpenQuantity(delivery, requestedKg); return Object.assign(delivery, {status: STATUS.BLOCKED}, statusMessage(delivery, 'Keine Ware in der Quelle verfügbar.')); }
     const addition = window.HFV2Goods?.addToInventory?.(delivery.destinationCityId, delivery.goodId, removedKg);
     const addedKg = normalizeNonNegative(addition?.addedKg ?? addition ?? removedKg);
     if (addedKg + 0.001 < removedKg) statusMessage(delivery, `Ziellager begrenzt: ${Math.round(addedKg)} von ${Math.round(removedKg)} kg eingelagert.`);
-    const bookedCost = Math.round(normalizeNonNegative(delivery.transportCost) * (removedKg / Math.max(1, requestedKg)));
+    const bookedCost = Math.round(normalizeNonNegative(delivery.transportCost) * (removedKg / Math.max(1, plannedKg)));
     if (bookedCost > 0) window.HFV2Save?.changeCash?.(-bookedCost, 'goods-delivery');
     delivery.deliveredKg = normalizeNonNegative(delivery.deliveredKg) + addedKg;
     delivery.bookedCost = normalizeNonNegative(delivery.bookedCost) + bookedCost;

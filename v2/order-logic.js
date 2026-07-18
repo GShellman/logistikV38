@@ -92,7 +92,9 @@
       destinationCityId,
       goodId,
       sourceType: String(delivery.sourceType || 'city').trim() || 'city',
-      sourceId: String(delivery.sourceId || '').trim(),
+      sourceId: String(delivery.sourceId || delivery.sourceCityId || '').trim(),
+      sourceCityId: String(delivery.sourceCityId || delivery.sourceId || '').trim(),
+      requestedQuantityKg: normalizeNonNegative(delivery.requestedQuantityKg || delivery.quantityKg),
       quantityKg: normalizeNonNegative(delivery.quantityKg),
       deliveryDay: normalizeInteger(delivery.deliveryDay, 1, 1),
       deliveryMinute: normalizeInteger(delivery.deliveryMinute, 0, 0, 1439),
@@ -227,6 +229,8 @@
       }, 0);
       const path = window.HFNetwork?.findPath?.(sourceCityId, destinationId) || null;
       const reachable = sourceCityId === destinationId || path?.reachable === true;
+      const availableKg = inventoryKg + estimatedProductionKg;
+      const transportableKg = inventoryKg;
       return {
         city,
         cityId: sourceCityId,
@@ -236,9 +240,10 @@
         producesGood: true,
         inventoryKg,
         estimatedProductionKg,
-        availableKg: inventoryKg + estimatedProductionKg,
+        availableKg,
+        transportableKg,
         reachable,
-        transportReady: reachable && sourceCityId !== destinationId,
+        transportReady: reachable && sourceCityId !== destinationId && transportableKg > 0,
         path,
       };
     }).filter(Boolean).sort((a, b) => Number(b.transportReady) - Number(a.transportReady) || b.availableKg - a.availableKg || a.city.name.localeCompare(b.city.name, 'de-CH'));
