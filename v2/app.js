@@ -120,6 +120,75 @@
     return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">Alle Waren</h3></div><strong>${formatDailyKg(total)}</strong></div>${rows.length ? `<div class="hf-v2-demand-compact-grid">${rows.map(row => { const inventoryKg = Math.max(0, Number(inventory[row.good.id]) || 0); const coverage = row.dailyKg > 0 ? Math.min(100, inventoryKg / row.dailyKg * 100) : 100; const salePrice = window.HFV2Goods?.salePriceForCity?.(city, row.good.id) ?? (Number(row.good.price) || 0); return `<article class="hf-v2-demand-tile"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-tile__body"><b>${escapeHtml(row.good.name)}</b><strong>${formatDailyKg(row.dailyKg)}</strong><div class="hf-v2-demand-price"><small>Verkaufspreis</small><b>${formatCurrency(salePrice)}/kg</b></div><span class="hf-v2-demand-tile__bar"><i style="width:${coverage}%"></i></span></div></article>`; }).join('')}</div>` : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
   }
 
+
+  function factoryById(factoryId) {
+    const id = String(factoryId || '').trim();
+    return (window.HFV2FactoryCatalog || []).find(factory => factory.id === id) || null;
+  }
+
+  function factoryRecipeOptions(factory) {
+    const recipes = Array.isArray(factory?.recipes) ? factory.recipes : [];
+    if (recipes.length) return recipes.map(recipe => ({
+      id: recipe.id || factory.id,
+      name: recipe.name || factory.name,
+      outputs: recipe.outputs || recipe.output || {},
+    }));
+    return [{id: factory?.id, name: factory?.name, outputs: factory?.outputs || factory?.output || {}}];
+  }
+
+  function factoryDailyCapacityKg(factory) {
+    return factoryRecipeOptions(factory).reduce((sum, recipe) => sum + Object.values(recipe.outputs || {}).reduce((recipeSum, kg) => recipeSum + Math.max(0, Number(kg) || 0), 0), 0);
+  }
+
+  function factoryOutputsText(factory) {
+    const totals = {};
+    for (const recipe of factoryRecipeOptions(factory)) {
+      for (const [goodId, kg] of Object.entries(recipe.outputs || {})) {
+        totals[goodId] = (Number(totals[goodId]) || 0) + Math.max(0, Number(kg) || 0);
+      }
+    }
+    const entries = Object.entries(totals).filter(([, kg]) => kg > 0);
+    if (!entries.length) return 'Keine Outputs im Katalog';
+    return entries.map(([goodId, kg]) => `${escapeHtml(goodById(goodId).name)} ${formatDailyKg(kg)}`).join(' · ');
+  }
+
+  function factoryOperatingDailyCost() {
+    const factoryApi = window.HFV2Factories;
+    const catalog = window.HFV2FactoryCatalog || [];
+    const state = factoryApi?.getState?.();
+    const cityFactories = state?.cityFactories || {};
+    return Object.values(cityFactories).flat().reduce((sum, factoryId) => {
+      const factory = catalog.find(item => item.id === factoryId);
+      return sum + Math.max(0, Number(factory?.maintenance ?? factory?.dailyCost ?? factory?.operatingCost ?? 0) || 0);
+    }, 0);
+  }
+
+  function networkDailyCost() {
+    return (networkState?.connections || []).reduce((sum, connection) => sum + Math.max(0, Number(connection?.maintenance) || 0), 0);
+  }
+
+  function financeSummaryMarkup() {
+    const cash = window.HFV2Save?.getCash?.() ?? 0;
+    const networkCost = networkDailyCost();
+    const factoryCost = factoryOperatingDailyCost();
+    return `<section class="hf-v2-finance-hero" aria-label="Finanzübersicht"><div><p class="hf-v2-kicker">Finanzen</p><h3>Kontostand</h3><strong>${formatCurrency(cash)}</strong></div><div class="hf-v2-city-kpi-grid"><span><small>Netzunterhalt</small><b>${formatCurrency(networkCost)}/Tag</b></span><span><small>Fabrikbetrieb</small><b>${formatCurrency(factoryCost)}/Tag</b></span></div></section>`;
+  }
+
+  function factoryProductionMarkup(city) {
+    const builtFactories = window.HFV2Factories?.getCityFactories?.(city.id) || [];
+    if (!builtFactories.length) return '<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div></div><p class="hf-v2-muted">Keine Fabriken gebaut.</p></section>';
+    const rows = builtFactories.map(factoryId => {
+      const factory = factoryById(factoryId) || {id: factoryId, name: factoryId, icon: '🏭'};
+      const capacityKg = factoryDailyCapacityKg(factory);
+      const estimate = window.HFV2Goods?.estimateCityFactoryProduction?.(city.id, factory.id);
+      const actualKg = Math.max(0, Number(estimate?.madeKg) || 0);
+      const fill = capacityKg > 0 ? Math.min(100, actualKg / capacityKg * 100) : 0;
+      const status = estimate?.reason === 'demand-limited' ? 'Nachfrage gedeckt' : estimate?.reason === 'capacity-limited' ? 'Lager voll' : estimate?.reason === 'input-limited' ? 'Inputs fehlen' : estimate?.reason === 'no-output' ? 'Kein Output' : 'Potenzial heute';
+      return `<article class="hf-v2-factory-production-item"><div class="hf-v2-factory-production-head"><span>${escapeHtml(factory.icon || '🏭')}</span><div><b>${escapeHtml(factory.name || factory.id)}</b><small>${factoryOutputsText(factory)}</small></div></div><div class="hf-v2-factory-production-bar"><span><i style="width:${fill}%"></i></span><small>${formatDailyKg(actualKg)} von ${formatDailyKg(capacityKg)} · ${status}</small></div></article>`;
+    }).join('');
+    return `<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div><strong>${builtFactories.length.toLocaleString('de-CH')}</strong></div>${rows}</section>`;
+  }
+
   function isCityUnlocked(cityId) {
     const id = String(cityId || '').trim();
     return id === 'zurich' || networkState?.cities?.[id]?.unlocked === true;
@@ -188,16 +257,14 @@
     refreshMarkers(cities);
 
     document.getElementById('hfV2SelectedName').textContent = city.name;
-    document.getElementById('hfV2SelectedIntro').textContent = 'Basisdaten aus dem bestehenden Ortskatalog. In V2.1 gibt es nur einfaches In-Memory-Kapital für Fahrzeugkäufe, aber noch keine Wirtschaftssimulation.';
+    document.getElementById('hfV2SelectedIntro').textContent = 'Produktions- und Finanzübersicht für die markierte Stadt.';
     document.getElementById('hfV2Facts').innerHTML = [
-      fact('ID', city.id),
-      fact('Kategorie', tierLabel(city.tier)),
-      fact('Bevölkerung', formatPopulation(city.population)),
-      fact('Bauplätze', city.slots.toLocaleString('de-CH')),
-      fact('Wohlstandsfaktor', city.wealthFactor.toFixed(2)),
-      fact('Nachfrageprofil', city.demandProfile),
-      fact('Koordinaten', `${city.lat.toFixed(4)}, ${city.lng.toFixed(4)}`),
-    ].join('') + inventorySectionMarkup(city) + demandPanel(city);
+      financeSummaryMarkup(),
+      `<div class="hf-v2-city-kpi-grid">${fact('Kategorie', tierLabel(city.tier))}${fact('Bauplätze', city.slots.toLocaleString('de-CH'))}</div>`,
+      factoryProductionMarkup(city),
+      inventorySectionMarkup(city),
+      demandPanel(city),
+    ].join('');
   }
 
   function openNetworkModalForCity(city) {

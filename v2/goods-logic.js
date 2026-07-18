@@ -413,6 +413,48 @@
     return scale === Infinity ? 0 : Math.max(0, scale);
   }
 
+
+  function cloneInventory(cityId) {
+    return {...ensureCityInventory(cityId)};
+  }
+
+  function estimateCityFactoryProduction(cityId, factoryId) {
+    configure();
+    const id = assertCityId(cityId);
+    const factory = factoryDefinition(factoryId);
+    const summary = {cityId: id, factoryId: String(factoryId || ''), recipeId: null, madeKg: 0, capacityKg: 0, scale: 0, reason: 'unknown-factory', outputs: {}};
+    if (!factory) return summary;
+
+    const targetDemand = mergeDemandMaps(getCityDailyDemandMap(id), getCityOrderedDemandMap(id));
+    const inventory = cloneInventory(id);
+    const missingMap = {};
+    for (const [goodId, targetKg] of Object.entries(targetDemand)) {
+      const missingKg = Math.max(0, (Number(targetKg) || 0) - (Number(inventory[goodId]) || 0));
+      if (missingKg > 0) missingMap[goodId] = missingKg;
+    }
+
+    const recipes = recipeOptions(factory)
+      .filter(recipe => Object.keys(recipe.outputs).length)
+      .map(recipe => ({...recipe, missingKg: recipeMissingKg(recipe, missingMap)}))
+      .sort((a, b) => b.missingKg - a.missingKg);
+    const recipe = recipes[0] || null;
+    if (!recipe) return {...summary, reason: 'no-output'};
+
+    const outputKgPerCycle = Object.values(recipe.outputs).reduce((sum, kg) => sum + (Number(kg) || 0), 0);
+    const demandScale = Math.min(1, maxDemandScale(recipe.outputs, missingMap));
+    const freeCapacityKg = Math.max(0, getCapacityKg(id) - getUsedCapacityKg(id));
+    const capacityScale = outputKgPerCycle > 0 ? Math.min(1, freeCapacityKg / outputKgPerCycle) : 0;
+    const inputScale = Math.min(1, maxInputScale(id, recipe.inputs));
+    const scale = Math.min(demandScale, capacityScale, inputScale);
+    const outputs = {};
+    for (const [goodId, kg] of Object.entries(recipe.outputs)) outputs[goodId] = Math.round((Number(kg) || 0) * scale * 1000) / 1000;
+    const madeKg = Object.values(outputs).reduce((sum, kg) => sum + (Number(kg) || 0), 0);
+    const reason = scale <= 0
+      ? (demandScale <= 0 ? 'demand-limited' : capacityScale <= 0 ? 'capacity-limited' : inputScale <= 0 ? 'input-limited' : 'blocked')
+      : (inputScale < Math.min(demandScale, capacityScale) ? 'input-limited' : demandScale < 1 ? 'demand-limited' : capacityScale < Math.min(1, demandScale) ? 'capacity-limited' : 'ready');
+    return {cityId: id, factoryId: factory.id, recipeId: recipe.id, madeKg: Math.round(madeKg * 1000) / 1000, capacityKg: outputKgPerCycle, scale, reason, outputs};
+  }
+
   function runDailyProduction() {
     configure();
     const summary = {madeKg: 0, blocked: 0, factories: 0, demandLimited: 0, capacityLimited: 0};
@@ -490,5 +532,5 @@
     return summary;
   }
 
-  window.HFV2Goods = {createGoodsState, configure, getState, ensureCityInventory, getCityInventory, addToInventory, removeFromInventory, getUsedCapacityKg, getCapacityKg, salePriceForCity, estimateDeliveryProfit, getCityDailyDemandMap, getCityOrderedDemandMap, mergeDemandMaps, runDailyProduction, runDailySales, sellCityDemandAtMidnight};
+  window.HFV2Goods = {createGoodsState, configure, getState, ensureCityInventory, getCityInventory, addToInventory, removeFromInventory, getUsedCapacityKg, getCapacityKg, salePriceForCity, estimateDeliveryProfit, getCityDailyDemandMap, getCityOrderedDemandMap, mergeDemandMaps, estimateCityFactoryProduction, runDailyProduction, runDailySales, sellCityDemandAtMidnight};
 })();
