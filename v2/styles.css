@@ -13,7 +13,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { min-height: 100%; }
+html, body { height: 100%; min-height: 100%; overflow: hidden; }
 body {
   margin: 0;
   background: linear-gradient(135deg, #f5f8fb 0%, var(--hf-bg) 46%, #d7e0ea 100%);
@@ -25,7 +25,9 @@ body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(480px, 32vw, 540px);
   gap: 22px;
-  min-height: 100dvh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
   padding: 22px;
 }
 
@@ -130,6 +132,17 @@ h2 { font-size: 24px; }
 .hf-v2-demand-main div { align-items: baseline; display: flex; gap: 8px; justify-content: space-between; }
 .hf-v2-demand-main b { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hf-v2-demand-main strong { color: var(--hf-primary-2); flex: 0 0 auto; font-size: 11px; }
+.hf-v2-demand-price {
+  color: var(--hf-muted);
+  display: flex;
+  font-size: 11px;
+  font-weight: 800;
+  gap: 8px;
+  justify-content: space-between;
+  margin-top: 5px;
+}
+.hf-v2-demand-price b { color: var(--hf-ink); font-size: 11px; }
+.hf-v2-demand-price small { font-size: 10px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
 .hf-v2-demand-main span {
   background: #e4ebf2;
   border-radius: 999px;
@@ -231,10 +244,15 @@ h2 { font-size: 24px; }
 .locked-label { color: #7e8782; background: rgba(240,242,240,.8); }
 
 .hf-v2-panel {
-  display: grid;
   align-content: start;
+  display: grid;
   gap: 18px;
+  max-height: calc(100dvh - 44px);
+  min-height: 0;
   min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
 }
 
 .hf-v2-panel-card { padding: 22px; }
@@ -280,11 +298,12 @@ code {
 }
 
 @media (max-width: 680px) {
-  .hf-v2-shell { padding: 12px; }
+  html, body { overflow: auto; }
+  .hf-v2-shell { height: auto; min-height: 100dvh; overflow: visible; padding: 12px; }
   .hf-v2-header { display: grid; padding: 20px 18px 8px; }
   .hf-v2-map-wrap { min-height: 460px; padding: 4px 8px 14px; }
   .hf-v2-map { min-height: 460px; }
-  .hf-v2-panel { grid-template-columns: 1fr; }
+  .hf-v2-panel { grid-template-columns: 1fr; max-height: none; overflow: visible; padding-right: 0; }
 }
 
 .hf-v2-city-action.leaflet-popup .leaflet-popup-content-wrapper,
@@ -1408,7 +1427,7 @@ code { background: #edf4f9; color: #174a78; }
   .hf-v2-header { padding: 16px; }
   .hf-v2-map-wrap { min-height: 470px; padding: 10px; }
   .hf-v2-map { min-height: 470px; }
-  .hf-v2-panel { grid-template-columns: 1fr; }
+  .hf-v2-panel { grid-template-columns: 1fr; max-height: none; overflow: visible; padding-right: 0; }
   .hf-v2-fleet-hero { grid-template-columns: 1fr; padding-right: 52px; }
 }
 

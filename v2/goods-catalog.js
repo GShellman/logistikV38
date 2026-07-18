@@ -12,6 +12,8 @@
 
   const RAW = Object.freeze({rawMaterial: true, perishable: false, refrigeratedRequired: false});
   const DEFAULT_PROPERTIES = Object.freeze({rawMaterial: false, perishable: false, refrigeratedRequired: false});
+  const CONSUMER_GOODS_ECONOMICS = Object.freeze({maxDailyDemandKg: 180, saturationSensitivity: 0.72, securityCostPerKm: 0.04, marketVolatility: 0.04});
+  const LUXURY_GOODS_ECONOMICS = Object.freeze({luxuryDemand: true, maxDailyDemandKg: 90, saturationSensitivity: 1.85, securityCostPerKm: 0.16, marketVolatility: 0.12});
 
   const GOODS_CATALOG = Object.freeze([
     good('grain', 'Getreide', '🌾', 'industrial_material', TON_UNIT, 0, RAW, ['bulk'], 'HF_GRAIN_ASSET_DATA_URI'),
@@ -42,13 +44,13 @@
     good('ravioli_meat', 'Ravioli mit Fleisch', '🥩', 'processed_food', RAVIOLI_MEAT_UNIT, 3.2, {rawMaterial: false, perishable: false, refrigeratedRequired: true}, ['refrigerated'], 'HF_RAVIOLI_MEAT_ASSET_DATA_URI'),
     good('ravioli_veg', 'Ravioli ohne Fleisch', '🌿', 'processed_food', RAVIOLI_VEG_UNIT, 3, {rawMaterial: false, perishable: false, refrigeratedRequired: true}, ['refrigerated'], 'HF_RAVIOLI_VEG_ASSET_DATA_URI'),
 
-    good('furniture', 'Möbel', '🪑', 'consumer_goods', PIECE_40KG_UNIT, 4300, DEFAULT_PROPERTIES, ['general'], 'HF_FURNITURE_ASSET_DATA_URI'),
-    good('tools', 'Werkzeuge', '🔧', 'consumer_goods', KG_UNIT, 4700, DEFAULT_PROPERTIES, ['general'], 'HF_TOOLS_ASSET_DATA_URI'),
-    good('electronics', 'Elektronik', '💻', 'consumer_goods', PIECE_5KG_UNIT, 6500, DEFAULT_PROPERTIES, ['general'], 'HF_ELECTRONICS_ASSET_DATA_URI'),
-    good('medicine', 'Medizin', '💊', 'consumer_goods', KG_UNIT, 6900, DEFAULT_PROPERTIES, ['general'], 'HF_MEDICINE_ASSET_DATA_URI'),
+    good('furniture', 'Möbel', '🪑', 'consumer_goods', PIECE_40KG_UNIT, 4300, DEFAULT_PROPERTIES, ['general'], 'HF_FURNITURE_ASSET_DATA_URI', {...CONSUMER_GOODS_ECONOMICS, maxDailyDemandKg: 120, saturationSensitivity: 0.95, securityCostPerKm: 0.06, marketVolatility: 0.05}),
+    good('tools', 'Werkzeuge', '🔧', 'consumer_goods', KG_UNIT, 4700, DEFAULT_PROPERTIES, ['general'], 'HF_TOOLS_ASSET_DATA_URI', {...CONSUMER_GOODS_ECONOMICS, maxDailyDemandKg: 150, saturationSensitivity: 1.05, securityCostPerKm: 0.08, marketVolatility: 0.06}),
+    good('electronics', 'Elektronik', '💻', 'consumer_goods', PIECE_5KG_UNIT, 6500, DEFAULT_PROPERTIES, ['general'], 'HF_ELECTRONICS_ASSET_DATA_URI', {...LUXURY_GOODS_ECONOMICS, maxDailyDemandKg: 70, securityCostPerKm: 0.22, marketVolatility: 0.16}),
+    good('medicine', 'Medizin', '💊', 'consumer_goods', KG_UNIT, 6900, DEFAULT_PROPERTIES, ['general'], 'HF_MEDICINE_ASSET_DATA_URI', {...LUXURY_GOODS_ECONOMICS, maxDailyDemandKg: 85, saturationSensitivity: 1.55, securityCostPerKm: 0.18, marketVolatility: 0.1}),
   ]);
 
-  function good(id, name, icon, category, unit, price, properties, allowedVehicleGroups, assetGlobal) {
+  function good(id, name, icon, category, unit, price, properties, allowedVehicleGroups, assetGlobal, economics = {}) {
     return Object.freeze({
       id,
       name,
@@ -58,6 +60,7 @@
       price,
       properties,
       transport: Object.freeze({allowedVehicleGroups: Object.freeze([...allowedVehicleGroups])}),
+      economics: Object.freeze({...economics}),
       assetGlobal,
     });
   }
