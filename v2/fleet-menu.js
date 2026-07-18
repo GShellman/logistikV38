@@ -41,6 +41,11 @@
     return window.HFFleet || null;
   }
 
+  function isCityUnlocked(cityId) {
+    const id = String(cityId || '').trim();
+    return id === 'zurich' || window.HFNetwork?.getState?.().cities?.[id]?.unlocked === true;
+  }
+
   function vehicleImage(vehicleId) {
     return window.HFV2VehicleAssets?.vehicleImage?.(vehicleId) || '';
   }
@@ -65,6 +70,7 @@
 
     const fleet = api.getCityFleet?.(cityId) || {};
     const cash = window.HFV2Save?.getCash?.() ?? 0;
+    const cityUnlocked = isCityUnlocked(cityId);
     const vehicleTypes = api.VEHICLE_TYPES || [];
     const vehicles = api.VEHICLES || {};
 
@@ -75,9 +81,12 @@
       if (!vehicle) return '';
       const owned = Number(fleet[type]) || 0;
       const canAfford = cash >= (Number(vehicle.cost) || 0);
-      const disabledText = canAfford ? '' : ' disabled aria-disabled="true" title="Nicht genug Kapital"';
+      const canBuy = cityUnlocked && canAfford;
+      const disabledTitle = cityUnlocked ? 'Nicht genug Kapital' : 'Stadt ist noch nicht ans Netz angebunden';
+      const disabledText = canBuy ? '' : ` disabled aria-disabled="true" title="${escapeHtml(disabledTitle)}"`;
+      const buttonLabel = cityUnlocked ? (canAfford ? 'Kaufen' : 'Nicht leistbar') : 'Stadt gesperrt';
       return `
-        <article class="hf-v2-fleet-card${canAfford ? '' : ' is-disabled'}">
+        <article class="hf-v2-fleet-card${canBuy ? '' : ' is-disabled'}">
           <div class="hf-v2-fleet-card__icon" aria-hidden="true">${vehicleVisual(type, vehicle)}</div>
           <div class="hf-v2-fleet-card__main">
             <div class="hf-v2-fleet-card__head">
@@ -95,7 +104,7 @@
               <div><dt>Bestand</dt><dd>${owned.toLocaleString('de-CH')}</dd></div>
             </dl>
           </div>
-          <button class="hf-v2-fleet-buy" type="button" data-action="buy-fleet-vehicle" data-city-id="${escapeHtml(cityId)}" data-vehicle-type="${escapeHtml(type)}"${disabledText}><span>${canAfford ? 'Kaufen' : 'Nicht leistbar'}</span><strong>${formatMoney(vehicle.cost)}</strong><i aria-hidden="true">→</i></button>
+          <button class="hf-v2-fleet-buy" type="button" data-action="buy-fleet-vehicle" data-city-id="${escapeHtml(cityId)}" data-vehicle-type="${escapeHtml(type)}"${disabledText}><span>${buttonLabel}</span><strong>${formatMoney(vehicle.cost)}</strong><i aria-hidden="true">→</i></button>
         </article>`;
     }).join('');
   }
