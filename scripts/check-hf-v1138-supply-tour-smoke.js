@@ -35,5 +35,13 @@ assert(/row\)row\.status='Erledigt'/.test(supplyComplete?.[1] || ''), 'completed
 assert(/hfV1138TestSetup\(spec=\{\}\)/.test(supply), 'hfV1138TestSetup test hook is missing');
 assert(/hfV1138DispatchRow:id=>/.test(supply), 'hfV1138DispatchRow test hook is missing');
 assert(/hfV1138AdvanceMinutes:n=>advanceMinutes\(n,\{quiet:true,live:false\}\)/.test(supply), 'hfV1138AdvanceMinutes time-advance hook is missing');
+
+assert(/function rescheduleOverdueSupplyRows\(rows,now\)/.test(supply), 'overdue planned rows must be rescheduled on the same day');
+assert(/if\(!force&&state\.hfSupplyWeekPlan\.generatedDay===state\.day\)\{const now=typeof minuteOfDay==='function'\?minuteOfDay\(\):0;if\(\(Number\(state\.hfSupplyWeekPlan\.generatedMinute\)\|\|0\)<now\)\{rescheduleOverdueSupplyRows/.test(supply), 'replanSupply(false) must catch up stale same-day generated plans');
+assert(/row\.absoluteDay!==state\.day\|\|row\.status!=='Geplant'\|\|row\.shipmentId\|\|row\.startMinute>=now/.test(supply), 'overdue rescheduler must preserve status/shipmentId guards');
+assert(/row\.reason=`Nachgeholt um \$\{clock\(next\)\}`/.test(supply), 'overdue rescheduler must leave an auditable catch-up reason');
+assert(/row\.absoluteDay!==state\.day\|\|row\.startMinute>now\|\|row\.status!=='Geplant'\|\|row\.shipmentId/.test(supply), 'run-now dispatch must include overdue rows while preserving dispatch guards');
+assert(/generatedDay!==state\.day\)replanSupply\(true\);else if\(\(Number\(state\.hfSupplyWeekPlan\.generatedMinute\)\|\|0\)<now\)rescheduleOverdueSupplyRows/.test(supply), 'run-now must catch up stale same-day plans generated before the current minute');
+assert(!/row\.absoluteDay!==state\.day\|\|row\.startMinute!==now\|\|row\.status!=='Geplant'/.test(supply), 'run-now must not require exact startMinute equality');
 if (process.exitCode) process.exit(process.exitCode);
 console.log('HF v1.1.38 supply tour smoke passed: multi-stop tour delivery state machine and supply-contract completion hooks are present.');
