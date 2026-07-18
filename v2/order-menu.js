@@ -93,7 +93,7 @@
     const deliveryDay = currentDeliveryDay(form.querySelector('[name="hfV2OrderLeadTime"]')?.value);
     const deliveryMinute = deliveryMinuteFromTime(form.querySelector('[name="hfV2OrderTime"]')?.value);
     const weekday = Math.min(6, Math.max(0, Number(form.querySelector('[name="hfV2OrderWeekday"]')?.value) || 0));
-    const orderPayload = {destinationCityId: cityId, goodId, sourceType: 'city', sourceId, primarySource: {type: 'city', id: sourceId}, frequency, dailyDemandKg, quantityKg: frequency === 'weekly' ? dailyDemandKg * 7 : dailyDemandKg, deliveryDay, deliveryMinute};
+    const orderPayload = {destinationCityId: cityId, goodId, sourceType: 'city', sourceId, primarySource: {type: 'city', id: sourceId}, frequency, dailyDemandKg, quantityKg: frequency === 'weekly' ? dailyDemandKg * 7 : dailyDemandKg, deliveryDay, deliveryMinute, scheduleLegacyDelivery: false};
     if (frequency === 'weekly') Object.assign(orderPayload, {deliveryWeekday: weekday, weekday});
     const order = window.HFV2Orders?.createOrder?.(orderPayload);
     window.HFV2Transport?.generatePlannedDeliveries?.();
