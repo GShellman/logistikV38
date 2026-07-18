@@ -314,28 +314,34 @@
     if (clock) clock.textContent = window.HFV2Time?.formatClock?.() || 'Mo · Tag 1 · 08:00';
   }
 
-  function productionSummaryText(summary) {
-    if (!summary) return 'Keine Tagesproduktion ausgelöst.';
-    const made = formatWeightKg(summary.madeKg);
-    const factories = Number(summary.factories) || 0;
-    const blocked = Number(summary.blocked) || 0;
-    return `Produktion: ${made} hergestellt · ${factories.toLocaleString('de-CH')} Fabriken geprüft · ${blocked.toLocaleString('de-CH')} blockiert.`;
+  function dailyCycleSummaryText(summary) {
+    if (!summary) return 'Kein Tagesabschluss ausgelöst.';
+    const sales = summary.sales || {};
+    const production = summary.production || {};
+    const sold = formatWeightKg(sales.soldKg);
+    const revenue = formatCurrency(sales.revenue);
+    const made = formatWeightKg(production.madeKg);
+    const blocked = Number(production.blocked) || 0;
+    const blockedText = blocked > 0 ? ` · ${blocked.toLocaleString('de-CH')} blockiert` : '';
+    return `Tagesabschluss: ${sold} verkauft für ${revenue} · ${made} produziert${blockedText}.`;
   }
 
-  function runWithProductionSummary(action) {
-    const originalProduction = window.HFV2Goods?.runDailyProduction;
+  function runWithDailyCycleSummary(action) {
+    const originalDailyCycle = window.HFV2DayCycle?.runDailyCycle;
     const summaries = [];
-    if (typeof originalProduction === 'function') {
-      window.HFV2Goods.runDailyProduction = function wrappedDailyProduction(...args) {
-        const summary = originalProduction.apply(this, args);
+    if (typeof originalDailyCycle === 'function') {
+      window.HFV2DayCycle.runDailyCycle = function wrappedDailyCycle(...args) {
+        const summary = originalDailyCycle.apply(this, args);
         summaries.push(summary);
         return summary;
       };
     }
     try {
-      return {time: action(), summary: summaries[summaries.length - 1] || null};
+      const time = action();
+      const summary = window.HFV2DayCycle?.aggregateDailyCycleSummaries?.(summaries) || summaries[summaries.length - 1] || null;
+      return {time, summary};
     } finally {
-      if (typeof originalProduction === 'function') window.HFV2Goods.runDailyProduction = originalProduction;
+      if (typeof originalDailyCycle === 'function') window.HFV2DayCycle.runDailyCycle = originalDailyCycle;
     }
   }
 
@@ -348,7 +354,7 @@
   function updateAdvanceStatus(label, summary) {
     renderClock();
     refreshSelectedCity();
-    const message = `${label}: ${window.HFV2Time?.formatClock?.() || ''}. ${productionSummaryText(summary)}`;
+    const message = `${label}: ${window.HFV2Time?.formatClock?.() || ''}. ${dailyCycleSummaryText(summary)}`;
     setSaveStatus(message);
     setTimeStatus(message);
   }
@@ -372,10 +378,10 @@
   }
 
   function liveTick() {
-    const result = runWithProductionSummary(() => window.HFV2Time?.advanceMinutes?.(1, {reason: 'time-live'}));
+    const result = runWithDailyCycleSummary(() => window.HFV2Time?.advanceMinutes?.(1, {reason: 'time-live'}));
     renderClock();
     refreshSelectedCity();
-    const message = `Live läuft: ${window.HFV2Time?.formatClock?.() || ''}. ${productionSummaryText(result.summary)}`;
+    const message = `Live läuft: ${window.HFV2Time?.formatClock?.() || ''}. ${dailyCycleSummaryText(result.summary)}`;
     setTimeStatus(message);
     if (result.summary) setSaveStatus(message);
   }
@@ -398,12 +404,12 @@
     liveButton?.addEventListener('click', toggleLiveTime);
 
     nextHourButton?.addEventListener('click', () => {
-      const result = runWithProductionSummary(() => window.HFV2Time?.nextHour?.());
+      const result = runWithDailyCycleSummary(() => window.HFV2Time?.nextHour?.());
       updateAdvanceStatus('+1 Stunde', result.summary);
     });
 
     nextDayButton?.addEventListener('click', () => {
-      const result = runWithProductionSummary(() => window.HFV2Time?.endDay?.());
+      const result = runWithDailyCycleSummary(() => window.HFV2Time?.endDay?.());
       updateAdvanceStatus('Tag beendet', result.summary);
     });
   }

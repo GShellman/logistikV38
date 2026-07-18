@@ -55,10 +55,16 @@
 
   function runMidnightCallbacks(days) {
     const count = Math.max(0, Math.trunc(Number(days) || 0));
+    const summaries = [];
     for (let index = 0; index < count; index += 1) {
-      window.HFV2Goods?.runDailySales?.();
-      window.HFV2Goods?.runDailyProduction?.();
+      if (window.HFV2DayCycle?.runDailyCycle) summaries.push(window.HFV2DayCycle.runDailyCycle());
+      else {
+        const sales = window.HFV2Goods?.runDailySales?.() || {revenue: 0, soldKg: 0};
+        const production = window.HFV2Goods?.runDailyProduction?.() || {madeKg: 0, blocked: 0};
+        summaries.push({sales, production, maintenance: 0});
+      }
     }
+    return window.HFV2DayCycle?.aggregateDailyCycleSummaries?.(summaries) || summaries[summaries.length - 1] || null;
   }
 
   function advanceMinutes(minutes, options = {}) {
