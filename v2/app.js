@@ -140,7 +140,33 @@
     const total = rows.reduce((sum, row) => sum + row.dailyKg, 0);
     const inventory = window.HFV2Goods?.getCityInventory?.(city.id) || {};
     const showAllButton = isFilterHidingGoods ? `<button class="hf-v2-demand-show-all" type="button" data-action="show-all-demand-goods">Alle Waren anzeigen</button>` : '';
-    return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">${title}</h3></div><strong>${formatDailyKg(total)}</strong></div>${showAllButton}${rows.length ? `<div class="hf-v2-demand-compact-grid">${rows.map(row => { const inventoryKg = Math.max(0, Number(inventory[row.good.id]) || 0); const coverage = row.dailyKg > 0 ? Math.min(100, inventoryKg / row.dailyKg * 100) : 100; const salePrice = window.HFV2Goods?.salePriceForCity?.(city, row.good.id) ?? (Number(row.good.price) || 0); return `<article class="hf-v2-demand-tile"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-tile__body"><b>${escapeHtml(row.good.name)}</b><strong>${formatDailyKg(row.dailyKg)}</strong><div class="hf-v2-demand-price"><small>Verkaufspreis</small><b>${formatCurrency(salePrice)}/kg</b></div><span class="hf-v2-demand-tile__bar"><i style="width:${coverage}%"></i></span></div></article>`; }).join('')}</div>` : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
+    return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">${title}</h3></div><strong>${formatDailyKg(total)}</strong></div>${showAllButton}${rows.length ? `<div class="hf-v2-demand-compact-grid">${rows.map(row => { const inventoryKg = Math.max(0, Number(inventory[row.good.id]) || 0); const coverage = row.dailyKg > 0 ? Math.min(100, inventoryKg / row.dailyKg * 100) : 100; const salePrice = window.HFV2Goods?.salePriceForCity?.(city, row.good.id) ?? (Number(row.good.price) || 0); const orderLabel = `Ware ${row.good.name} für Stadt ${city.name} bestellen`; return `<button class="hf-v2-demand-tile hf-v2-demand-tile--button" type="button" data-action="open-good-order" data-city-id="${escapeHtml(city.id)}" data-good-id="${escapeHtml(row.good.id)}" aria-label="${escapeHtml(orderLabel)}"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-tile__body"><b>${escapeHtml(row.good.name)}</b><strong>${formatDailyKg(row.dailyKg)}</strong><div class="hf-v2-demand-price"><small>Verkaufspreis</small><b>${formatCurrency(salePrice)}/kg</b></div><span class="hf-v2-demand-tile__bar"><i style="width:${coverage}%"></i></span></div></button>`; }).join('')}</div>` : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
+  }
+
+  function sourceCitiesForGood(goodId, targetCityId) {
+    const state = window.HFV2Factories?.getState?.() || {};
+    const cityFactories = state.cityFactories || {};
+    return Object.entries(cityFactories).map(([cityId, factoryIds]) => {
+      const producesGood = (Array.isArray(factoryIds) ? factoryIds : []).some(factoryId => {
+        const factory = factoryById(factoryId);
+        return factory && factoryRecipeOptions(factory).some(recipe => Number(recipe.outputs?.[goodId]) > 0);
+      });
+      const inventoryKg = Math.max(0, Number(window.HFV2Goods?.getCityInventory?.(cityId)?.[goodId]) || 0);
+      if (!producesGood && inventoryKg <= 0 && cityId !== targetCityId) return null;
+      const city = window.HFV2CitiesById?.[cityId];
+      return city ? {city, producesGood, inventoryKg} : null;
+    }).filter(Boolean).sort((a, b) => a.city.name.localeCompare(b.city.name, 'de-CH'));
+  }
+
+  function renderGoodOrderModal(cityId, goodId) {
+    const city = window.HFV2CitiesById?.[cityId];
+    const good = goodById(goodId);
+    if (!city) return '<p class="hf-v2-muted">Stadt nicht gefunden.</p>';
+    const demandMap = window.HFV2Goods?.getCityDailyDemandMap?.(cityId) || {};
+    const dailyKg = Math.max(0, Number(demandMap[goodId]) || 0);
+    const sources = sourceCitiesForGood(goodId, cityId);
+    const sourceOptions = sources.length ? sources.map(source => `<label class="hf-v2-order-source"><input type="radio" name="hfV2OrderSource" value="${escapeHtml(source.city.id)}"><span><b>${escapeHtml(source.city.name)}</b><small>${source.producesGood ? 'Produktion verfügbar' : 'Nur Lagerbestand'} · ${formatGoodAmount(goodId, source.inventoryKg)} im Lager</small></span></label>`).join('') : '<p class="hf-v2-muted">Keine passende Quelle mit Produktion oder Lagerbestand gefunden.</p>';
+    return `<div class="hf-v2-order-modal" data-order-city-id="${escapeHtml(city.id)}" data-order-good-id="${escapeHtml(good.id)}"><div class="hf-v2-order-hero"><div class="hf-v2-demand-icon">${goodIcon(good)}</div><div><p class="hf-v2-kicker">Nachfrageware bestellen</p><h3>${escapeHtml(good.name)}</h3><p>${escapeHtml(city.name)}</p></div></div><div class="hf-v2-order-stats"><span><small>Tagesbedarf</small><b>${formatGoodAmount(goodId, dailyKg)}</b></span><span><small>Ziel täglich</small><b>${formatGoodAmount(goodId, dailyKg)}</b></span><span><small>Ziel wöchentlich</small><b>${formatGoodAmount(goodId, dailyKg * 7)}</b></span></div><section><h4>Quelle wählen</h4><div class="hf-v2-order-source-list">${sourceOptions}</div></section><section><h4>Frequenz</h4><div class="hf-v2-order-frequency"><label><input type="radio" name="hfV2OrderFrequency" value="daily" checked> Täglich · ${formatGoodAmount(goodId, dailyKg)}</label><label><input type="radio" name="hfV2OrderFrequency" value="weekly"> Wöchentlich · ${formatGoodAmount(goodId, dailyKg * 7)}</label></div></section><label class="hf-v2-order-field"><span>Lieferzeit</span><select name="hfV2OrderLeadTime"><option value="next-day">Nächster Tag</option><option value="two-days">2 Tage</option><option value="same-week">Diese Woche</option></select></label></div>`;
   }
 
 
@@ -521,6 +547,22 @@
 
   function bindDemandControls() {
     document.addEventListener('click', event => {
+      const orderButton = event.target.closest?.('[data-action="open-good-order"]');
+      if (orderButton) {
+        event.preventDefault();
+        const {cityId, goodId} = orderButton.dataset;
+        const city = window.HFV2CitiesById?.[cityId];
+        const good = goodById(goodId);
+        if (!city || !good || !window.HFV2Modal?.openModal) return;
+        window.HFV2Modal.openModal({
+          className: 'hf-v2-order-modal-shell',
+          title: `${good.name} bestellen`,
+          subtitle: city.name,
+          bodyHtml: renderGoodOrderModal(city.id, good.id),
+        });
+        return;
+      }
+
       const button = event.target.closest?.('[data-action="show-all-demand-goods"]');
       if (!button || !selectedId) return;
       showAllDemandGoodsByCityId[selectedId] = true;
