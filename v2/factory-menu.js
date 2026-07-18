@@ -86,6 +86,7 @@
     const reasons = {
       'unknown-city': 'Stadt nicht gefunden',
       'unknown-factory': 'Betrieb nicht gefunden',
+      'city-locked': 'Stadt ist noch nicht ans Netz angebunden',
       'no-free-slots': 'Keine freien Bauplätze',
       'not-enough-cash': 'Nicht genug Kapital',
       'tier-too-low': `Stadt benötigt mindestens Stufe ${Number(result?.minTier) || 1}`,
@@ -172,7 +173,7 @@
           <span>Kapital</span><strong>${formatMoney(cash)}</strong>
           <span>Bauplätze</span><strong>${usedSlots.toLocaleString('de-CH')} / ${slots.toLocaleString('de-CH')}</strong>
         </div>
-        <p class="hf-v2-fleet-hint">Wähle einen Betrieb aus dem Katalog. Baukosten werden vom gemeinsamen V2-Kapital abgezogen.</p>
+        <p class="hf-v2-fleet-hint">Wähle einen Betrieb aus dem Katalog. Betriebe können erst nach dem Netzanschluss der Stadt gebaut werden; Baukosten werden vom gemeinsamen V2-Kapital abgezogen.</p>
         <section class="hf-v2-factory-group" aria-label="Bereits gebaute Betriebe">
           <div class="hf-v2-fleet-card__head">
             <span>
