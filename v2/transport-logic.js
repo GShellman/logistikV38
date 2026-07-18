@@ -1,0 +1,241 @@
+(() => {
+  'use strict';
+
+  const KG_PER_TONNE = 1000;
+  const SCHEDULE_HORIZON_DAYS = 14;
+  const DEFAULT_DEPARTURE_MINUTE = 8 * 60;
+  const STATUS = Object.freeze({PLANNED: 'planned', COMPLETED: 'completed', PARTIAL: 'partial', BLOCKED: 'blocked', FAILED: 'failed'});
+
+  function ordersState() {
+    return window.HFV2Orders?.getState?.() || window.HFV2Save?.getState?.().orders || {orders: [], deliveries: [], nextDeliveryId: 1};
+  }
+
+  function normalizeInteger(value, fallback, min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return fallback;
+    const integer = Math.trunc(numeric);
+    return integer >= min && integer <= max ? integer : fallback;
+  }
+
+  function normalizeNonNegative(value) {
+    return Math.max(0, Number(value) || 0);
+  }
+
+  function absoluteMinute(day, minute) {
+    return (Math.max(1, normalizeInteger(day, 1, 1)) - 1) * 1440 + normalizeInteger(minute, 0, 0, 1439);
+  }
+
+  function timeAbsoluteMinute(time) {
+    const current = time || window.HFV2Time?.getState?.() || window.HFV2Save?.getState?.().time || {day: 1, hour: 8, minute: 0};
+    return absoluteMinute(current.day, (normalizeInteger(current.hour, 0, 0, 23) * 60) + normalizeInteger(current.minute, 0, 0, 59));
+  }
+
+  function createDeliveryId(state) {
+    const next = Math.max(1, normalizeInteger(state.nextDeliveryId, 1, 1));
+    state.nextDeliveryId = next + 1;
+    return `delivery-${next}`;
+  }
+
+  function statusMessage(delivery, message) {
+    delivery.message = message;
+    delivery.statusMessage = message;
+    delivery.updatedAtMinute = timeAbsoluteMinute();
+    return delivery;
+  }
+
+  function dispatch(reason) {
+    window.HFV2Save?.dispatchStateChanged?.(reason || 'transport-updated');
+  }
+
+  function vehicleCatalog() {
+    return window.HFVehicleCatalog?.VEHICLE_CATALOG || window.HFFleet?.VEHICLES || {};
+  }
+
+  function normalizeVehicleCapacityKg(vehicle) {
+    const rawLoad = Number(vehicle?.load);
+    if (!Number.isFinite(rawLoad) || rawLoad <= 0) return 0;
+    // Catalog policy: loads up to 100 are tonnes (e.g. van=2 => 2 t), larger loads are already kg (tipper=16000).
+    return rawLoad <= 100 ? Math.round(rawLoad * KG_PER_TONNE) : Math.round(rawLoad);
+  }
+
+  function pathForVehicle(sourceCityId, destinationCityId, vehicleType) {
+    const vehicle = vehicleCatalog()[vehicleType];
+    const mode = vehicle?.mode || null;
+    if (sourceCityId === destinationCityId) return {reachable: true, nodes: [sourceCityId], edges: [], distance: 0, duration: 0};
+    return window.HFNetwork?.findPath?.(sourceCityId, destinationCityId, mode ? {mode} : {}) || null;
+  }
+
+  function routeMinutes(path, vehicle) {
+    const distance = normalizeNonNegative(path?.distance);
+    const networkHours = normalizeNonNegative(path?.duration);
+    const byVehicleHours = distance > 0 ? distance / Math.max(1, Number(vehicle?.speed) || 1) : 0;
+    return Math.max(1, Math.ceil(Math.max(networkHours, byVehicleHours) * 60));
+  }
+
+  function roundTripMinutes(path, vehicle) {
+    return routeMinutes(path, vehicle) * 2;
+  }
+
+  function transportCost(path, vehicle, quantityKg) {
+    const distance = normalizeNonNegative(path?.distance);
+    const kmCost = Math.max(0, Number(vehicle?.kmCost) || 0);
+    const handlingCost = Math.ceil(normalizeNonNegative(quantityKg) / 1000) * 2;
+    return Math.round((distance * kmCost) + handlingCost);
+  }
+
+  function deliveryTripCount(delivery) {
+    return Math.max(1, Math.ceil(normalizeNonNegative(delivery.quantityKg) / Math.max(1, normalizeNonNegative(delivery.vehicleCapacityKg))));
+  }
+
+  function vehicleBusyCount(vehicleType, scheduledAbsMinute, durationMinutes) {
+    const state = ordersState();
+    const start = scheduledAbsMinute;
+    const end = start + Math.max(1, normalizeInteger(durationMinutes, 1, 1));
+    return (state.deliveries || []).filter(delivery => {
+      if (delivery.status !== STATUS.PLANNED || delivery.vehicleType !== vehicleType) return false;
+      const otherStart = absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute);
+      const otherEnd = otherStart + Math.max(1, normalizeInteger(delivery.roundTripMinutes, delivery.durationMinutes, 1));
+      return start < otherEnd && otherStart < end;
+    }).length;
+  }
+
+  function chooseVehicle(sourceCityId, destinationCityId, quantityKg, scheduledDay, scheduledMinute) {
+    const fleet = window.HFFleet?.getCityFleet?.(sourceCityId) || {};
+    const catalog = vehicleCatalog();
+    const candidates = Object.keys(fleet).map(vehicleType => {
+      const owned = Math.max(0, Math.floor(Number(fleet[vehicleType]) || 0));
+      const vehicle = catalog[vehicleType];
+      const capacityKg = normalizeVehicleCapacityKg(vehicle);
+      const path = owned > 0 && capacityKg > 0 ? pathForVehicle(sourceCityId, destinationCityId, vehicleType) : null;
+      if (!owned || !vehicle || !capacityKg || path?.reachable !== true) return null;
+      const trips = Math.max(1, Math.ceil(normalizeNonNegative(quantityKg) / capacityKg));
+      const duration = roundTripMinutes(path, vehicle);
+      const busy = vehicleBusyCount(vehicleType, absoluteMinute(scheduledDay, scheduledMinute), duration);
+      return {vehicleType, vehicle, owned, capacityKg, path, trips, duration, available: Math.max(0, owned - busy)};
+    }).filter(Boolean).filter(candidate => candidate.available > 0);
+    candidates.sort((a, b) => a.trips - b.trips || b.capacityKg - a.capacityKg || transportCost(a.path, a.vehicle, quantityKg) - transportCost(b.path, b.vehicle, quantityKg));
+    return candidates[0] || null;
+  }
+
+  function sourceCityIdForOrder(order) {
+    const explicit = String(order.sourceCityId || (order.sourceType === 'city' ? order.sourceId : '') || '').trim();
+    if (explicit) return explicit;
+    return window.HFV2Orders?.sourceCandidates?.(order.destinationCityId, order.goodId)?.find(candidate => candidate.transportReady)?.sourceCityId || '';
+  }
+
+  function hasScheduledDelivery(orderId, scheduledDay, scheduledMinute) {
+    return (ordersState().deliveries || []).some(delivery => delivery.orderId === orderId && normalizeInteger(delivery.scheduledDay ?? delivery.deliveryDay, 0) === scheduledDay && normalizeInteger(delivery.scheduledMinute ?? delivery.deliveryMinute, -1) === scheduledMinute && delivery.status !== 'cancelled');
+  }
+
+  function deliveryQuantityForOrder(order) {
+    const daily = normalizeNonNegative(order.dailyDemandKg || order.quantityKg);
+    return order.frequency === 'weekly' ? daily * 7 : normalizeNonNegative(order.quantityKg || daily);
+  }
+
+  function scheduledDatesForOrder(order, fromDay, toDay) {
+    const startDay = Math.max(1, normalizeInteger(order.deliveryDay, 1, 1));
+    const minute = normalizeInteger(order.deliveryMinute ?? order.scheduledMinute, DEFAULT_DEPARTURE_MINUTE, 0, 1439);
+    const out = [];
+    if (order.frequency === 'once') {
+      if (startDay >= fromDay && startDay <= toDay) out.push({day: startDay, minute});
+      return out;
+    }
+    if (order.frequency === 'weekly') {
+      const weekday = normalizeInteger(order.deliveryWeekday ?? order.weekday ?? ((startDay - 1) % 7), (startDay - 1) % 7, 0, 6);
+      for (let day = Math.max(fromDay, startDay); day <= toDay; day += 1) if ((day - 1) % 7 === weekday) out.push({day, minute});
+      return out;
+    }
+    for (let day = Math.max(fromDay, startDay); day <= toDay; day += 1) out.push({day, minute});
+    return out;
+  }
+
+  function createPlannedDelivery(order, day, minute) {
+    const state = ordersState();
+    const sourceCityId = sourceCityIdForOrder(order);
+    const quantityKg = deliveryQuantityForOrder(order);
+    const delivery = {
+      id: createDeliveryId(state),
+      orderId: order.id,
+      sourceCityId,
+      destinationCityId: order.destinationCityId,
+      goodId: order.goodId,
+      quantityKg,
+      scheduledDay: day,
+      scheduledMinute: minute,
+      deliveryDay: day,
+      deliveryMinute: minute,
+      vehicleType: '',
+      tripIndex: 1,
+      status: STATUS.PLANNED,
+    };
+    if (!sourceCityId) return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine Lieferquelle gefunden.');
+    const chosen = chooseVehicle(sourceCityId, order.destinationCityId, quantityKg, day, minute);
+    if (!chosen) return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.');
+    Object.assign(delivery, {
+      vehicleType: chosen.vehicleType,
+      vehicleCapacityKg: chosen.capacityKg,
+      tripCount: chosen.trips,
+      roundTripMinutes: chosen.duration,
+      distanceKm: chosen.path.distance,
+      transportCost: transportCost(chosen.path, chosen.vehicle, quantityKg),
+      status: STATUS.PLANNED,
+    });
+    return statusMessage(delivery, chosen.trips > 1 ? `In ${chosen.trips} Fahrten geplant.` : 'Lieferung geplant.');
+  }
+
+  function generatePlannedDeliveries(fromTime, toTime) {
+    const state = ordersState();
+    state.deliveries = Array.isArray(state.deliveries) ? state.deliveries : [];
+    const fromAbs = timeAbsoluteMinute(fromTime);
+    const toAbs = timeAbsoluteMinute(toTime) + SCHEDULE_HORIZON_DAYS * 1440;
+    const fromDay = Math.max(1, Math.floor(fromAbs / 1440) + 1);
+    const toDay = Math.max(fromDay, Math.floor(toAbs / 1440) + 1);
+    let created = 0;
+    for (const order of state.orders || []) {
+      if (!order || order.status !== 'active') continue;
+      for (const slot of scheduledDatesForOrder(order, fromDay, toDay)) {
+        if (hasScheduledDelivery(order.id, slot.day, slot.minute)) continue;
+        state.deliveries.push(createPlannedDelivery(order, slot.day, slot.minute));
+        created += 1;
+      }
+    }
+    if (created) dispatch('transport-scheduled');
+    return created;
+  }
+
+  function completeDelivery(delivery) {
+    if (!delivery.sourceCityId) return Object.assign(delivery, {status: STATUS.BLOCKED}, statusMessage(delivery, 'Keine Quelle hinterlegt.'));
+    const requestedKg = normalizeNonNegative(delivery.quantityKg);
+    const removal = window.HFV2Goods?.removeFromInventory?.(delivery.sourceCityId, delivery.goodId, requestedKg);
+    const removedKg = normalizeNonNegative(removal?.removedKg ?? removal);
+    if (removedKg <= 0) return Object.assign(delivery, {status: STATUS.BLOCKED}, statusMessage(delivery, 'Keine Ware in der Quelle verfügbar.'));
+    const addition = window.HFV2Goods?.addToInventory?.(delivery.destinationCityId, delivery.goodId, removedKg);
+    const addedKg = normalizeNonNegative(addition?.addedKg ?? addition ?? removedKg);
+    if (addedKg + 0.001 < removedKg) statusMessage(delivery, `Ziellager begrenzt: ${Math.round(addedKg)} von ${Math.round(removedKg)} kg eingelagert.`);
+    const bookedCost = Math.round(normalizeNonNegative(delivery.transportCost) * (removedKg / Math.max(1, requestedKg)));
+    if (bookedCost > 0) window.HFV2Save?.changeCash?.(-bookedCost, 'goods-delivery');
+    delivery.deliveredKg = normalizeNonNegative(delivery.deliveredKg) + addedKg;
+    delivery.bookedCost = normalizeNonNegative(delivery.bookedCost) + bookedCost;
+    delivery.status = addedKg + 0.001 < requestedKg ? STATUS.PARTIAL : STATUS.COMPLETED;
+    return statusMessage(delivery, delivery.status === STATUS.PARTIAL ? `Teillieferung: ${Math.round(addedKg)} von ${Math.round(requestedKg)} kg geliefert.` : `Geliefert: ${Math.round(addedKg)} kg.`);
+  }
+
+  function processDueDeliveries(timeBefore, timeAfter) {
+    const state = ordersState();
+    generatePlannedDeliveries(timeBefore, timeAfter);
+    const beforeAbs = timeAbsoluteMinute(timeBefore);
+    const afterAbs = timeAbsoluteMinute(timeAfter);
+    let processed = 0;
+    for (const delivery of state.deliveries || []) {
+      if (delivery.status !== STATUS.PLANNED) continue;
+      const dueAbs = absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute);
+      if (dueAbs <= beforeAbs || dueAbs > afterAbs) continue;
+      completeDelivery(delivery);
+      processed += 1;
+    }
+    if (processed) dispatch('transport-processed');
+    return {processed, deliveries: state.deliveries};
+  }
+
+  window.HFV2Transport = {STATUS, normalizeVehicleCapacityKg, generatePlannedDeliveries, processDueDeliveries, completeDelivery};
+})();

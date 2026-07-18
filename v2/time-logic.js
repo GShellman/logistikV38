@@ -72,6 +72,7 @@
     const time = getState();
     if (amount <= 0) return time;
 
+    const before = {...time};
     const totalMinutes = time.hour * 60 + time.minute + amount;
     const elapsedDays = Math.floor(totalMinutes / 1440);
     const dayMinute = totalMinutes % 1440;
@@ -81,6 +82,7 @@
     time.minute = dayMinute % 60;
 
     if (elapsedDays > 0) runMidnightCallbacks(elapsedDays);
+    window.HFV2Transport?.processDueDeliveries?.(before, {...time});
     dispatchTimeAdvanced(options);
     return time;
   }
