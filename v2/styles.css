@@ -251,7 +251,8 @@ h2 { font-size: 24px; }
   gap: 8px;
 }
 
-.hf-v2-order-field select {
+.hf-v2-order-field select,
+.hf-v2-order-field input {
   background: #f8fafc;
   border: 1px solid #dce5ee;
   border-radius: 10px;
