@@ -90,6 +90,66 @@
     return Math.max(DEFAULT_CITY_CAPACITY_KG, (TIER_CAPACITY_KG[tier] || DEFAULT_CITY_CAPACITY_KG) + (slots * 5000));
   }
 
+  function getCityDailyDemandMap(cityId) {
+    const id = assertCityId(cityId);
+    const city = citiesById[id] || window.HFV2CitiesById?.[id] || null;
+    if (!city) return {};
+    const goods = window.HF_GOODS_DATABASE?.goods || {};
+    const demandGoodIds = Object.keys(goods).filter(goodId => goods[goodId]?.demand?.enabled === true);
+    const catalogGoodIds = (window.HFV2GoodsCatalog || []).filter(good => good?.demand?.enabled === true).map(good => good.id);
+    const goodIds = Array.from(new Set([...demandGoodIds, ...catalogGoodIds])).filter(Boolean);
+    const demandMap = {};
+    for (const goodId of goodIds) {
+      const kg = Math.max(0, Number(dailyDemandKgForCity(city, goodId)) || 0);
+      if (kg > 0) demandMap[String(goodId)] = kg;
+    }
+    return demandMap;
+  }
+
+  function addOrderedDemandEntry(demandMap, cityId, entry) {
+    if (!entry || typeof entry !== 'object') return;
+    const status = String(entry.status || entry.state || '').toLowerCase();
+    if (status && ['done', 'complete', 'completed', 'delivered', 'cancelled', 'canceled', 'closed'].includes(status)) return;
+    const destinationId = String(entry.destinationCityId || entry.destinationId || entry.toCityId || entry.cityId || '').trim();
+    if (destinationId !== cityId) return;
+    const goodId = String(entry.goodId || entry.good || entry.goodsId || '').trim();
+    if (!goodId) return;
+    const orderedKg = Number(entry.remainingKg ?? entry.openKg ?? entry.pendingKg ?? entry.kg ?? entry.amountKg ?? entry.quantityKg ?? 0) || 0;
+    const deliveredKg = Number(entry.deliveredKg ?? entry.fulfilledKg ?? 0) || 0;
+    const kg = Math.max(0, orderedKg - deliveredKg);
+    if (kg > 0) demandMap[goodId] = (Number(demandMap[goodId]) || 0) + kg;
+  }
+
+  function getCityOrderedDemandMap(cityId) {
+    const id = assertCityId(cityId);
+    const orderApi = window.HFV2Orders || window.HFV2DeliveryOrders || window.HFV2Deliveries;
+    const orderState = orderApi?.getState?.() || orderApi?.state || null;
+    if (!orderState || typeof orderState !== 'object') return {};
+    const demandMap = {};
+    const collections = [
+      orderState.orders,
+      orderState.openOrders,
+      orderState.deliveryOrders,
+      orderState.deliveries,
+      orderState.cityOrders?.[id],
+    ];
+    for (const collection of collections) {
+      if (Array.isArray(collection)) collection.forEach(entry => addOrderedDemandEntry(demandMap, id, entry));
+      else if (collection && typeof collection === 'object') Object.values(collection).forEach(entry => addOrderedDemandEntry(demandMap, id, entry));
+    }
+    return demandMap;
+  }
+
+  function mergeDemandMaps(...maps) {
+    const merged = {};
+    for (const map of maps) {
+      for (const [goodId, rawKg] of Object.entries(map || {})) {
+        const kg = Math.max(0, Number(rawKg) || 0);
+        if (kg > 0) merged[String(goodId)] = (Number(merged[String(goodId)]) || 0) + kg;
+      }
+    }
+    return merged;
+  }
 
 
   function clamp(value, min, max) {
@@ -210,9 +270,44 @@
     return Object.entries(inputs).every(([goodId, kg]) => (Number(inventory[goodId]) || 0) >= kg);
   }
 
+  function recipeOptions(factory) {
+    const recipes = Array.isArray(factory?.recipes) ? factory.recipes : [];
+    if (recipes.length) return recipes.map(recipe => ({
+      id: recipe.id || factory.id,
+      inputs: normalizeRecipeMap(recipe.inputs),
+      outputs: normalizeRecipeMap(recipe.outputs ?? recipe.output),
+    }));
+    return [{id: factory?.id, inputs: normalizeRecipeMap(factory?.inputs), outputs: normalizeRecipeMap(factory?.outputs ?? factory?.output)}];
+  }
+
+  function recipeMissingKg(recipe, missingMap) {
+    return Object.entries(recipe.outputs || {}).reduce((sum, [goodId, kg]) => sum + Math.min(Number(kg) || 0, Math.max(0, Number(missingMap[goodId]) || 0)), 0);
+  }
+
+  function maxInputScale(cityId, inputs) {
+    const inventory = ensureCityInventory(cityId);
+    let scale = Infinity;
+    for (const [goodId, kg] of Object.entries(inputs || {})) {
+      const required = Number(kg) || 0;
+      if (required <= 0) continue;
+      scale = Math.min(scale, (Number(inventory[goodId]) || 0) / required);
+    }
+    return scale === Infinity ? 1 : Math.max(0, scale);
+  }
+
+  function maxDemandScale(outputs, missingMap) {
+    let scale = Infinity;
+    for (const [goodId, kg] of Object.entries(outputs || {})) {
+      const outputKg = Number(kg) || 0;
+      if (outputKg <= 0) continue;
+      scale = Math.min(scale, Math.max(0, Number(missingMap[goodId]) || 0) / outputKg);
+    }
+    return scale === Infinity ? 0 : Math.max(0, scale);
+  }
+
   function runDailyProduction() {
     configure();
-    const summary = {madeKg: 0, blocked: 0, factories: 0};
+    const summary = {madeKg: 0, blocked: 0, factories: 0, demandLimited: 0, capacityLimited: 0};
     const factoryApi = window.HFV2Factories;
     if (!factoryApi?.getCityFactories) return summary;
 
@@ -223,25 +318,59 @@
     ]);
 
     for (const cityId of cityIds) {
+      const targetDemand = mergeDemandMaps(getCityDailyDemandMap(cityId), getCityOrderedDemandMap(cityId));
+      const inventory = ensureCityInventory(cityId);
+      const missingMap = {};
+      for (const [goodId, targetKg] of Object.entries(targetDemand)) {
+        const missingKg = Math.max(0, (Number(targetKg) || 0) - (Number(inventory[goodId]) || 0));
+        if (missingKg > 0) missingMap[goodId] = missingKg;
+      }
+
       const builtFactories = factoryApi.getCityFactories(cityId);
       for (const factoryId of builtFactories) {
         const factory = factoryDefinition(factoryId);
-        const inputs = normalizeRecipeMap(factory?.inputs);
-        const outputs = normalizeRecipeMap(factory?.outputs ?? factory?.output);
         summary.factories += 1;
-
-        if (!factory || !Object.keys(outputs).length) continue;
-        if (Object.keys(inputs).length && !hasEnoughInputs(cityId, inputs)) {
+        if (!factory) {
           summary.blocked += 1;
           continue;
         }
 
-        for (const [goodId, kg] of Object.entries(inputs)) {
-          removeFromInventory(cityId, goodId, kg);
+        const recipes = recipeOptions(factory)
+          .filter(recipe => Object.keys(recipe.outputs).length && recipeMissingKg(recipe, missingMap) > 0)
+          .sort((a, b) => recipeMissingKg(b, missingMap) - recipeMissingKg(a, missingMap));
+        const recipe = recipes[0] || null;
+        if (!recipe) {
+          summary.blocked += 1;
+          summary.demandLimited += 1;
+          continue;
         }
-        for (const [goodId, kg] of Object.entries(outputs)) {
-          const result = addToInventory(cityId, goodId, kg);
-          summary.madeKg += Number(result.addedKg) || 0;
+
+        const demandScale = Math.min(1, maxDemandScale(recipe.outputs, missingMap));
+        const outputKgPerCycle = Object.values(recipe.outputs).reduce((sum, kg) => sum + (Number(kg) || 0), 0);
+        const freeCapacityKg = Math.max(0, getCapacityKg(cityId) - getUsedCapacityKg(cityId));
+        const capacityScale = outputKgPerCycle > 0 ? Math.min(1, freeCapacityKg / outputKgPerCycle) : 0;
+        const inputScale = Math.min(1, maxInputScale(cityId, recipe.inputs));
+        const scale = Math.min(demandScale, capacityScale, inputScale);
+
+        if (scale <= 0) {
+          summary.blocked += 1;
+          if (demandScale <= 0) summary.demandLimited += 1;
+          if (capacityScale <= 0) summary.capacityLimited += 1;
+          continue;
+        }
+        if (inputScale < Math.min(demandScale, capacityScale)) summary.blocked += 1;
+        if (demandScale < 1) summary.demandLimited += 1;
+        if (capacityScale < Math.min(1, demandScale)) summary.capacityLimited += 1;
+
+        for (const [goodId, kg] of Object.entries(recipe.inputs)) {
+          removeFromInventory(cityId, goodId, (Number(kg) || 0) * scale);
+        }
+        for (const [goodId, kg] of Object.entries(recipe.outputs)) {
+          const requestedKg = (Number(kg) || 0) * scale;
+          const result = addToInventory(cityId, goodId, requestedKg);
+          const addedKg = Number(result.addedKg) || 0;
+          summary.madeKg += addedKg;
+          missingMap[goodId] = Math.max(0, (Number(missingMap[goodId]) || 0) - addedKg);
         }
       }
     }
@@ -253,5 +382,5 @@
     return summary;
   }
 
-  window.HFV2Goods = {createGoodsState, configure, getState, ensureCityInventory, getCityInventory, addToInventory, removeFromInventory, getUsedCapacityKg, getCapacityKg, salePriceForCity, estimateDeliveryProfit, runDailyProduction};
+  window.HFV2Goods = {createGoodsState, configure, getState, ensureCityInventory, getCityInventory, addToInventory, removeFromInventory, getUsedCapacityKg, getCapacityKg, salePriceForCity, estimateDeliveryProfit, getCityDailyDemandMap, getCityOrderedDemandMap, mergeDemandMaps, runDailyProduction};
 })();
