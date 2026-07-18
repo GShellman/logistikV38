@@ -862,11 +862,48 @@ code {
   .hf-v2-factory-grid { grid-template-columns: 1fr; }
 }
 
+.hf-v2-time-card {
+  display: grid;
+  gap: 16px;
+}
+
+.hf-v2-time-card__head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.hf-v2-time-clock {
+  background: linear-gradient(135deg, #e9f6ef, #ddebf7);
+  border: 1px solid rgba(31, 95, 143, .16);
+  border-radius: 999px;
+  color: var(--hf-primary);
+  font-size: 14px;
+  font-weight: 900;
+  padding: 8px 12px;
+}
+
+.hf-v2-time-actions,
 .hf-v2-save-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 16px;
+}
+
+.hf-v2-time-actions { margin-top: 0; }
+
+.hf-v2-time-status {
+  background: #f6f8fb;
+  border: 1px solid rgba(202, 213, 226, .82);
+  border-radius: 14px;
+  color: var(--hf-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+  padding: 10px 12px;
 }
 
 .hf-v2-save-button {
