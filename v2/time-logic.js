@@ -49,6 +49,13 @@
     window.HFV2Save?.dispatchStateChanged?.(reason);
   }
 
+  function runMidnightCallbacks(days) {
+    const count = Math.max(0, Math.trunc(Number(days) || 0));
+    for (let index = 0; index < count; index += 1) {
+      window.HFV2Goods?.runDailyProduction?.();
+    }
+  }
+
   function advanceMinutes(minutes, options = {}) {
     const amount = Math.max(0, Math.trunc(Number(minutes) || 0));
     const time = getState();
@@ -62,6 +69,7 @@
     time.hour = Math.floor(dayMinute / 60);
     time.minute = dayMinute % 60;
 
+    if (elapsedDays > 0) runMidnightCallbacks(elapsedDays);
     dispatchTimeAdvanced(options);
     return time;
   }
