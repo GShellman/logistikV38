@@ -9,6 +9,7 @@
   let map = null;
   let savePackage = null;
   let networkState = null;
+  let liveTimer = null;
   let citiesById = {};
   const markerById = new Map();
 
@@ -291,6 +292,11 @@
     if (status) status.textContent = message;
   }
 
+  function setTimeStatus(message) {
+    const status = document.getElementById('hfV2TimeStatus');
+    if (status) status.textContent = message;
+  }
+
   function renderClock() {
     const clock = document.getElementById('hfV2Clock');
     if (clock) clock.textContent = window.HFV2Time?.formatClock?.() || 'Tag 1 · 08:00';
@@ -330,12 +336,54 @@
   function updateAdvanceStatus(label, summary) {
     renderClock();
     refreshSelectedCity();
-    setSaveStatus(`${label}: ${window.HFV2Time?.formatClock?.() || ''}. ${productionSummaryText(summary)}`);
+    const message = `${label}: ${window.HFV2Time?.formatClock?.() || ''}. ${productionSummaryText(summary)}`;
+    setSaveStatus(message);
+    setTimeStatus(message);
+  }
+
+  function renderLiveButton() {
+    const liveButton = document.getElementById('hfV2LiveButton');
+    if (!liveButton) return;
+    const isLive = Boolean(liveTimer);
+    liveButton.classList.toggle('is-live', isLive);
+    liveButton.setAttribute('aria-pressed', String(isLive));
+    liveButton.textContent = isLive ? '⏸ Pause' : '▶ Live';
+  }
+
+  function stopLiveTime(message = '') {
+    if (liveTimer) {
+      window.clearInterval(liveTimer);
+      liveTimer = null;
+    }
+    renderLiveButton();
+    if (message) setTimeStatus(message);
+  }
+
+  function liveTick() {
+    const result = runWithProductionSummary(() => window.HFV2Time?.advanceMinutes?.(1, {reason: 'time-live'}));
+    renderClock();
+    refreshSelectedCity();
+    const message = `Live läuft: ${window.HFV2Time?.formatClock?.() || ''}. ${productionSummaryText(result.summary)}`;
+    setTimeStatus(message);
+    if (result.summary) setSaveStatus(message);
+  }
+
+  function toggleLiveTime() {
+    if (liveTimer) {
+      stopLiveTime(`Live pausiert: ${window.HFV2Time?.formatClock?.() || ''}.`);
+      return;
+    }
+    liveTimer = window.setInterval(liveTick, 1000);
+    renderLiveButton();
+    setTimeStatus('Live läuft: 1 Spielminute pro Sekunde.');
   }
 
   function bindTimeControls() {
+    const liveButton = document.getElementById('hfV2LiveButton');
     const nextHourButton = document.getElementById('hfV2NextHourButton');
     const nextDayButton = document.getElementById('hfV2NextDayButton');
+
+    liveButton?.addEventListener('click', toggleLiveTime);
 
     nextHourButton?.addEventListener('click', () => {
       const result = runWithProductionSummary(() => window.HFV2Time?.nextHour?.());
@@ -381,6 +429,7 @@
       if (!file) return;
       try {
         const imported = await window.HFV2Save.importSave(file);
+        stopLiveTime();
         applySavePackage(imported);
         setSaveStatus(`Spielstand vom ${new Date(imported.savedAt).toLocaleString('de-CH')} importiert.`);
       } catch (error) {
@@ -405,6 +454,7 @@
     bindSaveControls();
     bindTimeControls();
     renderClock();
+    renderLiveButton();
     window.addEventListener('hf:network:confirmed', renderCurrentNetworkLines);
     window.addEventListener('hf:v2:state-changed', renderCurrentNetworkLines);
     window.addEventListener('hf:v2:state-changed', renderClock);
