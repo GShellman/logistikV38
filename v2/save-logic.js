@@ -58,6 +58,17 @@
     return {cityInventories: {}, producedGoods: {}, productionCycles: {}, lastProductionAt: null, schemaVersion: 1};
   }
 
+  function defaultTimeState() {
+    return {day: 1, hour: 8, minute: 0};
+  }
+
+  function normalizeTimeUnit(value, fallback, min, max) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return fallback;
+    const integer = Math.trunc(numeric);
+    return integer >= min && integer <= max ? integer : fallback;
+  }
+
   function normalizePackage(savePackage) {
     const source = savePackage && typeof savePackage === 'object' ? savePackage : {};
     const sourceState = source.state && typeof source.state === 'object' ? source.state : {};
@@ -67,6 +78,13 @@
     const factories = {...defaultFactoryState(), ...sourceFactories};
     const sourceGoods = sourceState.goods && typeof sourceState.goods === 'object' && !Array.isArray(sourceState.goods) ? sourceState.goods : {};
     const goods = {...defaultGoodsState(), ...sourceGoods};
+    const sourceTime = sourceState.time && typeof sourceState.time === 'object' && !Array.isArray(sourceState.time) ? sourceState.time : {};
+    const timeDefaults = defaultTimeState();
+    const time = {
+      day: normalizeTimeUnit(sourceTime.day, timeDefaults.day, 1, Number.MAX_SAFE_INTEGER),
+      hour: normalizeTimeUnit(sourceTime.hour, timeDefaults.hour, 0, 23),
+      minute: normalizeTimeUnit(sourceTime.minute, timeDefaults.minute, 0, 59),
+    };
     network.connections = Array.isArray(network.connections) ? network.connections : [];
     network.junctions = Array.isArray(network.junctions) ? network.junctions : [];
     network.cities = network.cities && typeof network.cities === 'object' ? network.cities : {};
@@ -82,18 +100,19 @@
     delete fleet.cash;
     delete factories.cash;
     delete goods.cash;
+    delete time.cash;
     const legacyCash = Number.isFinite(Number(sourceState.cash)) ? Number(sourceState.cash) : Number(sourceState.fleet?.cash ?? sourceState.network?.cash);
     const cash = Number.isFinite(legacyCash) ? legacyCash : STARTING_CASH;
 
     return {
       schemaVersion: SCHEMA_VERSION,
       savedAt: source.savedAt || new Date().toISOString(),
-      state: {cash, network, fleet, factories, goods},
+      state: {cash, network, fleet, factories, goods, time},
     };
   }
 
   function createDefaultState() {
-    return normalizePackage({schemaVersion: SCHEMA_VERSION, state: {network: defaultNetworkState(), fleet: defaultFleetState(), factories: defaultFactoryState(), goods: defaultGoodsState()}});
+    return normalizePackage({schemaVersion: SCHEMA_VERSION, state: {network: defaultNetworkState(), fleet: defaultFleetState(), factories: defaultFactoryState(), goods: defaultGoodsState(), time: defaultTimeState()}});
   }
 
   function serializeState(savePackage = null) {
@@ -101,7 +120,8 @@
     const liveFleet = window.HFFleet?.getState?.();
     const liveFactories = window.HFV2Factories?.getState?.();
     const liveGoods = window.HFV2Goods?.getState?.();
-    const source = savePackage || {state: {network: liveNetwork, fleet: liveFleet, factories: liveFactories || getState().factories, goods: liveGoods || getState().goods, cash: getCash()}};
+    const liveTime = window.HFV2Time?.getState?.();
+    const source = savePackage || {state: {network: liveNetwork, fleet: liveFleet, factories: liveFactories || getState().factories, goods: liveGoods || getState().goods, time: liveTime || getState().time, cash: getCash()}};
     const normalized = normalizePackage(source);
     normalized.savedAt = new Date().toISOString();
     return deepClone(normalized);
@@ -146,5 +166,5 @@
     return hydrateState(parsed);
   }
 
-  window.HFV2Save = {SCHEMA_VERSION, STARTING_CASH, createDefaultState, configureState, getState, getCash, setCash, changeCash, dispatchStateChanged, serializeState, hydrateState, exportSave, importSave};
+  window.HFV2Save = {SCHEMA_VERSION, STARTING_CASH, defaultTimeState, createDefaultState, configureState, getState, getCash, setCash, changeCash, dispatchStateChanged, serializeState, hydrateState, exportSave, importSave};
 })();
