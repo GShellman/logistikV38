@@ -104,6 +104,59 @@ h2 { font-size: 24px; }
   padding: 8px 10px;
 }
 
+
+.hf-v2-demand-compact-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.hf-v2-demand-tile {
+  background: linear-gradient(135deg, rgba(255,255,255,.96), rgba(244,248,252,.9));
+  border: 1px solid rgba(202, 213, 226, .82);
+  border-radius: 14px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  min-width: 0;
+  padding: 8px;
+}
+
+.hf-v2-demand-tile__body {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.hf-v2-demand-tile__body b {
+  font-size: 12px;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hf-v2-demand-tile__body strong {
+  color: var(--hf-primary-2);
+  font-size: 11px;
+  line-height: 1.15;
+}
+
+.hf-v2-demand-tile__bar {
+  background: #dfe5ec;
+  border-radius: 999px;
+  display: block;
+  height: 5px;
+  overflow: hidden;
+}
+
+.hf-v2-demand-tile__bar i {
+  background: linear-gradient(90deg, #3fa66a, #6fcf97);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+}
+
 .hf-v2-demand-list { display: grid; gap: 8px; }
 .hf-v2-demand-row {
   align-items: center;
