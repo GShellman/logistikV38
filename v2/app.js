@@ -428,6 +428,7 @@
     window.HFV2IsCityUnlocked = isCityUnlocked;
     renderMarkers(cities);
     window.HFNetwork?.initNetworkLayer?.(map);
+    window.HFV2TransportMap?.init?.(map);
     if (networkState) {
       window.HFNetwork?.renderNetworkLines?.(networkState.connections, citiesById);
     }
@@ -645,6 +646,7 @@
     window.addEventListener('hf:network:confirmed', refreshNetworkView);
     window.addEventListener('hf:v2:state-changed', refreshNetworkView);
     window.addEventListener('hf:v2:state-changed', renderClock);
+    window.addEventListener('hf:v2:state-changed', () => window.HFV2TransportMap?.refresh?.());
     window.addEventListener('hf:v2:order-created', refreshSelectedCity);
     if (!bootMap(cities)) return;
     const zurich = cities.find(city => city.id === 'zurich');
