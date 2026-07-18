@@ -48,6 +48,10 @@
     return `<div class="hf-v2-fact"><dt>${label}</dt><dd>${value}</dd></div>`;
   }
 
+  function formatCurrency(value) {
+    return `CHF ${Math.max(0, Number(value) || 0).toLocaleString('de-CH', {maximumFractionDigits: 2})}`;
+  }
+
   function formatDailyKg(value) {
     const kg = Math.max(0, Number(value) || 0);
     if (kg >= 1000) return `${(kg / 1000).toLocaleString('de-CH', {maximumFractionDigits: 1})} t/Tag`;
@@ -111,7 +115,7 @@
   function demandPanel(city) {
     const rows = v2DemandRows(city);
     const total = rows.reduce((sum, row) => sum + row.dailyKg, 0);
-    return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">Alle Waren</h3></div><strong>${formatDailyKg(total)}</strong></div>${rows.length ? `<div class="hf-v2-demand-list">${rows.map(row => { const fill = Number(row.demand.max) > 0 ? Math.min(100, Math.max(0, (Number(row.demand.need) || 0) / Number(row.demand.max) * 100)) : 0; return `<article class="hf-v2-demand-row"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-main"><div><b>${escapeHtml(row.good.name)}</b><strong>${formatDailyKg(row.dailyKg)}</strong></div><span><i style="width:${fill}%"></i></span></div></article>`; }).join('')}</div>` : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
+    return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">Alle Waren</h3></div><strong>${formatDailyKg(total)}</strong></div>${rows.length ? `<div class="hf-v2-demand-list">${rows.map(row => { const fill = Number(row.demand.max) > 0 ? Math.min(100, Math.max(0, (Number(row.demand.need) || 0) / Number(row.demand.max) * 100)) : 0; const salePrice = window.HFV2Goods?.salePriceForCity?.(city, row.good.id) ?? (Number(row.good.price) || 0); return `<article class="hf-v2-demand-row"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-main"><div><b>${escapeHtml(row.good.name)}</b><strong>${formatDailyKg(row.dailyKg)}</strong></div><div class="hf-v2-demand-price"><small>Verkaufspreis</small><b>${formatCurrency(salePrice)}/kg</b></div><span><i style="width:${fill}%"></i></span></div></article>`; }).join('')}</div>` : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
   }
 
   function selectedClass(city) {
