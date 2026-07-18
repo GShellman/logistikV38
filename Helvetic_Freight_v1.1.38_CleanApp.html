@@ -425,7 +425,7 @@ function hfCityDemandPopupSection(cityId,s){
   if(!s||s.isDepot)return '';
   const rows=Object.keys(s.demands||{}).filter(g=>GOODS[g]).map(g=>({good:g,demand:s.demands[g],daily:cityDemandDailyAmount(cityId,g,s.demands[g])})).sort((a,b)=>b.daily-a.daily||(GOODS[a.good].name||a.good).localeCompare(GOODS[b.good].name||b.good,'de'));
   const total=rows.reduce((sum,row)=>sum+row.daily,0);
-  return `<section class="card hf-city-demand-panel"><div class="compact-head"><div><h3>Täglicher Bedarf</h3><div class="sub">Alle Nachfragewaren dieser Stadt, kompakt nach Tagesverbrauch sortiert.</div></div><span class="pill live">${formatWeight(total)}/Tag</span></div>${rows.length?`<div class="hf-city-demand-list">${rows.map(row=>{const d=row.demand||{},fill=Number(d.max)>0?clamp((Number(d.need)||0)/Number(d.max)*100,0,100):0;return `<article class="hf-city-demand-row">${goodImg(row.good,'asset-img asset-xs')}<div class="hf-city-demand-main"><div class="row"><b>${GOODS[row.good].name}</b><strong>${formatGoodAmount(row.good,row.daily)}/Tag</strong></div><div class="bar"><i style="width:${fill}%"></i></div></div><small>${formatGoodAmount(row.good,Number(d.need)||0)} offen</small></article>`}).join('')}</div>`:'<div class="compact-note">Für diese Stadt sind noch keine Nachfragewaren hinterlegt.</div>'}</section>`;
+  return `<section class="card hf-city-demand-panel"><div class="compact-head"><div><h3>Täglicher Bedarf</h3><div class="sub">Alle Nachfragewaren dieser Stadt, kompakt nach Tagesverbrauch sortiert.</div></div><span class="pill live">${formatWeight(total)}/Tag</span></div>${rows.length?`<div class="hf-city-demand-list">${rows.map(row=>{const d=row.demand||{},need=Number(d.need)||0,stock=Number(s.inventory?.[row.good])||0,covered=Math.min(need,stock),fill=need>0?clamp(covered/need*100,0,100):100,local=typeof hfV117FacilityOutputCapacity==='function'&&hfV117FacilityOutputCapacity(cityId,row.good)>0;return `<article class="hf-city-demand-row">${goodImg(row.good,'asset-img asset-xs')}<div class="hf-city-demand-main"><div class="row"><b>${GOODS[row.good].name}</b><strong>${formatGoodAmount(row.good,row.daily)}/Tag</strong></div><div class="bar"><i style="width:${fill}%"></i></div></div><small>${formatGoodAmount(row.good,covered)} gedeckt${need>covered?` · ${formatGoodAmount(row.good,need-covered)} offen`:''}${local?' · lokal produziert':''}</small></article>`}).join('')}</div>`:'<div class="compact-note">Für diese Stadt sind noch keine Nachfragewaren hinterlegt.</div>'}</section>`;
 }
 function hfCoreSupplyPopupSection(cityId,s){const fn=window.HF?.hfV1138SupplyPopupSection;if(typeof fn==='function')return '';if(s&&s.isDepot)return '';return '<section class="card hf-v1138-supply-section"><div class="compact-head"><div><h3>Warenbestellung</h3><div class="sub">Stadtmenü-Modul wird vorbereitet.</div></div><span class="pill orange">Lädt</span></div><div class="compact-note">Bitte öffne das Stadtmenü nach dem Laden des Spielstands erneut, falls die Warenliste nicht automatisch erscheint.</div></section>'}
 registerCityPopupSection(hfCityDemandPopupSection);
@@ -2704,7 +2704,7 @@ function hfV117PlanCity(cityId,commitments){
   return {entries,local,routes,protected:protectedStock,target};
 }
 function hfV117ProduceDaily(){
-  if(state.lastDailyProductionDay===state.day&&state.productionPlanningVersion===117)return {made:0,blocked:0,alreadyProduced:true};
+  if(state.lastDailyProductionDay===state.day&&state.productionPlanningVersion===117)return {made:0,blocked:0,idle:0,alreadyProduced:true};
   const commitments=hfV117BuildCommitments(),summary={made:0,blocked:0,idle:0};
   for(const c of CITIES){
     const s=state.cities?.[c.id];if(!s?.unlocked||s.isDepot||c.isDepot)continue;s.inventory=s.inventory||{};const plan=hfV117PlanCity(c.id,commitments),stats=Array((s.facilities||[]).length).fill(null),localGap={},routeGap={};
@@ -2725,6 +2725,14 @@ function hfV117ProduceDaily(){
 function hfV117FacilityDisplayStat(cityId,index){
   const s=state.cities?.[cityId],stored=s?.facilityUtilizationDay===state.day?s.facilityUtilization?.[index]:null;if(stored)return stored;const plan=hfV117PlanCity(cityId,hfV117BuildCommitments()),entry=plan.entries.find(x=>x.index===index),capacity=hfV117Round(Object.values(entry?.recipe?.outputs||{}).reduce((n,q)=>n+(Number(q)||0),0)),pct=Math.round((entry?.requestedFactor||0)*100);return {day:state.day,pct,requestedPct:pct,capacity,made:hfV117Round(capacity*pct/100),status:'Prognose für die nächste Produktion',forecast:true,inputLimited:false};
 }
+const hfV117BaseFinishDay=finishDay;
+finishDay=function(){
+  const result=hfV117BaseFinishDay();
+  const prod=hfV117ProduceDaily();
+  result.prod={...(result.prod||{}),made:hfV117Round((Number(result.prod?.made)||0)+(Number(prod.made)||0)),blocked:(Number(result.prod?.blocked)||0)+(Number(prod.blocked)||0),idle:prod.idle,alreadyProduced:!!prod.alreadyProduced};
+  try{result.depotReplan=hfV117MidnightRecalculateDepots?.()}catch(err){console.warn('Mitternachtsplanung konnte nicht ausgeführt werden',err)}
+  return result;
+};
 function hfV117AssessDepotSchedule(depot){
   if(!depot)return {unmet:0,incomplete:false};const remaining={};for(const cityId of depot.cities||[])for(const good of depot.goods||[]){const city=state.cities?.[cityId],d=city?.demands?.[good];if(!d)continue;remaining[cityId]=remaining[cityId]||{};remaining[cityId][good]=hfV117Round(Math.max(0,(Number(d.need)||0)-(Number(city.inventory?.[good])||0)))}
   const plans=(depot.smartSchedule||[]).filter(p=>Number(p.day||state.day)===Number(state.day)&&Number(p.endMinute)<=1439&&!['Blockiert','Erledigt'].includes(String(p.status||'')));
