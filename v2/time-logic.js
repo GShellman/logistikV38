@@ -56,6 +56,7 @@
   function runMidnightCallbacks(days) {
     const count = Math.max(0, Math.trunc(Number(days) || 0));
     for (let index = 0; index < count; index += 1) {
+      window.HFV2Goods?.runDailySales?.();
       window.HFV2Goods?.runDailyProduction?.();
     }
   }

@@ -14,6 +14,9 @@
       producedGoods: {},
       productionCycles: {},
       lastProductionAt: null,
+      salesTotals: {revenue: 0, soldKg: 0, byCity: {}, byGood: {}},
+      lastSalesAt: null,
+      dailySalesHistory: [],
       schemaVersion: 1,
       ...overrides,
     };
@@ -28,12 +31,42 @@
     return normalized;
   }
 
+  function addPositive(target, key, amount) {
+    const id = String(key || '').trim();
+    const value = Math.max(0, Number(amount) || 0);
+    if (!id || value <= 0) return;
+    target[id] = Math.round(((Number(target[id]) || 0) + value) * 1000) / 1000;
+  }
+
+  function normalizePositiveNumberMap(value = {}) {
+    const normalized = {};
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return normalized;
+    for (const [key, rawAmount] of Object.entries(value)) {
+      const amount = Math.max(0, Number(rawAmount) || 0);
+      if (amount > 0) normalized[String(key)] = amount;
+    }
+    return normalized;
+  }
+
+  function normalizeSalesTotals(totals = {}) {
+    const source = totals && typeof totals === 'object' && !Array.isArray(totals) ? totals : {};
+    return {
+      revenue: Math.max(0, Number(source.revenue) || 0),
+      soldKg: Math.max(0, Number(source.soldKg) || 0),
+      byCity: normalizePositiveNumberMap(source.byCity),
+      byGood: normalizePositiveNumberMap(source.byGood),
+    };
+  }
+
   function configure(options = {}) {
     state = options.state || state || createGoodsState();
     state.cityInventories = state.cityInventories && typeof state.cityInventories === 'object' && !Array.isArray(state.cityInventories) ? state.cityInventories : {};
     state.producedGoods = state.producedGoods && typeof state.producedGoods === 'object' && !Array.isArray(state.producedGoods) ? state.producedGoods : {};
     state.productionCycles = state.productionCycles && typeof state.productionCycles === 'object' && !Array.isArray(state.productionCycles) ? state.productionCycles : {};
     state.lastProductionAt = typeof state.lastProductionAt === 'string' && state.lastProductionAt ? state.lastProductionAt : null;
+    state.salesTotals = normalizeSalesTotals(state.salesTotals);
+    state.lastSalesAt = typeof state.lastSalesAt === 'string' && state.lastSalesAt ? state.lastSalesAt : null;
+    state.dailySalesHistory = Array.isArray(state.dailySalesHistory) ? state.dailySalesHistory.filter(entry => entry && typeof entry === 'object').slice(-30) : [];
     state.schemaVersion = Number.isFinite(Number(state.schemaVersion)) ? Number(state.schemaVersion) : 1;
     delete state.cash;
 
@@ -250,6 +283,75 @@
   }
 
 
+  function knownCityIds() {
+    return new Set([
+      ...cities.map(city => String(city?.id || '').trim()).filter(Boolean),
+      ...Object.keys(window.HFV2CitiesById || {}),
+      ...Object.keys(state?.cityInventories || {}),
+    ]);
+  }
+
+  function runDailySales() {
+    configure();
+    const goods = window.HF_GOODS_DATABASE?.goods || {};
+    const demandGoodIds = Object.keys(goods).filter(goodId => goods[goodId]?.demand?.enabled === true);
+    const summary = {revenue: 0, soldKg: 0, cities: 0, goods: 0, byCity: {}, byGood: {}};
+    if (!demandGoodIds.length) return summary;
+
+    for (const cityId of knownCityIds()) {
+      const city = citiesById[cityId] || window.HFV2CitiesById?.[cityId] || {id: cityId, wealthFactor: 1};
+      const inventory = ensureCityInventory(cityId);
+      let cityRevenue = 0;
+      let citySoldKg = 0;
+
+      for (const goodId of demandGoodIds) {
+        const inventoryKg = Math.max(0, Number(inventory[goodId]) || 0);
+        if (inventoryKg <= 0) continue;
+        const dailyDemandKg = Math.max(0, Number(dailyDemandKgForCity(city, goodId)) || 0);
+        const soldKg = Math.min(inventoryKg, dailyDemandKg);
+        if (soldKg <= 0) continue;
+
+        const price = salePriceForCity(city, goodId, {stockKg: inventoryKg});
+        const result = removeFromInventory(cityId, goodId, soldKg);
+        const removedKg = Math.max(0, Number(result.removedKg) || 0);
+        if (removedKg <= 0) continue;
+
+        const bookedRevenue = Math.round(price * removedKg * 100) / 100;
+        window.HFV2Save?.changeCash?.(bookedRevenue, 'goods-daily-sales');
+        summary.revenue += bookedRevenue;
+        summary.soldKg += removedKg;
+        cityRevenue += bookedRevenue;
+        citySoldKg += removedKg;
+        addPositive(summary.byGood, goodId, removedKg);
+      }
+
+      if (citySoldKg > 0) {
+        summary.cities += 1;
+        addPositive(summary.byCity, cityId, cityRevenue);
+      }
+    }
+
+    summary.revenue = Math.round(summary.revenue * 100) / 100;
+    summary.soldKg = Math.round(summary.soldKg * 1000) / 1000;
+    summary.goods = Object.keys(summary.byGood).length;
+    state.salesTotals = normalizeSalesTotals(state.salesTotals);
+    state.salesTotals.revenue = Math.round((state.salesTotals.revenue + summary.revenue) * 100) / 100;
+    state.salesTotals.soldKg = Math.round((state.salesTotals.soldKg + summary.soldKg) * 1000) / 1000;
+    for (const [cityId, revenue] of Object.entries(summary.byCity)) addPositive(state.salesTotals.byCity, cityId, revenue);
+    for (const [goodId, soldKg] of Object.entries(summary.byGood)) addPositive(state.salesTotals.byGood, goodId, soldKg);
+    state.lastSalesAt = new Date().toISOString();
+    if (summary.soldKg > 0 || summary.revenue > 0) {
+      state.dailySalesHistory = Array.isArray(state.dailySalesHistory) ? state.dailySalesHistory : [];
+      state.dailySalesHistory.push({at: state.lastSalesAt, revenue: summary.revenue, soldKg: summary.soldKg, cities: summary.cities, goods: summary.goods});
+      state.dailySalesHistory = state.dailySalesHistory.slice(-30);
+    }
+    window.HFV2Save?.dispatchStateChanged?.('goods-daily-sales');
+    return summary;
+  }
+
+  const sellCityDemandAtMidnight = runDailySales;
+
+
   function factoryDefinition(factoryId) {
     const id = String(factoryId || '').trim();
     if (!id) return null;
@@ -382,5 +484,5 @@
     return summary;
   }
 
-  window.HFV2Goods = {createGoodsState, configure, getState, ensureCityInventory, getCityInventory, addToInventory, removeFromInventory, getUsedCapacityKg, getCapacityKg, salePriceForCity, estimateDeliveryProfit, getCityDailyDemandMap, getCityOrderedDemandMap, mergeDemandMaps, runDailyProduction};
+  window.HFV2Goods = {createGoodsState, configure, getState, ensureCityInventory, getCityInventory, addToInventory, removeFromInventory, getUsedCapacityKg, getCapacityKg, salePriceForCity, estimateDeliveryProfit, getCityDailyDemandMap, getCityOrderedDemandMap, mergeDemandMaps, runDailyProduction, runDailySales, sellCityDemandAtMidnight};
 })();
