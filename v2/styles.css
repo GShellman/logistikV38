@@ -23,7 +23,7 @@ body {
 
 .hf-v2-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) clamp(480px, 32vw, 540px);
   gap: 22px;
   min-height: 100dvh;
   padding: 22px;
@@ -1233,7 +1233,7 @@ body {
 
 .hf-v2-shell {
   gap: 18px;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr) clamp(480px, 32vw, 540px);
   padding: 18px;
 }
 
