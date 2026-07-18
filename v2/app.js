@@ -253,9 +253,21 @@
     return `<section class="hf-v2-finance-hero" aria-label="Finanzübersicht"><div><p class="hf-v2-kicker">Finanzen</p><h3>Kontostand</h3><strong>${formatCurrency(cash)}</strong></div><div class="hf-v2-city-kpi-grid"><span><small>Netzunterhalt</small><b>${formatCurrency(networkCost)}/Tag</b></span><span><small>Fabrikbetrieb</small><b>${formatCurrency(factoryCost)}/Tag</b></span></div></section>`;
   }
 
+
+  function productionCommitmentDebugMarkup(city) {
+    const rows = window.HFV2Goods?.productionDebugRows?.(city.id) || [];
+    if (!rows.length) return '';
+    return `<section class="hf-v2-production-debug" aria-label="Produktionsplanung externe Commitments"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Debug</p><h3>Produktionsplanung · Commitments</h3></div><strong>${rows.length.toLocaleString('de-CH')}</strong></div><div class="hf-v2-production-debug-grid">${rows.map(row => {
+      const good = goodById(row.goodId);
+      const blockers = row.blockers?.length ? `<em>Blocker: ${row.blockers.map(escapeHtml).join(', ')}</em>` : '<small>Keine Blocker erkannt</small>';
+      const commitments = row.commitments?.length ? `<small class="hf-v2-production-debug-commitments">${row.commitments.map(item => `${escapeHtml(item.type === 'delivery' ? 'Lieferung' : 'Auftrag')} → ${escapeHtml(citiesById[item.destinationCityId]?.name || item.destinationCityId || 'Ziel')}: ${formatGoodAmount(row.goodId, item.amountKg)}`).join(' · ')}</small>` : '';
+      return `<article class="hf-v2-production-debug-row"><b>${escapeHtml(good.name || row.goodId)}</b><span><small>lokaler Bedarf</small>${formatGoodAmount(row.goodId, row.localDemandKg)}</span><span><small>externe Commitments</small>${formatGoodAmount(row.goodId, row.externalCommitmentKg)}</span><span><small>Bestand</small>${formatGoodAmount(row.goodId, row.stockKg)}</span><span><small>Produktionsplan</small>${formatGoodAmount(row.goodId, row.plannedProductionKg)}</span>${commitments}${blockers}</article>`;
+    }).join('')}</div></section>`;
+  }
+
   function factoryProductionMarkup(city) {
     const builtFactories = window.HFV2Factories?.getCityFactories?.(city.id) || [];
-    if (!builtFactories.length) return '<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div></div><p class="hf-v2-muted">Keine Fabriken gebaut.</p></section>';
+    if (!builtFactories.length) return '<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div></div><p class="hf-v2-muted">Keine Fabriken gebaut.</p></section>' + productionCommitmentDebugMarkup(city);
     const rows = builtFactories.map(factoryId => {
       const factory = factoryById(factoryId) || {id: factoryId, name: factoryId, icon: '🏭'};
       const capacityKg = factoryDailyCapacityKg(factory);
@@ -265,7 +277,7 @@
       const status = estimate?.reason === 'demand-limited' ? 'Nachfrage gedeckt' : estimate?.reason === 'capacity-limited' ? 'Lager voll' : estimate?.reason === 'input-limited' ? 'Inputs fehlen' : estimate?.reason === 'no-output' ? 'Kein Output' : 'Potenzial heute';
       return `<article class="hf-v2-factory-production-item"><div class="hf-v2-factory-production-head"><span>${escapeHtml(factory.icon || '🏭')}</span><div><b>${escapeHtml(factory.name || factory.id)}</b><small>${factoryOutputsText(factory)}</small></div></div><div class="hf-v2-factory-production-bar"><span><i style="width:${fill}%"></i></span><small>${formatDailyKg(actualKg)} von ${formatDailyKg(capacityKg)} · ${status}</small></div></article>`;
     }).join('');
-    return `<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div><strong>${builtFactories.length.toLocaleString('de-CH')}</strong></div>${rows}</section>`;
+    return `<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div><strong>${builtFactories.length.toLocaleString('de-CH')}</strong></div>${rows}</section>${productionCommitmentDebugMarkup(city)}`;
   }
 
   function isCityUnlocked(cityId) {

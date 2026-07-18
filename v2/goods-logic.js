@@ -159,6 +159,48 @@
     if (kg > 0) demandMap[goodId] = (Number(demandMap[goodId]) || 0) + kg;
   }
 
+  function sourceCityIdForOrder(order) {
+    return String(order?.sourceCityId || (order?.sourceType === 'city' ? order.sourceId : '') || (order?.primarySource?.type === 'city' ? order.primarySource.id : '') || '').trim();
+  }
+
+  function collectCityExternalCommitments(cityId) {
+    const id = assertCityId(cityId);
+    const orderApi = window.HFV2Orders || window.HFV2DeliveryOrders || window.HFV2Deliveries;
+    const orderState = orderApi?.getState?.() || orderApi?.state || null;
+    const currentDay = Math.max(1, Math.trunc(Number(window.HFV2Time?.getState?.().day || window.HFV2Save?.getState?.().time?.day || 1) || 1));
+    const demandMap = {};
+    const details = {};
+    const add = (goodId, kg, item = null) => { addPositive(demandMap, goodId, kg); if (item && goodId && kg > 0) (details[goodId] = details[goodId] || []).push({...item, amountKg: Math.round(kg * 1000) / 1000}); };
+    const plannedOrderIds = new Set((orderState?.deliveries || []).filter(delivery => ['planned', 'running'].includes(String(delivery.status || ''))).map(delivery => String(delivery.orderId || '')).filter(Boolean));
+    for (const order of orderState?.orders || []) {
+      if (!order || !['active', 'planned', 'running'].includes(String(order.status || 'active'))) continue;
+      if (plannedOrderIds.has(String(order.id || ''))) continue;
+      const sourceId = sourceCityIdForOrder(order);
+      if (sourceId !== id) continue;
+      const goodId = String(order.goodId || '').trim();
+      if (!goodId) continue;
+      const required = Number(window.HFV2Orders?.contractRequired?.(order, currentDay, true));
+      const fallback = Number(order.openQuantity ?? order.quantityKg ?? order.dailyDemandKg ?? 0) || 0;
+      const amountKg = Number.isFinite(required) && required > 0 ? required : fallback;
+      add(goodId, amountKg, {type: 'order', orderId: order.id, destinationCityId: order.destinationCityId});
+    }
+    for (const delivery of orderState?.deliveries || []) {
+      if (!delivery || !['planned', 'running'].includes(String(delivery.status || ''))) continue;
+      const sourceId = String(delivery.sourceCityId || (delivery.sourceType === 'city' ? delivery.sourceId : '') || '').trim();
+      if (sourceId !== id) continue;
+      add(String(delivery.goodId || '').trim(), Number(delivery.quantityKg) || 0, {type: 'delivery', orderId: delivery.orderId, deliveryId: delivery.id, destinationCityId: delivery.destinationCityId});
+    }
+    return {map: demandMap, details};
+  }
+
+  function getCityExternalCommitmentMap(cityId) {
+    return collectCityExternalCommitments(cityId).map;
+  }
+
+  function getCityExternalCommitmentDetails(cityId) {
+    return collectCityExternalCommitments(cityId).details;
+  }
+
   function getCityOrderedDemandMap(cityId) {
     const id = assertCityId(cityId);
     const orderApi = window.HFV2Orders || window.HFV2DeliveryOrders || window.HFV2Deliveries;
@@ -425,7 +467,7 @@
     const summary = {cityId: id, factoryId: String(factoryId || ''), recipeId: null, madeKg: 0, capacityKg: 0, scale: 0, reason: 'unknown-factory', outputs: {}};
     if (!factory) return summary;
 
-    const targetDemand = mergeDemandMaps(getCityDailyDemandMap(id), getCityOrderedDemandMap(id));
+    const targetDemand = mergeDemandMaps(getCityDailyDemandMap(id), getCityOrderedDemandMap(id), getCityExternalCommitmentMap(id));
     const inventory = cloneInventory(id);
     const missingMap = {};
     for (const [goodId, targetKg] of Object.entries(targetDemand)) {
@@ -455,6 +497,45 @@
     return {cityId: id, factoryId: factory.id, recipeId: recipe.id, madeKg: Math.round(madeKg * 1000) / 1000, capacityKg: outputKgPerCycle, scale, reason, outputs};
   }
 
+  function productionDebugRows(cityId) {
+    configure();
+    const id = assertCityId(cityId);
+    const local = getCityDailyDemandMap(id);
+    const externalData = collectCityExternalCommitments(id);
+    const external = externalData.map;
+    const inventory = getCityInventory(id);
+    const planned = {};
+    const blockers = {};
+    const addBlocker = (goodId, label) => { if (!goodId || !label) return; (blockers[goodId] = blockers[goodId] || []).push(label); };
+    const builtFactories = window.HFV2Factories?.getCityFactories?.(id) || [];
+    for (const factoryId of builtFactories) {
+      const estimate = estimateCityFactoryProduction(id, factoryId);
+      for (const [goodId, kg] of Object.entries(estimate.outputs || {})) addPositive(planned, goodId, kg);
+      if (estimate.reason === 'input-limited') for (const goodId of Object.keys(estimate.outputs || {})) addBlocker(goodId, 'keine Vorprodukte');
+      if (estimate.reason === 'capacity-limited') for (const goodId of Object.keys(estimate.outputs || {})) addBlocker(goodId, 'Lagerkapazität');
+    }
+    const transport = window.HFV2Transport?.getState?.();
+    for (const row of transport?.unresolved || []) {
+      const order = row.orderId && (window.HFV2Orders?.getState?.().orders || []).find(item => item.id === row.orderId);
+      const sourceId = String(row.sourceCityId || sourceCityIdForOrder(order)).trim();
+      if (sourceId !== id) continue;
+      const text = String(row.reason || '').toLowerCase();
+      const goodId = String(row.goodId || order?.goodId || '').trim();
+      if (text.includes('quelle')) addBlocker(goodId, 'keine Quelle');
+      if (text.includes('route') || text.includes('netzwerk')) addBlocker(goodId, 'keine Route');
+      if (text.includes('fahrzeug') || text.includes('kapazität')) addBlocker(goodId, 'kein Fahrzeug');
+    }
+    const goods = Array.from(new Set([...Object.keys(local), ...Object.keys(external), ...Object.keys(inventory), ...Object.keys(planned)]));
+    return goods.sort((a, b) => String(a).localeCompare(String(b), 'de-CH')).map(goodId => {
+      const localKg = Math.max(0, Number(local[goodId]) || 0);
+      const stockKg = Math.max(0, Number(inventory[goodId]) || 0);
+      const rowBlockers = blockers[goodId] || [];
+      if (localKg > 0 && stockKg <= localKg + 0.001) rowBlockers.push('lokaler Reservebestand');
+      if ((Number(external[goodId]) || 0) > 0 && !builtFactories.some(factoryId => (recipeOptions(factoryDefinition(factoryId) || {}).some(recipe => Number(recipe.outputs?.[goodId]) > 0)))) rowBlockers.push('keine Quelle');
+      return {goodId, localDemandKg: localKg, externalCommitmentKg: Math.max(0, Number(external[goodId]) || 0), stockKg, plannedProductionKg: Math.max(0, Number(planned[goodId]) || 0), commitments: externalData.details[goodId] || [], blockers: Array.from(new Set(rowBlockers))};
+    });
+  }
+
   function runDailyProduction() {
     configure();
     const summary = {madeKg: 0, blocked: 0, factories: 0, demandLimited: 0, capacityLimited: 0};
@@ -468,7 +549,7 @@
     ]);
 
     for (const cityId of cityIds) {
-      const targetDemand = mergeDemandMaps(getCityDailyDemandMap(cityId), getCityOrderedDemandMap(cityId));
+      const targetDemand = mergeDemandMaps(getCityDailyDemandMap(cityId), getCityOrderedDemandMap(cityId), getCityExternalCommitmentMap(cityId));
       const inventory = ensureCityInventory(cityId);
       const missingMap = {};
       for (const [goodId, targetKg] of Object.entries(targetDemand)) {
@@ -532,5 +613,5 @@
     return summary;
   }
 
-  window.HFV2Goods = {createGoodsState, configure, getState, ensureCityInventory, getCityInventory, addToInventory, removeFromInventory, getUsedCapacityKg, getCapacityKg, salePriceForCity, estimateDeliveryProfit, getCityDailyDemandMap, getCityOrderedDemandMap, mergeDemandMaps, estimateCityFactoryProduction, runDailyProduction, runDailySales, sellCityDemandAtMidnight};
+  window.HFV2Goods = {createGoodsState, configure, getState, ensureCityInventory, getCityInventory, addToInventory, removeFromInventory, getUsedCapacityKg, getCapacityKg, salePriceForCity, estimateDeliveryProfit, getCityDailyDemandMap, getCityOrderedDemandMap, getCityExternalCommitmentMap, getCityExternalCommitmentDetails, mergeDemandMaps, productionDebugRows, estimateCityFactoryProduction, runDailyProduction, runDailySales, sellCityDemandAtMidnight};
 })();
