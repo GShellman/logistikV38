@@ -36,6 +36,19 @@
         <dl class="hf-v2-facts" id="hfV2Facts"></dl>
       </section>
 
+      <section class="hf-v2-panel-card hf-v2-time-card" aria-labelledby="hfV2TimeTitle">
+        <p class="hf-v2-kicker">Zeitsteuerung</p>
+        <div class="hf-v2-time-card__head">
+          <h2 id="hfV2TimeTitle">Spielzeit</h2>
+          <b id="hfV2Clock" class="hf-v2-time-clock">Tag 1 · 08:00</b>
+        </div>
+        <div class="hf-v2-time-actions" aria-label="Zeitsteuerung-Aktionen">
+          <button id="hfV2NextHourButton" class="hf-v2-save-button" type="button">+1 Std.</button>
+          <button id="hfV2NextDayButton" class="hf-v2-save-button hf-v2-save-button--ghost" type="button">Tag beenden</button>
+        </div>
+        <p id="hfV2TimeStatus" class="hf-v2-time-status" role="status" aria-live="polite">Bereit für die nächste Produktionsstunde.</p>
+      </section>
+
       <section class="hf-v2-panel-card hf-v2-storage-note">
         <h2>Manueller Spielstand</h2>
         <p>Diese V2 nutzt eine zentrale JSON-Save-Schicht ohne <code>localStorage</code>, <code>sessionStorage</code>, IndexedDB oder Cache APIs. Exportiere den Spielstand als Datei, damit er nicht an Browserdaten hängt.</p>
