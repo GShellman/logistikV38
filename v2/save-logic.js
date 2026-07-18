@@ -55,7 +55,7 @@
 
   function defaultGoodsState() {
     if (window.HFV2Goods?.createGoodsState) return window.HFV2Goods.createGoodsState();
-    return {cityInventories: {}, producedGoods: {}, productionCycles: {}, lastProductionAt: null, salesTotals: {revenue: 0, soldKg: 0, byCity: {}, byGood: {}}, lastSalesAt: null, dailySalesHistory: [], schemaVersion: 1};
+    return {cityInventories: {}, producedGoods: {}, productionCycles: {}, lastProductionAt: null, salesTotals: {revenue: 0, soldKg: 0}, citySales: {}, dailyHistory: [], lastSalesAt: null, schemaVersion: 1};
   }
 
   function defaultTimeState() {
@@ -109,11 +109,14 @@
     goods.salesTotals = {
       revenue: Math.max(0, Number(sourceSalesTotals.revenue) || 0),
       soldKg: Math.max(0, Number(sourceSalesTotals.soldKg) || 0),
-      byCity: normalizePositiveNumberMap(sourceSalesTotals.byCity),
-      byGood: normalizePositiveNumberMap(sourceSalesTotals.byGood),
     };
+    goods.citySales = normalizePositiveNumberMap(Object.keys(normalizePositiveNumberMap(goods.citySales)).length ? goods.citySales : sourceSalesTotals.byCity);
+    {
+      const sourceDailyHistory = Array.isArray(goods.dailyHistory) && goods.dailyHistory.length ? goods.dailyHistory : goods.dailySalesHistory;
+      goods.dailyHistory = Array.isArray(sourceDailyHistory) ? sourceDailyHistory.filter(entry => entry && typeof entry === 'object').slice(-30) : [];
+    }
     goods.lastSalesAt = typeof goods.lastSalesAt === 'string' && goods.lastSalesAt ? goods.lastSalesAt : null;
-    goods.dailySalesHistory = Array.isArray(goods.dailySalesHistory) ? goods.dailySalesHistory.filter(entry => entry && typeof entry === 'object').slice(-30) : [];
+    delete goods.dailySalesHistory;
     goods.schemaVersion = Number.isFinite(Number(goods.schemaVersion)) ? Number(goods.schemaVersion) : 1;
     delete network.cash;
     delete fleet.cash;

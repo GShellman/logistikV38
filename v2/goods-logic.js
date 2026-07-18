@@ -14,9 +14,10 @@
       producedGoods: {},
       productionCycles: {},
       lastProductionAt: null,
-      salesTotals: {revenue: 0, soldKg: 0, byCity: {}, byGood: {}},
+      salesTotals: {revenue: 0, soldKg: 0},
+      citySales: {},
+      dailyHistory: [],
       lastSalesAt: null,
-      dailySalesHistory: [],
       schemaVersion: 1,
       ...overrides,
     };
@@ -53,9 +54,11 @@
     return {
       revenue: Math.max(0, Number(source.revenue) || 0),
       soldKg: Math.max(0, Number(source.soldKg) || 0),
-      byCity: normalizePositiveNumberMap(source.byCity),
-      byGood: normalizePositiveNumberMap(source.byGood),
     };
+  }
+
+  function normalizeDailyHistory(history = []) {
+    return Array.isArray(history) ? history.filter(entry => entry && typeof entry === 'object').slice(-30) : [];
   }
 
   function configure(options = {}) {
@@ -64,9 +67,12 @@
     state.producedGoods = state.producedGoods && typeof state.producedGoods === 'object' && !Array.isArray(state.producedGoods) ? state.producedGoods : {};
     state.productionCycles = state.productionCycles && typeof state.productionCycles === 'object' && !Array.isArray(state.productionCycles) ? state.productionCycles : {};
     state.lastProductionAt = typeof state.lastProductionAt === 'string' && state.lastProductionAt ? state.lastProductionAt : null;
+    const legacyCitySales = state.salesTotals && typeof state.salesTotals === 'object' && !Array.isArray(state.salesTotals) ? state.salesTotals.byCity : null;
     state.salesTotals = normalizeSalesTotals(state.salesTotals);
+    state.citySales = normalizePositiveNumberMap(Object.keys(normalizePositiveNumberMap(state.citySales)).length ? state.citySales : legacyCitySales);
+    state.dailyHistory = normalizeDailyHistory(Array.isArray(state.dailyHistory) && state.dailyHistory.length ? state.dailyHistory : state.dailySalesHistory);
     state.lastSalesAt = typeof state.lastSalesAt === 'string' && state.lastSalesAt ? state.lastSalesAt : null;
-    state.dailySalesHistory = Array.isArray(state.dailySalesHistory) ? state.dailySalesHistory.filter(entry => entry && typeof entry === 'object').slice(-30) : [];
+    delete state.dailySalesHistory;
     state.schemaVersion = Number.isFinite(Number(state.schemaVersion)) ? Number(state.schemaVersion) : 1;
     delete state.cash;
 
@@ -337,13 +343,13 @@
     state.salesTotals = normalizeSalesTotals(state.salesTotals);
     state.salesTotals.revenue = Math.round((state.salesTotals.revenue + summary.revenue) * 100) / 100;
     state.salesTotals.soldKg = Math.round((state.salesTotals.soldKg + summary.soldKg) * 1000) / 1000;
-    for (const [cityId, revenue] of Object.entries(summary.byCity)) addPositive(state.salesTotals.byCity, cityId, revenue);
-    for (const [goodId, soldKg] of Object.entries(summary.byGood)) addPositive(state.salesTotals.byGood, goodId, soldKg);
+    state.citySales = normalizePositiveNumberMap(state.citySales);
+    for (const [cityId, revenue] of Object.entries(summary.byCity)) addPositive(state.citySales, cityId, revenue);
     state.lastSalesAt = new Date().toISOString();
     if (summary.soldKg > 0 || summary.revenue > 0) {
-      state.dailySalesHistory = Array.isArray(state.dailySalesHistory) ? state.dailySalesHistory : [];
-      state.dailySalesHistory.push({at: state.lastSalesAt, revenue: summary.revenue, soldKg: summary.soldKg, cities: summary.cities, goods: summary.goods});
-      state.dailySalesHistory = state.dailySalesHistory.slice(-30);
+      state.dailyHistory = normalizeDailyHistory(state.dailyHistory);
+      state.dailyHistory.push({at: state.lastSalesAt, revenue: summary.revenue, soldKg: summary.soldKg, cities: summary.cities, goods: summary.goods});
+      state.dailyHistory = state.dailyHistory.slice(-30);
     }
     window.HFV2Save?.dispatchStateChanged?.('goods-daily-sales');
     return summary;
