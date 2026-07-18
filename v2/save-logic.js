@@ -55,7 +55,7 @@
 
   function defaultGoodsState() {
     if (window.HFV2Goods?.createGoodsState) return window.HFV2Goods.createGoodsState();
-    return {cityInventories: {}, producedGoods: {}, productionCycles: {}, lastProductionAt: null, schemaVersion: 1};
+    return {cityInventories: {}, producedGoods: {}, productionCycles: {}, lastProductionAt: null, salesTotals: {revenue: 0, soldKg: 0, byCity: {}, byGood: {}}, lastSalesAt: null, dailySalesHistory: [], schemaVersion: 1};
   }
 
   function defaultTimeState() {
@@ -96,6 +96,24 @@
     goods.producedGoods = goods.producedGoods && typeof goods.producedGoods === 'object' && !Array.isArray(goods.producedGoods) ? goods.producedGoods : {};
     goods.productionCycles = goods.productionCycles && typeof goods.productionCycles === 'object' && !Array.isArray(goods.productionCycles) ? goods.productionCycles : {};
     goods.lastProductionAt = typeof goods.lastProductionAt === 'string' && goods.lastProductionAt ? goods.lastProductionAt : null;
+    const sourceSalesTotals = goods.salesTotals && typeof goods.salesTotals === 'object' && !Array.isArray(goods.salesTotals) ? goods.salesTotals : {};
+    const normalizePositiveNumberMap = value => {
+      const normalized = {};
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return normalized;
+      for (const [key, rawAmount] of Object.entries(value)) {
+        const amount = Math.max(0, Number(rawAmount) || 0);
+        if (amount > 0) normalized[String(key)] = amount;
+      }
+      return normalized;
+    };
+    goods.salesTotals = {
+      revenue: Math.max(0, Number(sourceSalesTotals.revenue) || 0),
+      soldKg: Math.max(0, Number(sourceSalesTotals.soldKg) || 0),
+      byCity: normalizePositiveNumberMap(sourceSalesTotals.byCity),
+      byGood: normalizePositiveNumberMap(sourceSalesTotals.byGood),
+    };
+    goods.lastSalesAt = typeof goods.lastSalesAt === 'string' && goods.lastSalesAt ? goods.lastSalesAt : null;
+    goods.dailySalesHistory = Array.isArray(goods.dailySalesHistory) ? goods.dailySalesHistory.filter(entry => entry && typeof entry === 'object').slice(-30) : [];
     goods.schemaVersion = Number.isFinite(Number(goods.schemaVersion)) ? Number(goods.schemaVersion) : 1;
     delete network.cash;
     delete fleet.cash;
