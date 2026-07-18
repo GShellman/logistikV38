@@ -256,11 +256,11 @@
     if (!order.primarySource && order.sourceId) order.primarySource = {type: order.sourceType, id: order.sourceId};
     current.orders.push(order);
     current.nextOrderId = Math.max(current.nextOrderId + 1, nextNumericId(current.orders, 'order') + 1);
-    scheduleDeliveryForOrder(order);
+    if (order.frequency === 'once' && payload.scheduleLegacyDelivery === true) scheduleLegacyDeliveryForOrder(order);
     return order;
   }
 
-  function scheduleDeliveryForOrder(order) {
+  function scheduleLegacyDeliveryForOrder(order) {
     const current = getState();
     const delivery = normalizeDelivery({
       id: createId('delivery', current.nextDeliveryId),

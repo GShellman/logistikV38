@@ -142,7 +142,16 @@
   }
 
   function hasScheduledDelivery(orderId, scheduledDay, scheduledMinute) {
-    return (ordersState().deliveries || []).some(delivery => delivery.orderId === orderId && normalizeInteger(delivery.scheduledDay ?? delivery.deliveryDay, 0) === scheduledDay && normalizeInteger(delivery.scheduledMinute ?? delivery.deliveryMinute, -1) === scheduledMinute && delivery.status !== 'cancelled');
+    const targetOrderId = String(orderId || '').trim();
+    const targetDay = normalizeInteger(scheduledDay, 0, 0);
+    const targetMinute = normalizeInteger(scheduledMinute, -1, 0, 1439);
+    if (!targetOrderId || !targetDay || targetMinute < 0) return false;
+    return (ordersState().deliveries || []).some(delivery => {
+      const deliveryOrderId = String(delivery.orderId || '').trim();
+      const deliveryDay = normalizeInteger(delivery.scheduledDay ?? delivery.deliveryDay, 0, 0);
+      const deliveryMinute = normalizeInteger(delivery.scheduledMinute ?? delivery.deliveryMinute, -1, 0, 1439);
+      return deliveryOrderId === targetOrderId && deliveryDay === targetDay && deliveryMinute === targetMinute && delivery.status !== 'cancelled';
+    });
   }
 
   function deliveryQuantityForOrder(order) {
