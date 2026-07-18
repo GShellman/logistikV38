@@ -12,6 +12,7 @@
   let liveTimer = null;
   let citiesById = {};
   const markerById = new Map();
+  const showAllDemandGoodsByCityId = {};
 
   function normaliseCity(raw) {
     const coordinates = raw.coordinates || {};
@@ -75,6 +76,21 @@
     }).filter(row => row.dailyKg > 0).sort((a, b) => b.dailyKg - a.dailyKg || a.good.name.localeCompare(b.good.name, 'de-CH'));
   }
 
+  function producedGoodIds() {
+    const producedIds = new Set();
+    const cityFactories = window.HFV2Factories?.getState?.().cityFactories || {};
+    for (const factoryId of Object.values(cityFactories).flat()) {
+      const factory = factoryById(factoryId);
+      if (!factory) continue;
+      for (const recipe of factoryRecipeOptions(factory)) {
+        for (const goodId of Object.keys(recipe.outputs || {})) {
+          if (goodId) producedIds.add(goodId);
+        }
+      }
+    }
+    return producedIds;
+  }
+
 
   function formatWeightKg(value) {
     const kg = Math.max(0, Number(value) || 0);
@@ -114,10 +130,17 @@
   }
 
   function demandPanel(city) {
-    const rows = v2DemandRows(city);
+    const allRows = v2DemandRows(city);
+    const producedIds = producedGoodIds();
+    const showAll = showAllDemandGoodsByCityId[city.id] === true;
+    const rows = showAll ? allRows : allRows.filter(row => producedIds.has(row.good.id));
+    const hiddenCount = allRows.length - rows.length;
+    const isFilterHidingGoods = !showAll && hiddenCount > 0;
+    const title = showAll ? 'Alle Waren' : 'Produzierte Waren';
     const total = rows.reduce((sum, row) => sum + row.dailyKg, 0);
     const inventory = window.HFV2Goods?.getCityInventory?.(city.id) || {};
-    return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">Alle Waren</h3></div><strong>${formatDailyKg(total)}</strong></div>${rows.length ? `<div class="hf-v2-demand-compact-grid">${rows.map(row => { const inventoryKg = Math.max(0, Number(inventory[row.good.id]) || 0); const coverage = row.dailyKg > 0 ? Math.min(100, inventoryKg / row.dailyKg * 100) : 100; const salePrice = window.HFV2Goods?.salePriceForCity?.(city, row.good.id) ?? (Number(row.good.price) || 0); return `<article class="hf-v2-demand-tile"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-tile__body"><b>${escapeHtml(row.good.name)}</b><strong>${formatDailyKg(row.dailyKg)}</strong><div class="hf-v2-demand-price"><small>Verkaufspreis</small><b>${formatCurrency(salePrice)}/kg</b></div><span class="hf-v2-demand-tile__bar"><i style="width:${coverage}%"></i></span></div></article>`; }).join('')}</div>` : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
+    const showAllButton = isFilterHidingGoods ? `<button class="hf-v2-demand-show-all" type="button" data-action="show-all-demand-goods">Alle Waren anzeigen</button>` : '';
+    return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">${title}</h3></div><strong>${formatDailyKg(total)}</strong></div>${showAllButton}${rows.length ? `<div class="hf-v2-demand-compact-grid">${rows.map(row => { const inventoryKg = Math.max(0, Number(inventory[row.good.id]) || 0); const coverage = row.dailyKg > 0 ? Math.min(100, inventoryKg / row.dailyKg * 100) : 100; const salePrice = window.HFV2Goods?.salePriceForCity?.(city, row.good.id) ?? (Number(row.good.price) || 0); return `<article class="hf-v2-demand-tile"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-tile__body"><b>${escapeHtml(row.good.name)}</b><strong>${formatDailyKg(row.dailyKg)}</strong><div class="hf-v2-demand-price"><small>Verkaufspreis</small><b>${formatCurrency(salePrice)}/kg</b></div><span class="hf-v2-demand-tile__bar"><i style="width:${coverage}%"></i></span></div></article>`; }).join('')}</div>` : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
   }
 
 
@@ -495,6 +518,16 @@
     return savePackage;
   }
 
+
+  function bindDemandControls() {
+    document.addEventListener('click', event => {
+      const button = event.target.closest?.('[data-action="show-all-demand-goods"]');
+      if (!button || !selectedId) return;
+      showAllDemandGoodsByCityId[selectedId] = true;
+      refreshSelectedCity();
+    });
+  }
+
   function bindSaveControls() {
     const saveButton = document.getElementById('hfV2SaveButton');
     const exportButton = document.getElementById('hfV2ExportButton');
@@ -538,6 +571,7 @@
     document.getElementById('hfV2CityCount').textContent = `${cities.length.toLocaleString('de-CH')} Orte`;
     bindSaveControls();
     bindTimeControls();
+    bindDemandControls();
     renderClock();
     renderLiveButton();
     window.addEventListener('hf:network:confirmed', refreshNetworkView);

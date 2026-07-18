@@ -1773,3 +1773,26 @@ code { background: #edf4f9; color: #174a78; }
 @media (max-width: 680px) {
   .hf-v2-city-kpi-grid { grid-template-columns: 1fr; }
 }
+
+.hf-v2-demand-show-all {
+  align-items: center;
+  background: linear-gradient(135deg, #fff8e8, #eef6ff);
+  border: 1px solid rgba(31, 95, 143, .22);
+  border-radius: 999px;
+  color: var(--hf-primary);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  justify-content: center;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+}
+
+.hf-v2-demand-show-all:hover,
+.hf-v2-demand-show-all:focus-visible {
+  background: linear-gradient(135deg, #fff1cf, #dfefff);
+  border-color: rgba(31, 95, 143, .42);
+  outline: none;
+}
