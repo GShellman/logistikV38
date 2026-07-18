@@ -129,6 +129,80 @@
     }, 0);
   }
 
+  function cityById(cityId) {
+    const id = String(cityId || '').trim();
+    if (!id) return null;
+    const fromMap = window.HFV2CitiesById?.[id];
+    if (fromMap) return fromMap;
+    const raw = (window.HF_CITY_CATALOG || []).find(city => String(city.id || '').trim() === id);
+    if (!raw) return null;
+    const coordinates = raw.coordinates || {};
+    return {
+      ...raw,
+      id,
+      name: String(raw.name || id),
+      lat: Number(raw.lat ?? coordinates.lat),
+      lng: Number(raw.lng ?? coordinates.lng),
+      tier: Number(raw.tier) || 1,
+      slots: Number(raw.slots) || 0,
+    };
+  }
+
+  function factoryById(factoryId) {
+    const id = String(factoryId || '').trim();
+    return (window.HFV2FactoryCatalog || []).find(factory => factory.id === id) || null;
+  }
+
+  function factoryRecipeOptions(factory) {
+    const recipes = Array.isArray(factory?.recipes) ? factory.recipes : [];
+    if (recipes.length) return recipes.map(recipe => ({
+      id: recipe.id || factory.id,
+      name: recipe.name || factory.name,
+      outputs: recipe.outputs || recipe.output || {},
+    }));
+    return [{id: factory?.id, name: factory?.name, outputs: factory?.outputs || factory?.output || {}}];
+  }
+
+  function factoryProducesGood(factoryId, goodId) {
+    const factory = factoryById(factoryId);
+    return factory ? factoryRecipeOptions(factory).some(recipe => Number(recipe.outputs?.[goodId]) > 0) : false;
+  }
+
+  function sourceCandidates(destinationCityId, goodId) {
+    const destinationId = String(destinationCityId || '').trim();
+    const targetGoodId = String(goodId || '').trim();
+    if (!destinationId || !targetGoodId) return [];
+    const cityFactories = window.HFV2Factories?.getState?.().cityFactories || {};
+    return Object.entries(cityFactories).map(([sourceCityId, factoryIds]) => {
+      const producingFactoryIds = (Array.isArray(factoryIds) ? factoryIds : []).filter(factoryId => factoryProducesGood(factoryId, targetGoodId));
+      if (!producingFactoryIds.length) return null;
+      const city = cityById(sourceCityId);
+      if (!city) return null;
+      const inventoryKg = Math.max(0, Number(window.HFV2Goods?.getCityInventory?.(sourceCityId)?.[targetGoodId]) || 0);
+      const estimatedProductionKg = producingFactoryIds.reduce((sum, factoryId) => {
+        const estimate = window.HFV2Goods?.estimateCityFactoryProduction?.(sourceCityId, factoryId);
+        const producedKg = Number(estimate?.outputs?.[targetGoodId] ?? estimate?.production?.[targetGoodId] ?? estimate?.[targetGoodId] ?? 0) || 0;
+        return sum + Math.max(0, producedKg);
+      }, 0);
+      const path = window.HFNetwork?.findPath?.(sourceCityId, destinationId) || null;
+      const reachable = sourceCityId === destinationId || path?.reachable === true;
+      return {
+        city,
+        cityId: sourceCityId,
+        sourceCityId,
+        goodId: targetGoodId,
+        factoryIds: producingFactoryIds,
+        producesGood: true,
+        inventoryKg,
+        estimatedProductionKg,
+        availableKg: inventoryKg + estimatedProductionKg,
+        reachable,
+        transportReady: reachable,
+        path,
+      };
+    }).filter(Boolean).sort((a, b) => Number(b.transportReady) - Number(a.transportReady) || b.availableKg - a.availableKg || a.city.name.localeCompare(b.city.name, 'de-CH'));
+  }
+
   function createOrder(payload = {}) {
     const current = getState();
     const order = normalizeOrder({
@@ -183,5 +257,5 @@
     return getState().deliveries.filter(delivery => delivery.deliveryDay === targetDay);
   }
 
-  window.HFV2Orders = {createOrderState, configure, getState, createOrder, cancelOrder, getOrdersForCity, getDeliveriesForDay};
+  window.HFV2Orders = {createOrderState, configure, getState, sourceCandidates, createOrder, cancelOrder, getOrdersForCity, getDeliveriesForDay};
 })();
