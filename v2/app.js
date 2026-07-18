@@ -299,7 +299,7 @@
 
   function renderClock() {
     const clock = document.getElementById('hfV2Clock');
-    if (clock) clock.textContent = window.HFV2Time?.formatClock?.() || 'Tag 1 · 08:00';
+    if (clock) clock.textContent = window.HFV2Time?.formatClock?.() || 'Mo · Tag 1 · 08:00';
   }
 
   function productionSummaryText(summary) {
