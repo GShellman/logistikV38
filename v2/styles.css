@@ -1504,3 +1504,116 @@ code { background: #edf4f9; color: #174a78; }
 
 .hf-v2-inventory-good b { display: block; font-size: 13px; }
 .hf-v2-inventory-empty { margin-bottom: 0; }
+
+.hf-v2-time-card {
+  background:
+    radial-gradient(circle at top left, rgba(92, 184, 135, .26), transparent 34%),
+    linear-gradient(135deg, #0f2d4f 0%, #145b45 58%, #e68a2e 150%);
+  border: 0;
+  box-shadow: 0 18px 38px rgba(13, 45, 80, .22);
+  color: #fff;
+  overflow: hidden;
+  position: relative;
+}
+
+.hf-v2-time-card::after {
+  background: linear-gradient(135deg, rgba(255, 255, 255, .18), rgba(255, 255, 255, 0));
+  border-radius: 999px;
+  content: '';
+  height: 110px;
+  position: absolute;
+  right: -42px;
+  top: -58px;
+  transform: rotate(-18deg);
+  width: 170px;
+}
+
+.hf-v2-time-card .hf-v2-kicker,
+.hf-v2-time-card h2 {
+  color: #fff;
+  position: relative;
+  z-index: 1;
+}
+
+.hf-v2-time-clock {
+  background: rgba(255, 255, 255, .18);
+  border-color: rgba(255, 255, 255, .36);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .24);
+  color: #fff;
+  letter-spacing: .03em;
+  position: relative;
+  z-index: 1;
+}
+
+.hf-v2-time-actions,
+.hf-v2-time-status {
+  position: relative;
+  z-index: 1;
+}
+
+.hf-v2-time-actions .hf-v2-save-button {
+  background: rgba(255, 255, 255, .96);
+  border-color: rgba(255, 255, 255, .96);
+  color: #123d5f;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, .16);
+}
+
+.hf-v2-time-actions .hf-v2-save-button:hover,
+.hf-v2-time-actions .hf-v2-save-button:focus-visible {
+  background: #fff;
+  transform: translateY(-1px);
+}
+
+.hf-v2-time-actions .hf-v2-save-button--ghost {
+  background: rgba(255, 255, 255, .12);
+  border-color: rgba(255, 255, 255, .32);
+  color: #fff;
+}
+
+.hf-v2-time-live-button.is-live {
+  background: linear-gradient(135deg, #ffdd87, #ff9d45);
+  border-color: #ffdd87;
+  color: #3f2410;
+}
+
+.hf-v2-time-status {
+  background: rgba(255, 255, 255, .14);
+  border-color: rgba(255, 255, 255, .24);
+  color: rgba(255, 255, 255, .86);
+}
+
+.hf-v2-time-card,
+.hf-v2-time-card__head,
+.hf-v2-time-actions,
+.hf-v2-time-status {
+  display: grid;
+  visibility: visible;
+}
+
+.hf-v2-time-card {
+  gap: 14px;
+  min-height: 184px;
+  padding: 22px;
+}
+
+.hf-v2-time-card__head {
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.hf-v2-time-card__head .hf-v2-kicker { margin-bottom: 7px; }
+
+.hf-v2-time-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 0;
+}
+
+.hf-v2-time-actions .hf-v2-save-button {
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .hf-v2-time-card__head,
+  .hf-v2-time-actions { grid-template-columns: 1fr; }
+}
