@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const SCHEMA_VERSION = 2;
+  const SCHEMA_VERSION = 3;
   const SAVE_FILE_PREFIX = 'helvetic-freight-v2';
   const STARTING_CASH = 500000;
 
@@ -62,6 +62,11 @@
     return {day: 1, hour: 8, minute: 0};
   }
 
+  function defaultLogisticsState() {
+    if (window.HFV2Logistics?.createLogisticsState) return window.HFV2Logistics.createLogisticsState();
+    return {orders: [], shipments: [], nextOrderId: 1, nextShipmentId: 1, schemaVersion: 1};
+  }
+
   function normalizeTimeUnit(value, fallback, min, max) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return fallback;
@@ -79,6 +84,8 @@
     const sourceGoods = sourceState.goods && typeof sourceState.goods === 'object' && !Array.isArray(sourceState.goods) ? sourceState.goods : {};
     const goods = {...defaultGoodsState(), ...sourceGoods};
     const sourceTime = sourceState.time && typeof sourceState.time === 'object' && !Array.isArray(sourceState.time) ? sourceState.time : {};
+    const sourceLogistics = sourceState.logistics && typeof sourceState.logistics === 'object' && !Array.isArray(sourceState.logistics) ? sourceState.logistics : {};
+    const logistics = {...defaultLogisticsState(), ...sourceLogistics};
     const timeDefaults = defaultTimeState();
     const time = {
       day: normalizeTimeUnit(sourceTime.day, timeDefaults.day, 1, Number.MAX_SAFE_INTEGER),
@@ -118,23 +125,28 @@
     goods.lastSalesAt = typeof goods.lastSalesAt === 'string' && goods.lastSalesAt ? goods.lastSalesAt : null;
     delete goods.dailySalesHistory;
     goods.schemaVersion = Number.isFinite(Number(goods.schemaVersion)) ? Number(goods.schemaVersion) : 1;
+    logistics.orders = Array.isArray(logistics.orders) ? logistics.orders : [];
+    logistics.shipments = Array.isArray(logistics.shipments) ? logistics.shipments : [];
+    logistics.nextOrderId = Math.max(1, Math.trunc(Number(logistics.nextOrderId) || 1));
+    logistics.nextShipmentId = Math.max(1, Math.trunc(Number(logistics.nextShipmentId) || 1));
     delete network.cash;
     delete fleet.cash;
     delete factories.cash;
     delete goods.cash;
     delete time.cash;
+    delete logistics.cash;
     const legacyCash = Number.isFinite(Number(sourceState.cash)) ? Number(sourceState.cash) : Number(sourceState.fleet?.cash ?? sourceState.network?.cash);
     const cash = Number.isFinite(legacyCash) ? legacyCash : STARTING_CASH;
 
     return {
       schemaVersion: SCHEMA_VERSION,
       savedAt: source.savedAt || new Date().toISOString(),
-      state: {cash, network, fleet, factories, goods, time},
+      state: {cash, network, fleet, factories, goods, time, logistics},
     };
   }
 
   function createDefaultState() {
-    return normalizePackage({schemaVersion: SCHEMA_VERSION, state: {network: defaultNetworkState(), fleet: defaultFleetState(), factories: defaultFactoryState(), goods: defaultGoodsState(), time: defaultTimeState()}});
+    return normalizePackage({schemaVersion: SCHEMA_VERSION, state: {network: defaultNetworkState(), fleet: defaultFleetState(), factories: defaultFactoryState(), goods: defaultGoodsState(), time: defaultTimeState(), logistics: defaultLogisticsState()}});
   }
 
   function serializeState(savePackage = null) {
@@ -143,7 +155,8 @@
     const liveFactories = window.HFV2Factories?.getState?.();
     const liveGoods = window.HFV2Goods?.getState?.();
     const liveTime = window.HFV2Time?.getState?.();
-    const source = savePackage || {state: {network: liveNetwork, fleet: liveFleet, factories: liveFactories || getState().factories, goods: liveGoods || getState().goods, time: liveTime || getState().time, cash: getCash()}};
+    const liveLogistics = window.HFV2Logistics?.getState?.();
+    const source = savePackage || {state: {network: liveNetwork, fleet: liveFleet, factories: liveFactories || getState().factories, goods: liveGoods || getState().goods, time: liveTime || getState().time, logistics: liveLogistics || getState().logistics, cash: getCash()}};
     const normalized = normalizePackage(source);
     normalized.savedAt = new Date().toISOString();
     return deepClone(normalized);
@@ -188,5 +201,5 @@
     return hydrateState(parsed);
   }
 
-  window.HFV2Save = {SCHEMA_VERSION, STARTING_CASH, defaultTimeState, createDefaultState, configureState, getState, getCash, setCash, changeCash, dispatchStateChanged, serializeState, hydrateState, exportSave, importSave};
+  window.HFV2Save = {SCHEMA_VERSION, STARTING_CASH, defaultTimeState, defaultLogisticsState, createDefaultState, configureState, getState, getCash, setCash, changeCash, dispatchStateChanged, serializeState, hydrateState, exportSave, importSave};
 })();
