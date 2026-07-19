@@ -12,6 +12,7 @@
   let liveTimer = null;
   let citiesById = {};
   const markerById = new Map();
+  let shipmentLayer = null;
 
   function normaliseCity(raw) {
     const coordinates = raw.coordinates || {};
@@ -392,9 +393,44 @@
     window.HFNetwork?.renderNetworkLines?.(networkState.connections, citiesById);
   }
 
+  function renderActiveShipments() {
+    if (!map || !window.L) return;
+    if (!shipmentLayer) shipmentLayer = L.layerGroup().addTo(map);
+    shipmentLayer.clearLayers();
+    const shipments = window.HFV2Logistics?.getState?.().shipments || [];
+    const activeShipments = shipments.filter(shipment => shipment?.status === 'active');
+    for (const shipment of activeShipments) {
+      const fromCity = citiesById[shipment.fromCityId];
+      const toCity = citiesById[shipment.toCityId];
+      if (!fromCity || !toCity) continue;
+      const good = goodById(shipment.goodId);
+      const line = L.polyline([[fromCity.lat, fromCity.lng], [toCity.lat, toCity.lng]], {
+        color: '#f59e0b',
+        weight: 3,
+        opacity: 0.85,
+        dashArray: '6 8',
+        interactive: true,
+      }).addTo(shipmentLayer);
+      line.bindTooltip(`${escapeHtml(good.name)} · ${formatGoodAmount(shipment.goodId, shipment.amountKg)} unterwegs`, {
+        direction: 'top',
+        sticky: true,
+        className: 'city-label',
+      });
+    }
+  }
+
   function refreshNetworkView() {
     renderCurrentNetworkLines();
+    renderActiveShipments();
     refreshMarkers(Object.values(citiesById));
+  }
+
+  function refreshChangedStateView(event) {
+    const reason = String(event?.detail?.reason || '');
+    if (reason === 'time-advanced' || reason.startsWith('logistics-')) {
+      refreshNetworkView();
+      refreshSelectedCity();
+    }
   }
 
   function setSaveStatus(message) {
@@ -451,6 +487,7 @@
 
   function updateAdvanceStatus(label, summary) {
     renderClock();
+    renderActiveShipments();
     refreshSelectedCity();
     const message = `${label}: ${window.HFV2Time?.formatClock?.() || ''}. ${dailyCycleSummaryText(summary)}`;
     setSaveStatus(message);
@@ -478,6 +515,7 @@
   function liveTick() {
     const result = runWithDailyCycleSummary(() => window.HFV2Time?.advanceMinutes?.(1, {reason: 'time-live'}));
     renderClock();
+    renderActiveShipments();
     refreshSelectedCity();
     const message = `Live läuft: ${window.HFV2Time?.formatClock?.() || ''}. ${dailyCycleSummaryText(result.summary)}`;
     setTimeStatus(message);
@@ -519,6 +557,7 @@
     window.HFFleet?.configure?.({state: savePackage.state.fleet});
     window.HFV2Factories?.configure?.({state: savePackage.state.factories});
     window.HFV2Goods?.configure?.({state: savePackage.state.goods, cities});
+    window.HFV2Logistics?.configure?.({state: savePackage.state.logistics, cities, citiesById});
   }
 
   function applySavePackage(nextPackage) {
@@ -526,6 +565,7 @@
     configureGameSystems(Object.values(citiesById));
     refreshNetworkView();
     renderClock();
+    renderActiveShipments();
     refreshSelectedCity();
     return savePackage;
   }
@@ -563,7 +603,7 @@
   function boot() {
     const cities = loadCities();
     citiesById = Object.fromEntries(cities.map(city => [city.id, city]));
-    savePackage = window.HFV2Save?.createDefaultState?.() || {state: {network: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}), fleet: window.HFFleet?.createFleetState?.(), factories: window.HFV2Factories?.createFactoryState?.(), goods: window.HFV2Goods?.createGoodsState?.(), time: window.HFV2Save?.defaultTimeState?.() || {day: 1, hour: 8, minute: 0}}};
+    savePackage = window.HFV2Save?.createDefaultState?.() || {state: {network: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}), fleet: window.HFFleet?.createFleetState?.(), factories: window.HFV2Factories?.createFactoryState?.(), goods: window.HFV2Goods?.createGoodsState?.(), time: window.HFV2Save?.defaultTimeState?.() || {day: 1, hour: 8, minute: 0}, logistics: window.HFV2Save?.defaultLogisticsState?.() || window.HFV2Logistics?.createLogisticsState?.() || {orders: [], shipments: [], nextOrderId: 1, nextShipmentId: 1, schemaVersion: 1}}};
     configureGameSystems(cities);
     document.getElementById('hfV2CityCount').textContent = `${cities.length.toLocaleString('de-CH')} Orte`;
     bindSaveControls();
@@ -571,7 +611,7 @@
     renderClock();
     renderLiveButton();
     window.addEventListener('hf:network:confirmed', refreshNetworkView);
-    window.addEventListener('hf:v2:state-changed', refreshNetworkView);
+    window.addEventListener('hf:v2:state-changed', refreshChangedStateView);
     window.addEventListener('hf:v2:state-changed', renderClock);
     if (!bootMap(cities)) return;
     const zurich = cities.find(city => city.id === 'zurich');
