@@ -154,6 +154,7 @@
         day, minute, sourceCityId, destinationCityId,
         goodId: String(entry.goodId || '').trim(),
         quantityKg: Number(entry.quantityKg) || 0,
+        tripCount: Array.isArray(entry.tripSegments) && entry.tripSegments.length ? entry.tripSegments.length : Math.max(1, Math.trunc(Number(entry.tripCount) || 1)),
         vehicleType: String(entry.vehicleType || '').trim(),
         status: String(entry.status || 'planned').trim(),
         arrivalDay: entry.arrivalDay ? Math.max(1, Math.trunc(Number(entry.arrivalDay) || 1)) : null,
@@ -190,7 +191,7 @@
               ${rows.map(row => `
                 <div class="hf-v2-fleet-transport-row">
                   <time>${formatTime(row.minute)}</time>
-                  <span><b>${escapeHtml(goodName(row.goodId))}</b><small>${formatQuantityKg(row.quantityKg)} · ${escapeHtml(cityName(row.sourceCityId))} → ${escapeHtml(cityName(row.destinationCityId))} · ${escapeHtml(transportTimeLabel(row))}${row.message ? ` · ${escapeHtml(row.message)}` : ''}</small></span>
+                  <span><b>${escapeHtml(goodName(row.goodId))}</b><small>${formatQuantityKg(row.quantityKg)}${row.tripCount > 1 ? ` · ${row.tripCount} Fahrten` : ''} · ${escapeHtml(cityName(row.sourceCityId))} → ${escapeHtml(cityName(row.destinationCityId))} · ${escapeHtml(transportTimeLabel(row))}${row.message ? ` · ${escapeHtml(row.message)}` : ''}</small></span>
                   <em>${escapeHtml(vehicleName(row.vehicleType))}</em>
                   <strong title="${escapeHtml(statusInfo(row.status).title)}">${escapeHtml(statusInfo(row.status).label)}</strong>
                 </div>`).join('')}

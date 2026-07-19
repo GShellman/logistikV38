@@ -25,7 +25,8 @@
   }
 
   function deliveryId(delivery) {
-    return String(delivery?.id || `${delivery?.orderId || 'delivery'}-${delivery?.scheduledDay || delivery?.deliveryDay}-${delivery?.scheduledMinute || delivery?.deliveryMinute}`).trim();
+    const segmentSuffix = delivery?.tripSegment ? `-trip-${delivery.tripSegment.tripIndex || 1}` : '';
+    return String((delivery?.id || `${delivery?.orderId || 'delivery'}-${delivery?.scheduledDay || delivery?.deliveryDay}-${delivery?.scheduledMinute || delivery?.deliveryMinute}`) + segmentSuffix).trim();
   }
 
   function isActiveDelivery(delivery) {
@@ -35,8 +36,9 @@
   }
 
   function deliveryWindow(delivery) {
-    const departureDay = normalizeInteger(delivery?.departureDay ?? delivery?.scheduledDay ?? delivery?.deliveryDay, 1, 1);
-    const departureMinute = normalizeInteger(delivery?.departureMinute ?? delivery?.scheduledMinute ?? delivery?.deliveryMinute, 0, 0, 1439);
+    const segment = delivery?.tripSegment || null;
+    const departureDay = normalizeInteger(segment?.departureDay ?? delivery?.departureDay ?? delivery?.scheduledDay ?? delivery?.deliveryDay, 1, 1);
+    const departureMinute = normalizeInteger(segment?.departureMinute ?? delivery?.departureMinute ?? delivery?.scheduledMinute ?? delivery?.deliveryMinute, 0, 0, 1439);
     const departureAbs = absoluteMinute(departureDay, departureMinute);
     const roundTripMinutes = Math.max(1, normalizeInteger(delivery?.roundTripMinutes, delivery?.durationMinutes ?? 120, 1));
     const outboundMinutes = Math.max(1, normalizeInteger(delivery?.outboundMinutes ?? delivery?.routeMinutes, Math.ceil(roundTripMinutes / 2), 1));
@@ -127,7 +129,10 @@
     if (!map || !window.L) return;
     const activeIds = new Set();
     const deliveries = window.HFV2Orders?.getState?.().deliveries || [];
-    deliveries.forEach(delivery => renderDelivery(delivery, activeIds));
+    deliveries.flatMap(delivery => {
+      if (!Array.isArray(delivery?.tripSegments) || !delivery.tripSegments.length) return [delivery];
+      return delivery.tripSegments.map(segment => ({...delivery, status: segment.status, tripSegment: segment, quantityKg: segment.quantityKg}));
+    }).forEach(delivery => renderDelivery(delivery, activeIds));
     for (const id of markerByDeliveryId.keys()) if (!activeIds.has(id)) removeDelivery(id);
   }
 
