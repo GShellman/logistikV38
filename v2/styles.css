@@ -2054,10 +2054,18 @@ code { background: #edf4f9; color: #174a78; }
 
 .hf-v2-shipment-asset {
   display: block;
-  filter: drop-shadow(0 5px 7px rgba(0, 0, 0, .35));
+  filter: drop-shadow(0 4px 5px rgba(0, 0, 0, .32));
   height: auto;
+  max-height: 50px;
+  object-fit: contain;
   pointer-events: none;
-  width: 62px;
+  transform-origin: center;
+  width: 50px;
+}
+
+.hf-v2-shipment-asset--right,
+.hf-v2-shipment-marker--right .hf-v2-shipment-marker__emoji {
+  transform: scaleX(-1);
 }
 
 .hf-v2-shipment-marker--delayed {
