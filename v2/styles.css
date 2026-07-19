@@ -158,112 +158,6 @@ h2 { font-size: 24px; }
 }
 
 
-.hf-v2-demand-tile--button {
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
-  width: 100%;
-}
-
-.hf-v2-demand-tile--button:hover,
-.hf-v2-demand-tile--button:focus-visible {
-  border-color: var(--hf-accent);
-  box-shadow: 0 0 0 3px rgba(230, 138, 46, .18);
-  outline: none;
-  transform: translateY(-1px);
-}
-
-.hf-v2-order-modal {
-  display: grid;
-  gap: 18px;
-}
-
-.hf-v2-order-hero {
-  align-items: center;
-  background: linear-gradient(135deg, #edf7f1, #eef5fb);
-  border: 1px solid #d8e7df;
-  border-radius: 16px;
-  display: flex;
-  gap: 12px;
-  padding: 14px;
-}
-
-.hf-v2-order-hero h3,
-.hf-v2-order-hero p { margin: 0; }
-
-.hf-v2-order-stats {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.hf-v2-order-stats span,
-.hf-v2-order-source,
-.hf-v2-order-frequency label,
-.hf-v2-order-field {
-  background: #fff;
-  border: 1px solid var(--hf-line);
-  border-radius: 14px;
-  padding: 12px;
-}
-
-.hf-v2-order-stats small,
-.hf-v2-order-source small,
-.hf-v2-order-field span {
-  color: var(--hf-muted);
-  display: block;
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: .05em;
-  text-transform: uppercase;
-}
-
-.hf-v2-order-stats b { display: block; margin-top: 4px; }
-
-.hf-v2-order-modal h4 { margin: 0 0 10px; }
-
-.hf-v2-order-source-list,
-.hf-v2-order-frequency {
-  display: grid;
-  gap: 8px;
-}
-
-.hf-v2-order-source,
-.hf-v2-order-frequency label {
-  align-items: center;
-  cursor: pointer;
-  display: flex;
-  gap: 10px;
-}
-
-.hf-v2-order-source:hover,
-.hf-v2-order-source:focus-within,
-.hf-v2-order-frequency label:hover,
-.hf-v2-order-frequency label:focus-within,
-.hf-v2-order-field:focus-within {
-  border-color: var(--hf-accent);
-  box-shadow: 0 0 0 3px rgba(230, 138, 46, .14);
-}
-
-.hf-v2-order-field {
-  display: grid;
-  gap: 8px;
-}
-
-.hf-v2-order-field select,
-.hf-v2-order-field input {
-  background: #f8fafc;
-  border: 1px solid #dce5ee;
-  border-radius: 10px;
-  font: inherit;
-  padding: 10px;
-}
-
-@media (max-width: 560px) {
-  .hf-v2-order-stats { grid-template-columns: 1fr; }
-}
-
 
 .hf-v2-demand-list { display: grid; gap: 8px; }
 .hf-v2-demand-row {
@@ -1910,7 +1804,6 @@ code { background: #edf4f9; color: #174a78; }
   letter-spacing: .06em;
   text-transform: uppercase;
 }
-.hf-v2-production-debug-commitments { grid-column: 1 / -1; }
 .hf-v2-production-debug-row em {
   color: #a65315;
   font-size: 12px;
@@ -1960,60 +1853,6 @@ code { background: #edf4f9; color: #174a78; }
 }
 
 .hf-v2-fleet-overview,
-.hf-v2-fleet-calendar {
-  background: rgba(255, 255, 255, .82);
-  border: 1px solid var(--hf-line);
-  border-radius: 14px;
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-  padding: 12px;
-}
-
-.hf-v2-fleet-section-head {
-  align-items: center;
-  display: flex;
-  gap: 10px;
-  justify-content: space-between;
-}
-
-.hf-v2-fleet-section-head span {
-  color: var(--hf-primary-2);
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-}
-
-.hf-v2-fleet-section-head strong {
-  background: #edf4f9;
-  border: 1px solid #cbdcea;
-  border-radius: 999px;
-  color: var(--hf-primary);
-  font-size: 11px;
-  padding: 6px 10px;
-}
-
-.hf-v2-fleet-inventory-strip {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
-}
-
-.hf-v2-fleet-inventory-tile {
-  align-items: center;
-  background: var(--hf-surface-soft);
-  border: 1px solid #e1e8f0;
-  border-radius: 12px;
-  display: grid;
-  gap: 8px;
-  grid-template-columns: 42px minmax(0, 1fr);
-  min-width: 0;
-  padding: 8px;
-}
-
-.hf-v2-fleet-inventory-tile.is-empty { opacity: .58; }
-
 .hf-v2-fleet-inventory-tile__icon {
   align-items: center;
   background: #fff;
@@ -2032,8 +1871,7 @@ code { background: #edf4f9; color: #174a78; }
   width: 38px;
 }
 
-.hf-v2-fleet-inventory-tile b,
-.hf-v2-fleet-transport-row b {
+.hf-v2-fleet-inventory-tile b {
   color: var(--hf-primary);
   display: block;
   font-size: 12px;
@@ -2051,124 +1889,6 @@ code { background: #edf4f9; color: #174a78; }
   margin-top: 3px;
 }
 
-.hf-v2-fleet-calendar-grid {
-  display: grid;
-  gap: 8px;
-  max-height: 250px;
-  overflow: auto;
-  padding-right: 2px;
-}
-
-.hf-v2-fleet-day-card {
-  background: var(--hf-surface-soft);
-  border: 1px solid #e1e8f0;
-  border-radius: 12px;
-  display: grid;
-  gap: 7px;
-  padding: 9px;
-}
-
-.hf-v2-fleet-day-card h4 {
-  font-size: 13px;
-  margin: 0;
-}
-
-.hf-v2-fleet-transport-row {
-  align-items: center;
-  background: #fff;
-  border: 1px solid #e5ebf2;
-  border-radius: 10px;
-  display: grid;
-  gap: 8px;
-  grid-template-columns: 42px minmax(0, 1fr) minmax(76px, auto) minmax(64px, auto);
-  padding: 7px 8px;
-}
-
-.hf-v2-fleet-transport-row time {
-  color: var(--hf-primary-2);
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.hf-v2-fleet-transport-row small {
-  color: var(--hf-muted);
-  display: block;
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hf-v2-fleet-transport-row em,
-.hf-v2-fleet-transport-row strong {
-  border-radius: 999px;
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 900;
-  padding: 5px 7px;
-  text-align: center;
-}
-
-.hf-v2-fleet-transport-row em { background: #f4f7fa; color: var(--hf-primary); }
-.hf-v2-fleet-transport-row strong { background: #edf7f1; color: #236246; }
-
 @media (max-width: 980px) {
-  .hf-v2-fleet-compact-panels,
-  .hf-v2-fleet-transport-row { grid-template-columns: 1fr; }
-}
-
-.hf-v2-transport-marker {
-  align-items: center;
-  background: rgba(255,255,255,.94);
-  border: 1px solid rgba(22,42,33,.16);
-  border-radius: 999px;
-  box-shadow: 0 7px 18px rgba(16,36,25,.28);
-  display: grid;
-  height: 34px;
-  justify-items: center;
-  overflow: hidden;
-  width: 50px;
-}
-.hf-v2-transport-marker img {
-  display: block;
-  max-height: 30px;
-  max-width: 46px;
-  object-fit: contain;
-  pointer-events: none;
-}
-.hf-v2-transport-marker span { font-size: 22px; line-height: 1; }
-.hf-v2-transport-marker--freightTrain { width: 62px; }
-.hf-v2-transport-tooltip {
-  background: rgba(18,38,28,.92);
-  border: 0;
-  border-radius: 8px;
-  box-shadow: 0 5px 15px rgba(16,36,25,.22);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 800;
-  padding: 4px 7px;
-}
-.hf-v2-transport-tooltip::before { border-top-color: rgba(18,38,28,.92); }
-.hf-v2-transport-trail {
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.hf-v2-auto-export-card .hf-v2-demand-head {
-  align-items: center;
-}
-
-.hf-v2-auto-export-switch {
-  align-items: center;
-  cursor: pointer;
-  display: inline-flex;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.hf-v2-auto-export-switch input {
-  accent-color: var(--green);
-  height: 18px;
-  width: 18px;
+  .hf-v2-fleet-compact-panels { grid-template-columns: 1fr; }
 }

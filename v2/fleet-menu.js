@@ -64,60 +64,6 @@
     return `<img class="hf-v2-fleet-card__image" src="${escapeHtml(image)}" alt="" loading="lazy" decoding="async"${fallbackAttribute}>`;
   }
 
-
-  const WEEKDAYS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
-
-  function formatTime(value) {
-    const minute = Math.max(0, Math.min(1439, Math.trunc(Number(value) || 0)));
-    return `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
-  }
-
-  function formatQuantityKg(value) {
-    const kg = Number(value) || 0;
-    if (kg >= 1000) return `${(kg / 1000).toLocaleString('de-CH', {maximumFractionDigits: 1})} t`;
-    return `${Math.round(kg).toLocaleString('de-CH')} kg`;
-  }
-
-
-  function statusInfo(status) {
-    const normalized = String(status || 'planned').trim();
-    const labels = {
-      planned: {label: 'Geplant', title: 'Abfahrt geplant'},
-      running: {label: 'Unterwegs', title: 'Ware ist abgefahren'},
-      completed: {label: 'Angekommen', title: 'Ins Ziellager gebucht'},
-      partial: {label: 'Teillieferung', title: 'Nur teilweise geliefert'},
-      blocked: {label: 'Blockiert', title: 'Transport konnte nicht starten'},
-      'waiting-production': {label: 'Wartet auf Produktion', title: 'Quelle produziert erst nach Tagesabschluss'},
-    };
-    return labels[normalized] || {label: normalized || 'Unbekannt', title: normalized || 'Unbekannter Status'};
-  }
-
-  function transportTimeLabel(entry) {
-    if (entry.status === 'running' && entry.arrivalDay) return `Ankunft Tag ${entry.arrivalDay} · ${formatTime(entry.arrivalMinute)}`;
-    if (entry.status === 'completed' || entry.status === 'partial') return entry.arrivalDay ? `Angekommen Tag ${entry.arrivalDay} · ${formatTime(entry.arrivalMinute)}` : 'Angekommen';
-    if (entry.status === 'waiting-production' || entry.waitingForProduction === true) return 'Wartet auf Produktion';
-    if (entry.status === 'blocked') return 'Blockiert';
-    return `Abfahrt ${formatTime(entry.minute)}`;
-  }
-
-  function weekdayLabel(day) {
-    const absoluteDay = Math.max(1, Math.trunc(Number(day) || 1));
-    const weekday = WEEKDAYS[(absoluteDay - 1) % WEEKDAYS.length];
-    return `Tag ${absoluteDay} · ${weekday}`;
-  }
-
-  function vehicleName(type) {
-    return fleetApi()?.VEHICLES?.[type]?.name || type || '—';
-  }
-
-  function goodName(goodId) {
-    return (window.HFV2GoodsCatalog || []).find(good => good.id === goodId)?.name || goodId || '—';
-  }
-
-  function cityName(cityId) {
-    return cityById(cityId)?.name || cityId || '—';
-  }
-
   function fleetInventory(cityId) {
     const api = fleetApi();
     if (!api) return '<p class="hf-v2-fleet-empty">Der Fahrzeugbestand ist nicht geladen.</p>';
@@ -137,66 +83,6 @@
             <article class="hf-v2-fleet-inventory-tile${row.owned ? '' : ' is-empty'}">
               <div class="hf-v2-fleet-inventory-tile__icon" aria-hidden="true">${vehicleVisual(row.type, row.vehicle)}</div>
               <div><b>${escapeHtml(row.vehicle.name || row.type)}</b><strong>${row.owned.toLocaleString('de-CH')}</strong></div>
-            </article>`).join('')}
-        </div>
-      </section>`;
-  }
-
-  function transportEntries(cityId) {
-    const id = String(cityId || '').trim();
-    const byKey = new Map();
-    const add = (entry = {}) => {
-      const sourceCityId = String(entry.sourceCityId || (entry.sourceType === 'city' ? entry.sourceId : '') || '').trim();
-      const destinationCityId = String(entry.destinationCityId || entry.cityId || '').trim();
-      if (sourceCityId !== id && destinationCityId !== id) return;
-      const day = Math.max(1, Math.trunc(Number(entry.day ?? entry.scheduledDay ?? entry.deliveryDay) || 1));
-      const minute = Math.max(0, Math.min(1439, Math.trunc(Number(entry.minute ?? entry.scheduledMinute ?? entry.deliveryMinute) || 0)));
-      const normalized = {
-        id: String(entry.id || `${entry.orderId || 'transport'}-${day}-${minute}-${sourceCityId}-${destinationCityId}`),
-        day, minute, sourceCityId, destinationCityId,
-        goodId: String(entry.goodId || '').trim(),
-        quantityKg: Number(entry.quantityKg) || 0,
-        tripCount: Array.isArray(entry.tripSegments) && entry.tripSegments.length ? entry.tripSegments.length : Math.max(1, Math.trunc(Number(entry.tripCount) || 1)),
-        vehicleType: String(entry.vehicleType || '').trim(),
-        status: String(entry.status || 'planned').trim(),
-        arrivalDay: entry.arrivalDay ? Math.max(1, Math.trunc(Number(entry.arrivalDay) || 1)) : null,
-        arrivalMinute: Math.max(0, Math.min(1439, Math.trunc(Number(entry.arrivalMinute) || 0))),
-        message: String(entry.message || entry.statusMessage || '').trim(),
-      };
-      byKey.set(normalized.id, normalized);
-    };
-    (window.HFV2Transport?.getState?.().weekPlan || []).forEach(add);
-    (window.HFV2Orders?.getState?.().deliveries || []).forEach(add);
-    return [...byKey.values()].sort((a, b) => a.day - b.day || a.minute - b.minute || cityName(a.sourceCityId).localeCompare(cityName(b.sourceCityId), 'de-CH'));
-  }
-
-  function transportCalendar(cityId) {
-    const entries = transportEntries(cityId);
-    if (!entries.length) return `
-      <section class="hf-v2-fleet-calendar" aria-label="Transport-Wochenplan">
-        <div class="hf-v2-fleet-section-head"><span>Transportkalender</span><strong>Keine Einträge</strong></div>
-        <p class="hf-v2-fleet-empty">Für diese Stadt sind noch keine Transporte als Quelle oder Ziel geplant.</p>
-      </section>`;
-    const groups = new Map();
-    entries.forEach(entry => {
-      const key = String(entry.day);
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(entry);
-    });
-    return `
-      <section class="hf-v2-fleet-calendar" aria-label="Transport-Wochenplan">
-        <div class="hf-v2-fleet-section-head"><span>Transportkalender</span><strong>${entries.length.toLocaleString('de-CH')} Einträge</strong></div>
-        <div class="hf-v2-fleet-calendar-grid">
-          ${[...groups.entries()].map(([day, rows]) => `
-            <article class="hf-v2-fleet-day-card">
-              <h4>${escapeHtml(weekdayLabel(day))}</h4>
-              ${rows.map(row => `
-                <div class="hf-v2-fleet-transport-row">
-                  <time>${formatTime(row.minute)}</time>
-                  <span><b>${escapeHtml(goodName(row.goodId))}</b><small>${formatQuantityKg(row.quantityKg)}${row.tripCount > 1 ? ` · ${row.tripCount} Fahrten` : ''} · ${escapeHtml(cityName(row.sourceCityId))} → ${escapeHtml(cityName(row.destinationCityId))} · ${escapeHtml(transportTimeLabel(row))}${row.message ? ` · ${escapeHtml(row.message)}` : ''}</small></span>
-                  <em>${escapeHtml(vehicleName(row.vehicleType))}</em>
-                  <strong title="${escapeHtml(statusInfo(row.status).title)}">${escapeHtml(statusInfo(row.status).label)}</strong>
-                </div>`).join('')}
             </article>`).join('')}
         </div>
       </section>`;
@@ -275,7 +161,6 @@
         </div>
         <div class="hf-v2-fleet-compact-panels">
           ${fleetInventory(city.id)}
-          ${transportCalendar(city.id)}
         </div>
         <div class="hf-v2-fleet-grid">${vehicleRows(city.id)}</div>
         <div class="hf-v2-fleet-footer" aria-label="Vorteile des Fahrzeugkaufs">
@@ -308,10 +193,6 @@
       const {cityId, vehicleType} = button.dataset;
       const result = fleetApi()?.buyVehicle?.(cityId, vehicleType);
       if (result?.ok) refreshFleetMenu(cityId);
-    });
-    window.addEventListener('hf:v2:state-changed', event => {
-      const reason = String(event.detail?.reason || '');
-      if (reason.startsWith('transport-') || reason === 'order-created') refreshOpenFleetMenu();
     });
   }
 
