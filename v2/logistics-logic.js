@@ -374,27 +374,100 @@
     return Math.max(1, (route?.segments || []).reduce((total, segment) => total + Math.max(1, Number(segment.durationMinutes) || 1), 0));
   }
 
-  function combinedRoute(fromCityId, stops, vehicleType) {
-    const segments = [];
-    const pathNodeIds = [];
-    const pathEdgeIds = [];
-    const geometry = [];
-    let currentCityId = fromCityId;
-    for (const stop of stops) {
-      const path = window.HFNetwork?.findPath?.(currentCityId, stop.toCityId, {mode: 'road'});
-      if (!path?.reachable) return null;
-      const segmentGeometry = pathRouteGeometry(path);
-      for (const point of segmentGeometry) {
-        if (!geometry.length || !coordinatesEqual(geometry[geometry.length - 1], point)) geometry.push(point);
+  function appendPathDetails(target, path) {
+    const segmentGeometry = pathRouteGeometry(path);
+    for (const point of segmentGeometry) {
+      if (!target.geometry.length || !coordinatesEqual(target.geometry[target.geometry.length - 1], point)) target.geometry.push(point);
+    }
+    for (const nodeId of (Array.isArray(path.nodes) ? path.nodes : []).map(normalizeId).filter(Boolean)) {
+      if (!target.pathNodeIds.length || target.pathNodeIds[target.pathNodeIds.length - 1] !== nodeId) target.pathNodeIds.push(nodeId);
+    }
+    for (const edgeId of (Array.isArray(path.edges) ? path.edges.map(pathEdgeId).filter(Boolean) : [])) target.pathEdgeIds.push(edgeId);
+  }
+
+  function buildMultiStopRoute(fromCityId, stops, options = {}) {
+    const startCityId = normalizeId(fromCityId);
+    const pendingStops = (Array.isArray(stops) ? stops : [])
+      .map((stop, index) => ({...stop, toCityId: normalizeId(stop?.toCityId), originalIndex: index}))
+      .filter(stop => stop.toCityId && stop.toCityId !== startCityId);
+    if (!startCityId || !pendingStops.length) return null;
+
+    const vehicleType = normalizeId(options.vehicleType) || DEFAULT_VEHICLE_TYPE;
+    const departureAbsMinute = Number(options.departureAbsMinute);
+    const efficientDistanceFactor = Math.max(0, Number(options.efficientDistanceFactor ?? 1) || 1);
+    const efficientDurationFactor = Math.max(0, Number(options.efficientDurationFactor ?? 0.9) || 0.9);
+    const pathCache = new Map();
+    const routeDetails = {segments: [], pathNodeIds: [], pathEdgeIds: [], geometry: []};
+
+    function pathBetween(a, b) {
+      const key = `${a}|${b}`;
+      if (!pathCache.has(key)) {
+        const path = window.HFNetwork?.findPath?.(a, b, {mode: 'road'});
+        pathCache.set(key, path?.reachable ? path : null);
       }
-      for (const nodeId of (Array.isArray(path.nodes) ? path.nodes : []).map(normalizeId).filter(Boolean)) {
-        if (!pathNodeIds.length || pathNodeIds[pathNodeIds.length - 1] !== nodeId) pathNodeIds.push(nodeId);
+      return pathCache.get(key);
+    }
+
+    let directDistance = 0;
+    let directDurationMinutes = 0;
+    for (const stop of pendingStops) {
+      const directPath = pathBetween(startCityId, stop.toCityId);
+      if (!directPath) return null;
+      directDistance += Math.max(0, Number(directPath.distance) || 0);
+      directDurationMinutes += shipmentDurationMinutes(directPath, vehicleType);
+    }
+
+    let currentCityId = startCityId;
+    const orderedStops = [];
+    while (pendingStops.length) {
+      let bestIndex = -1;
+      let bestPath = null;
+      let bestDistance = Infinity;
+      for (let index = 0; index < pendingStops.length; index += 1) {
+        const candidate = pendingStops[index];
+        const path = pathBetween(currentCityId, candidate.toCityId);
+        const distance = path ? Math.max(0, Number(path.distance) || 0) : Infinity;
+        if (distance < bestDistance) {
+          bestIndex = index;
+          bestPath = path;
+          bestDistance = distance;
+        }
       }
-      for (const edgeId of (Array.isArray(path.edges) ? path.edges.map(pathEdgeId).filter(Boolean) : [])) pathEdgeIds.push(edgeId);
-      segments.push({path, durationMinutes: shipmentDurationMinutes(path, vehicleType)});
+      if (bestIndex < 0 || !bestPath) return null;
+      const [stop] = pendingStops.splice(bestIndex, 1);
+      const durationMinutes = shipmentDurationMinutes(bestPath, vehicleType);
+      routeDetails.segments.push({fromCityId: currentCityId, toCityId: stop.toCityId, stop, path: bestPath, distance: bestDistance, durationMinutes});
+      appendPathDetails(routeDetails, bestPath);
+      orderedStops.push(stop);
       currentCityId = stop.toCityId;
     }
-    return {segments, pathNodeIds, pathEdgeIds, geometry, durationMinutes: routeDurationMinutes({segments})};
+
+    const totalDistance = routeDetails.segments.reduce((total, segment) => total + Math.max(0, Number(segment.distance) || 0), 0);
+    const durationMinutes = routeDurationMinutes(routeDetails);
+    const distanceOk = totalDistance <= directDistance * efficientDistanceFactor;
+    const durationOk = durationMinutes <= directDurationMinutes * efficientDurationFactor;
+    if (options.force !== true && !distanceOk && !durationOk) return null;
+
+    const arrivalAbsMinute = Number.isFinite(departureAbsMinute) ? departureAbsMinute + durationMinutes : null;
+    return {
+      segments: routeDetails.segments,
+      stops: orderedStops.map(({originalIndex, ...stop}) => stop),
+      pathNodeIds: routeDetails.pathNodeIds,
+      pathEdgeIds: routeDetails.pathEdgeIds,
+      geometry: routeDetails.geometry,
+      routeGeometry: routeDetails.geometry,
+      distance: totalDistance,
+      directDistance,
+      durationMinutes,
+      directDurationMinutes,
+      departureAbsMinute: Number.isFinite(departureAbsMinute) ? departureAbsMinute : null,
+      arrivalAbsMinute,
+      efficient: distanceOk || durationOk,
+    };
+  }
+
+  function combinedRoute(fromCityId, stops, vehicleType, options = {}) {
+    return buildMultiStopRoute(fromCityId, stops, {vehicleType, ...options});
   }
 
   function reserveRouteCapacity(route, options) {
@@ -502,14 +575,15 @@
     }
 
     const stops = orders.map(order => ({toCityId: order.toCityId, goodId: order.goodId, amountKg: order.amountKg, orderId: order.id}));
-    const route = combinedRoute(orders[0].fromCityId, stops, vehicleType);
+    const route = combinedRoute(orders[0].fromCityId, stops, vehicleType, {departureAbsMinute: nowAbsMinute});
     if (!route) return false;
+    const routeStops = route.stops;
     const reservationId = `shipment-${state.nextShipmentId}`;
     const reservation = reserveRouteCapacity(route, {startAbsMinute: nowAbsMinute, units: 1, reservationId});
     if (!reservation.ok) return false;
 
     const removedStops = [];
-    for (const stop of stops) {
+    for (const stop of routeStops) {
       const removed = window.HFV2Goods?.removeFromInventory?.(orders[0].fromCityId, stop.goodId, stop.amountKg);
       if (!removed?.ok || Number(removed.removedKg) !== stop.amountKg) {
         releaseRouteReservations(reservation);
@@ -523,12 +597,13 @@
       id: state.nextShipmentId++,
       orderId: orders[0].id,
       fromCityId: orders[0].fromCityId,
-      toCityId: stops[stops.length - 1].toCityId,
-      goodId: stops[0].goodId,
+      toCityId: routeStops[routeStops.length - 1].toCityId,
+      goodId: routeStops[0].goodId,
       amountKg,
       vehicleType,
       vehicleCount: 1,
-      stops,
+      stops: routeStops,
+      routeStops,
       pathNodeIds: route.pathNodeIds,
       pathEdgeIds: route.pathEdgeIds,
       geometry: route.geometry,
@@ -643,5 +718,5 @@
     return completed;
   }
 
-  window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, absoluteMinute, orderDueToday, nextOrderDueAbsMinute, getOutgoingProductionDemandMap, vehicleCapacityKg, splitIntoVehicleLoads, plannedOrderAmountKg, validateRoadShipment};
+  window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, absoluteMinute, orderDueToday, nextOrderDueAbsMinute, getOutgoingProductionDemandMap, vehicleCapacityKg, splitIntoVehicleLoads, plannedOrderAmountKg, validateRoadShipment, buildMultiStopRoute};
 })();
