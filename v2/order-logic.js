@@ -5,6 +5,7 @@
   const DEFAULT_FREQUENCY = 'daily';
   const VALID_FREQUENCIES = new Set(['once', 'daily', 'weekly']);
   const VALID_STATUSES = new Set(['active', 'cancelled', 'paused', 'completed']);
+  const VALID_DELIVERY_STATUSES = new Set(['planned', 'running', 'completed', 'partial', 'blocked', 'failed', 'cancelled']);
 
   let state = null;
 
@@ -123,7 +124,7 @@
       message: String(delivery.message || ''),
       statusMessage: String(delivery.statusMessage || delivery.message || ''),
       updatedAtMinute: normalizeInteger(delivery.updatedAtMinute, 0, 0),
-      status: normalizeStatus(delivery.status || 'planned'),
+      status: normalizeDeliveryStatus(delivery.status || 'planned'),
     };
 
     if ('departureDay' in delivery) normalized.departureDay = normalizeInteger(delivery.departureDay, scheduledDay, 1);
@@ -165,7 +166,12 @@
 
   function normalizeStatus(value) {
     const status = String(value || DEFAULT_STATUS).trim();
-    return VALID_STATUSES.has(status) || ['planned', 'running', 'partial', 'blocked', 'failed'].includes(status) ? status : DEFAULT_STATUS;
+    return VALID_STATUSES.has(status) ? status : DEFAULT_STATUS;
+  }
+
+  function normalizeDeliveryStatus(value) {
+    const status = String(value || 'planned').trim();
+    return VALID_DELIVERY_STATUSES.has(status) ? status : 'planned';
   }
 
   function createId(prefix, nextId) {
