@@ -261,6 +261,13 @@
     return id === 'zurich' || networkState?.cities?.[id]?.unlocked === true;
   }
 
+
+  function autoExportControlMarkup(city) {
+    if (!isCityUnlocked(city.id)) return '';
+    const checked = window.HFV2Transport?.isAutoExportEnabled?.(city.id) === true ? ' checked' : '';
+    return `<section class="hf-v2-demand-card hf-v2-auto-export-card" aria-labelledby="hfV2AutoExportTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Disposition</p><h3 id="hfV2AutoExportTitle">Auto-Export</h3></div><label class="hf-v2-auto-export-switch"><input type="checkbox" data-action="toggle-auto-export" data-city-id="${escapeHtml(city.id)}"${checked}><span>Automatisch exportieren</span></label></div><p class="hf-v2-muted">Überschüsse dieser Stadt werden automatisch an erreichbare freigeschaltete Städte mit echtem Tagesbedarf geliefert.</p></section>`;
+  }
+
   function selectedClass(city) {
     return selectedId === city.id ? ' selected' : '';
   }
@@ -328,6 +335,7 @@
     document.getElementById('hfV2Facts').innerHTML = [
       financeSummaryMarkup(),
       `<div class="hf-v2-city-kpi-grid">${fact('Kategorie', tierLabel(city.tier))}${fact('Bauplätze', city.slots.toLocaleString('de-CH'))}</div>`,
+      autoExportControlMarkup(city),
       factoryProductionMarkup(city),
       inventorySectionMarkup(city),
       demandPanel(city),
@@ -595,6 +603,14 @@
   function bindDemandControls() {
     document.addEventListener('click', event => {
       const orderButton = event.target.closest?.('[data-action="open-good-order"]');
+      const autoExportToggle = event.target.closest?.('[data-action="toggle-auto-export"]');
+      if (autoExportToggle) {
+        const enabled = autoExportToggle.checked === true;
+        window.HFV2Transport?.setAutoExportEnabled?.(autoExportToggle.dataset.cityId, enabled);
+        if (enabled) window.HFV2Transport?.generateAutoExportDeliveries?.();
+        refreshSelectedCity();
+        return;
+      }
       if (orderButton) {
         event.preventDefault();
         const {cityId, goodId} = orderButton.dataset;

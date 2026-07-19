@@ -11,7 +11,7 @@
 
   function createTransportState(overrides = {}) {
     const source = overrides && typeof overrides === 'object' && !Array.isArray(overrides) ? overrides : {};
-    return {weekPlan: Array.isArray(source.weekPlan) ? source.weekPlan.filter(Boolean) : [], unresolved: Array.isArray(source.unresolved) ? source.unresolved.filter(Boolean) : [], sourceDepartures: source.sourceDepartures && typeof source.sourceDepartures === 'object' ? {...source.sourceDepartures} : {}, schemaVersion: Number.isFinite(Number(source.schemaVersion)) ? Number(source.schemaVersion) : 1};
+    return {weekPlan: Array.isArray(source.weekPlan) ? source.weekPlan.filter(Boolean) : [], unresolved: Array.isArray(source.unresolved) ? source.unresolved.filter(Boolean) : [], sourceDepartures: source.sourceDepartures && typeof source.sourceDepartures === 'object' ? {...source.sourceDepartures} : {}, autoExportCities: source.autoExportCities && typeof source.autoExportCities === 'object' && !Array.isArray(source.autoExportCities) ? {...source.autoExportCities} : {}, lastAutoExportAt: source.lastAutoExportAt && typeof source.lastAutoExportAt === 'object' ? {...source.lastAutoExportAt} : null, schemaVersion: Number.isFinite(Number(source.schemaVersion)) ? Number(source.schemaVersion) : 1};
   }
 
   function configure(options = {}) {
@@ -253,6 +253,103 @@
     }).filter(Boolean).filter(candidate => candidate.available > 0);
     candidates.sort((a, b) => a.trips - b.trips || b.capacityKg - a.capacityKg || transportCost(a.path, a.vehicle, quantityKg) - transportCost(b.path, b.vehicle, quantityKg));
     return candidates[0] || (routeOverloaded && foundReachableVehicle ? {routeOverloaded: true} : null);
+  }
+
+
+  function isCityUnlocked(cityId) {
+    const id = String(cityId || '').trim();
+    if (!id) return false;
+    if (typeof window.HFV2IsCityUnlocked === 'function') return window.HFV2IsCityUnlocked(id) === true;
+    return window.HFNetwork?.getState?.().cities?.[id]?.unlocked === true || id === 'zurich';
+  }
+
+  function cityList() {
+    return Object.values(window.HFV2CitiesById || {}).filter(city => city?.id);
+  }
+
+  function isAutoExportEnabled(cityId) {
+    return getState().autoExportCities?.[String(cityId || '').trim()] === true;
+  }
+
+  function setAutoExportEnabled(cityId, enabled) {
+    const id = String(cityId || '').trim();
+    if (!id) return false;
+    const state = getState();
+    state.autoExportCities = state.autoExportCities && typeof state.autoExportCities === 'object' ? state.autoExportCities : {};
+    if (enabled) state.autoExportCities[id] = true;
+    else delete state.autoExportCities[id];
+    dispatch('transport-auto-export-toggle');
+    return isAutoExportEnabled(id);
+  }
+
+  function hasOpenAutoExportDelivery(sourceCityId, destinationCityId, goodId) {
+    return (ordersState().deliveries || []).some(delivery => delivery?.autoExport === true
+      && [STATUS.PLANNED, STATUS.RUNNING, STATUS.WAITING_PRODUCTION].includes(delivery.status)
+      && String(delivery.sourceCityId || delivery.sourceId || '') === String(sourceCityId)
+      && String(delivery.destinationCityId || '') === String(destinationCityId)
+      && String(delivery.goodId || '') === String(goodId));
+  }
+
+  function incomingAutoExportKg(destinationCityId, goodId) {
+    return (ordersState().deliveries || []).reduce((sum, delivery) => {
+      if (delivery?.autoExport !== true || ![STATUS.PLANNED, STATUS.RUNNING].includes(delivery.status)) return sum;
+      if (String(delivery.destinationCityId || '') !== String(destinationCityId) || String(delivery.goodId || '') !== String(goodId)) return sum;
+      return sum + normalizeNonNegative(delivery.quantityKg || delivery.plannedQuantityKg);
+    }, 0);
+  }
+
+  function createAutoExportDelivery(sourceCityId, destinationCityId, goodId, quantityKg, slot, reservations) {
+    const order = {id: `auto-export:${sourceCityId}:${destinationCityId}:${goodId}`, sourceType: 'city', sourceId: sourceCityId, sourceCityId, primarySource: {type: 'city', id: sourceCityId}, destinationCityId, goodId, frequency: 'once', quantityKg, dailyDemandKg: quantityKg, deliveryDay: slot.day, deliveryMinute: slot.minute, status: 'active'};
+    const delivery = createPlannedDelivery(order, slot.day, slot.minute, {inventoryReservations: reservations});
+    delivery.autoExport = true;
+    delivery.orderId = order.id;
+    if (delivery.status === STATUS.PLANNED) statusMessage(delivery, `Auto-Export geplant: ${Math.round(delivery.quantityKg)} kg.`);
+    return delivery;
+  }
+
+  function generateAutoExportDeliveries(options = {}) {
+    const state = ordersState();
+    state.deliveries = Array.isArray(state.deliveries) ? state.deliveries : [];
+    const now = options.time || window.HFV2Time?.getState?.() || window.HFV2Save?.getState?.().time || {day: 1, hour: 8, minute: 0};
+    const day = Math.max(1, normalizeInteger(options.day ?? now.day, 1, 1));
+    const minute = normalizeInteger(options.minute ?? ((normalizeInteger(now.hour, 8, 0, 23) * 60) + normalizeInteger(now.minute, 0, 0, 59)), DEFAULT_DEPARTURE_MINUTE, 0, 1439);
+    const slot = minuteToDayMinute(absoluteMinute(day, minute) + Math.max(5, normalizeInteger(options.leadMinutes, 15, 0)));
+    const unlocked = cityList().filter(city => isCityUnlocked(city.id));
+    const reservations = createInventoryReservations();
+    let created = 0;
+    for (const sourceCity of unlocked) {
+      if (!isAutoExportEnabled(sourceCity.id)) continue;
+      const sourceInventory = window.HFV2Goods?.getCityInventory?.(sourceCity.id) || {};
+      const sourceDemand = window.HFV2Goods?.getCityDailyDemandMap?.(sourceCity.id) || {};
+      for (const [goodId, rawStock] of Object.entries(sourceInventory)) {
+        let availableKg = Math.max(0, Number(rawStock) || 0) - normalizeNonNegative(sourceDemand[goodId]) - reservedInventoryKg(reservations, sourceCity.id, goodId);
+        if (availableKg <= 0) continue;
+        for (const destinationCity of unlocked) {
+          if (destinationCity.id === sourceCity.id || availableKg <= 0) continue;
+          const demandMap = window.HFV2Goods?.getCityDailyDemandMap?.(destinationCity.id) || {};
+          const dailyDemandKg = normalizeNonNegative(demandMap[goodId]);
+          if (dailyDemandKg <= 0) continue;
+          const path = window.HFNetwork?.findPath?.(sourceCity.id, destinationCity.id);
+          if (path?.reachable !== true) continue;
+          if (hasOpenAutoExportDelivery(sourceCity.id, destinationCity.id, goodId)) continue;
+          const destinationInventory = window.HFV2Goods?.getCityInventory?.(destinationCity.id) || {};
+          const shortageKg = Math.max(0, dailyDemandKg - normalizeNonNegative(destinationInventory[goodId]) - incomingAutoExportKg(destinationCity.id, goodId));
+          const quantityKg = Math.min(availableKg, shortageKg || dailyDemandKg);
+          if (quantityKg <= 0) continue;
+          const chosen = chooseVehicle(sourceCity.id, destinationCity.id, quantityKg, slot.day, slot.minute);
+          if (!chosen || chosen.routeOverloaded) continue;
+          const delivery = createAutoExportDelivery(sourceCity.id, destinationCity.id, goodId, quantityKg, slot, reservations);
+          if (delivery.status === STATUS.PLANNED) {
+            state.deliveries.push(delivery);
+            addInventoryReservation(reservations, delivery, delivery.quantityKg);
+            availableKg = Math.max(0, availableKg - normalizeNonNegative(delivery.quantityKg));
+            created += 1;
+          }
+        }
+      }
+    }
+    if (created) dispatch('transport-auto-export-scheduled');
+    return created;
   }
 
   function sourceCityIdForOrder(order) {
@@ -824,6 +921,7 @@
     const existingDeliveryIds = new Set(state.deliveries.map(delivery => delivery?.id).filter(Boolean));
     const redispatchedDeliveryIds = new Set();
     generatePlannedDeliveries(timeBefore, timeAfter, {includeBoundaryMinute: true, skipBlockedRetry: true});
+    generateAutoExportDeliveries({time: timeAfter});
     retryBlockedDeliveries(timeAfter, {
       windowStartAbs: beforeAbs,
       windowEndAbs: afterAbs,
@@ -884,5 +982,5 @@
     }
   });
 
-  window.HFV2Transport = {STATUS, createTransportState, configure, getState, normalizeVehicleCapacityKg, generatePlannedDeliveries, retryBlockedDeliveries, processDueDeliveries, completeDelivery, chooseVehicle, scheduledDatesForOrder};
+  window.HFV2Transport = {STATUS, createTransportState, configure, getState, normalizeVehicleCapacityKg, generatePlannedDeliveries, generateAutoExportDeliveries, isAutoExportEnabled, setAutoExportEnabled, retryBlockedDeliveries, processDueDeliveries, completeDelivery, chooseVehicle, scheduledDatesForOrder};
 })();

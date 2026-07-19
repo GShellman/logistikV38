@@ -126,6 +126,7 @@
       updatedAtMinute: normalizeInteger(delivery.updatedAtMinute, 0, 0),
       status: normalizeDeliveryStatus(delivery.status || 'planned'),
       waitingForProduction: delivery.waitingForProduction === true,
+      autoExport: delivery.autoExport === true,
     };
 
     if ('departureDay' in delivery) normalized.departureDay = normalizeInteger(delivery.departureDay, scheduledDay, 1);
