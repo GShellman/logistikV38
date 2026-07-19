@@ -106,14 +106,16 @@
     return `Tag ${day} · ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
   }
 
-  function vehicleIcon(shipment) {
+  function vehicleIcon(shipment, isMovingRight = false) {
     const vehicleType = String(shipment?.vehicleType || '').trim();
     const src = window.HFV2VehicleAssets?.vehicleImage?.(vehicleType) || '';
     const fallback = window.HFVehicleCatalog?.VEHICLE_CATALOG?.[vehicleType]?.icon || '🚚';
+    const directionClass = isMovingRight ? ' hf-v2-shipment-asset--right' : '';
+    const markerDirectionClass = isMovingRight ? ' hf-v2-shipment-marker--right' : '';
     const html = src
-      ? `<img class="hf-v2-shipment-asset" src="${escapeHtml(src)}" alt="" aria-hidden="true">`
-      : `<div class="hf-v2-shipment-marker"><span class="hf-v2-shipment-marker__emoji" aria-hidden="true">${escapeHtml(fallback)}</span></div>`;
-    return L.divIcon({className: '', html, iconSize: [62, 48], iconAnchor: [31, 24]});
+      ? `<img class="hf-v2-shipment-asset${directionClass}" src="${escapeHtml(src)}" alt="" aria-hidden="true">`
+      : `<div class="hf-v2-shipment-marker${markerDirectionClass}"><span class="hf-v2-shipment-marker__emoji" aria-hidden="true">${escapeHtml(fallback)}</span></div>`;
+    return L.divIcon({className: '', html, iconSize: [42, 32], iconAnchor: [21, 16]});
   }
 
   function initLogisticsLayer(map) {
@@ -177,6 +179,25 @@
     return String(shipment?.id ?? shipment?.shipmentId ?? '').trim();
   }
 
+  function isMovingRight(fromPosition, toPosition) {
+    const fromLng = Number(fromPosition?.lng ?? fromPosition?.[1]);
+    const toLng = Number(toPosition?.lng ?? toPosition?.[1]);
+    return Number.isFinite(fromLng) && Number.isFinite(toLng) && toLng > fromLng;
+  }
+
+  function initialDirection(coords) {
+    if (!Array.isArray(coords) || coords.length < 2) return false;
+    return isMovingRight(coords[0], coords[coords.length - 1]);
+  }
+
+  function updateMarkerIcon(marker, shipment, direction) {
+    const vehicleType = String(shipment?.vehicleType || '').trim();
+    if (marker._hfV2VehicleType === vehicleType && marker._hfV2DirectionRight === direction) return;
+    marker.setIcon?.(vehicleIcon(shipment, direction));
+    marker._hfV2VehicleType = vehicleType;
+    marker._hfV2DirectionRight = direction;
+  }
+
   function shipmentTooltip(shipment, fromCity, toCity) {
     const good = goodById(shipment.goodId);
     return [
@@ -209,14 +230,20 @@
       const title = `${fromCity?.name || shipment.fromCityId} → ${toCity?.name || shipment.toCityId}`;
       let marker = shipmentMarkers.get(id);
       if (!marker) {
-        marker = L.marker(position, {icon: vehicleIcon(shipment), title, zIndexOffset: 700}).addTo(logisticsVehicleLayer);
+        const direction = initialDirection(coords);
+        marker = L.marker(position, {icon: vehicleIcon(shipment, direction), title, zIndexOffset: 700}).addTo(logisticsVehicleLayer);
+        marker._hfV2VehicleType = String(shipment?.vehicleType || '').trim();
+        marker._hfV2DirectionRight = direction;
         marker.bindTooltip(shipmentTooltip(shipment, fromCity, toCity), {direction: 'top', sticky: true, className: 'city-label'});
         shipmentMarkers.set(id, marker);
         return;
       }
 
+      const currentLatLng = marker.getLatLng?.();
+      const hasHorizontalMovement = Math.abs(Number(position[1]) - Number(currentLatLng?.lng)) > 0.000001;
+      const direction = hasHorizontalMovement ? isMovingRight(currentLatLng, position) : Boolean(marker._hfV2DirectionRight);
       marker.options.title = title;
-      marker.setIcon?.(vehicleIcon(shipment));
+      updateMarkerIcon(marker, shipment, direction);
       marker.setTooltipContent?.(shipmentTooltip(shipment, fromCity, toCity));
       animateMarkerTo(marker, position);
     });
