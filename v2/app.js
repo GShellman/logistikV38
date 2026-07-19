@@ -252,9 +252,26 @@
     return Math.max(0, Math.min(100, ((now - start) / (end - start)) * 100));
   }
 
+  function dispatchResultLabel(result) {
+    const code = String(result || 'wartet');
+    return {
+      created: 'Transport gestartet',
+      'stock-limited': 'Zu wenig Ware im Quelllager',
+      'no-route': 'Keine Straßenroute',
+      'no-vehicle': 'Kein Fahrzeug verfügbar',
+      'not-enough-vehicles': 'Zu wenige Fahrzeuge',
+      'route-overloaded': 'Straße zur Uhrzeit überlastet',
+      wartet: 'Wartet auf Abfahrtszeit',
+    }[code] || code;
+  }
+
   function orderCardMarkup(order) {
     const good = goodById(order.goodId);
-    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row"><b>${escapeHtml(cityName(order.fromCityId))} → ${escapeHtml(cityName(order.toCityId))}</b><span><small>Ware</small>${escapeHtml(good.name || order.goodId)}</span><span><small>Menge</small>${formatGoodAmount(order.goodId, order.amountKg)} · ${formatWeightKg(order.amountKg)}</span><span><small>Frequenz</small>${order.frequency === 'weekly' ? 'wöchentlich' : 'täglich'}</span><span><small>Uhrzeit</small>${formatClockTime(order.departureHour, order.departureMinute)}</span><span><small>Fahrzeugtyp</small>${escapeHtml(vehicleLabel(order.vehicleType))}</span><span><small>Status</small>${order.enabled === false ? 'Inaktiv' : 'Aktiv'}</span><span><small>Aktion</small><button type="button" data-hf-v2-order-toggle="${order.id}">${order.enabled === false ? 'Aktivieren' : 'Deaktivieren'}</button> <button type="button" data-hf-v2-order-delete="${order.id}">Löschen</button></span></article>`;
+    const dispatchResult = order.lastDispatchResult || 'wartet';
+    const dispatchAbsMinute = Number(order.lastDispatchAbsMinute);
+    const dispatchTimeMarkup = Number.isFinite(dispatchAbsMinute) ? `<span><small>Letzter Versuch</small>${formatAbsMinute(dispatchAbsMinute)}</span>` : '';
+    const warningClass = dispatchResult === 'stock-limited' ? ' hf-v2-logistics-row--warning' : '';
+    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row${warningClass}"><b>${escapeHtml(cityName(order.fromCityId))} → ${escapeHtml(cityName(order.toCityId))}</b><span><small>Ware</small>${escapeHtml(good.name || order.goodId)}</span><span><small>Menge</small>${formatGoodAmount(order.goodId, order.amountKg)} · ${formatWeightKg(order.amountKg)}</span><span><small>Frequenz</small>${order.frequency === 'weekly' ? 'wöchentlich' : 'täglich'}</span><span><small>Uhrzeit</small>${formatClockTime(order.departureHour, order.departureMinute)}</span><span><small>Fahrzeugtyp</small>${escapeHtml(vehicleLabel(order.vehicleType))}</span><span><small>Status</small>${order.enabled === false ? 'Inaktiv' : 'Aktiv'}</span><span><small>Versand</small>${escapeHtml(dispatchResultLabel(dispatchResult))}</span>${dispatchTimeMarkup}<span><small>Aktion</small><button type="button" data-hf-v2-order-toggle="${order.id}">${order.enabled === false ? 'Aktivieren' : 'Deaktivieren'}</button> <button type="button" data-hf-v2-order-delete="${order.id}">Löschen</button></span></article>`;
   }
 
   function shipmentCardMarkup(shipment) {
