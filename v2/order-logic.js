@@ -86,7 +86,15 @@
     const destinationCityId = String(delivery.destinationCityId || delivery.cityId || '').trim();
     const goodId = String(delivery.goodId || '').trim();
     if (!orderId || !destinationCityId || !goodId) return null;
-    return {
+
+    const deliveryDay = normalizeInteger(delivery.deliveryDay ?? delivery.scheduledDay, 1, 1);
+    const deliveryMinute = normalizeInteger(delivery.deliveryMinute ?? delivery.scheduledMinute, 0, 0, 1439);
+    const scheduledDay = normalizeInteger(delivery.scheduledDay ?? delivery.deliveryDay, deliveryDay, 1);
+    const scheduledMinute = normalizeInteger(delivery.scheduledMinute ?? delivery.deliveryMinute, deliveryMinute, 0, 1439);
+    const quantityKg = normalizeNonNegative(delivery.quantityKg);
+    const requestedQuantityKg = normalizeNonNegative(delivery.requestedQuantityKg ?? delivery.quantityKg);
+    const plannedQuantityKg = normalizeNonNegative(delivery.plannedQuantityKg ?? delivery.quantityKg ?? requestedQuantityKg);
+    const normalized = {
       id: String(delivery.id || '').trim() || createId('delivery', state?.nextDeliveryId || 1),
       orderId,
       destinationCityId,
@@ -94,12 +102,39 @@
       sourceType: String(delivery.sourceType || 'city').trim() || 'city',
       sourceId: String(delivery.sourceId || delivery.sourceCityId || '').trim(),
       sourceCityId: String(delivery.sourceCityId || delivery.sourceId || '').trim(),
-      requestedQuantityKg: normalizeNonNegative(delivery.requestedQuantityKg || delivery.quantityKg),
-      quantityKg: normalizeNonNegative(delivery.quantityKg),
-      deliveryDay: normalizeInteger(delivery.deliveryDay, 1, 1),
-      deliveryMinute: normalizeInteger(delivery.deliveryMinute, 0, 0, 1439),
+      requestedQuantityKg,
+      quantityKg,
+      plannedQuantityKg,
+      scheduledDay,
+      scheduledMinute,
+      deliveryDay,
+      deliveryMinute,
+      vehicleType: String(delivery.vehicleType || '').trim(),
+      vehicleCapacityKg: normalizeNonNegative(delivery.vehicleCapacityKg),
+      tripCount: normalizeInteger(delivery.tripCount, 1, 1),
+      routeMinutes: normalizeInteger(delivery.routeMinutes, 0, 0),
+      roundTripMinutes: normalizeInteger(delivery.roundTripMinutes, 0, 0),
+      distanceKm: normalizeNonNegative(delivery.distanceKm),
+      transportCost: normalizeNonNegative(delivery.transportCost),
+      departedKg: normalizeNonNegative(delivery.departedKg),
+      deliveredKg: normalizeNonNegative(delivery.deliveredKg),
+      bookedCost: normalizeNonNegative(delivery.bookedCost),
+      costBooked: delivery.costBooked === true,
+      message: String(delivery.message || ''),
+      statusMessage: String(delivery.statusMessage || delivery.message || ''),
+      updatedAtMinute: normalizeInteger(delivery.updatedAtMinute, 0, 0),
       status: normalizeStatus(delivery.status || 'planned'),
     };
+
+    if ('departureDay' in delivery) normalized.departureDay = normalizeInteger(delivery.departureDay, scheduledDay, 1);
+    if ('departureMinute' in delivery) normalized.departureMinute = normalizeInteger(delivery.departureMinute, scheduledMinute, 0, 1439);
+    if ('arrivalDay' in delivery) normalized.arrivalDay = normalizeInteger(delivery.arrivalDay, scheduledDay, 1);
+    if ('arrivalMinute' in delivery) normalized.arrivalMinute = normalizeInteger(delivery.arrivalMinute, scheduledMinute, 0, 1439);
+    if ('vehicleFreeDay' in delivery) normalized.vehicleFreeDay = normalizeInteger(delivery.vehicleFreeDay, scheduledDay, 1);
+    if ('vehicleFreeMinute' in delivery) normalized.vehicleFreeMinute = normalizeInteger(delivery.vehicleFreeMinute, scheduledMinute, 0, 1439);
+    if ('vehicleFreeAtMinute' in delivery) normalized.vehicleFreeAtMinute = normalizeInteger(delivery.vehicleFreeAtMinute, 0, 0);
+
+    return normalized;
   }
 
   function normalizePrimarySource(primarySource, order = {}) {
@@ -130,7 +165,7 @@
 
   function normalizeStatus(value) {
     const status = String(value || DEFAULT_STATUS).trim();
-    return VALID_STATUSES.has(status) || status === 'planned' || status === 'running' ? status : DEFAULT_STATUS;
+    return VALID_STATUSES.has(status) || ['planned', 'running', 'partial', 'blocked', 'failed'].includes(status) ? status : DEFAULT_STATUS;
   }
 
   function createId(prefix, nextId) {
