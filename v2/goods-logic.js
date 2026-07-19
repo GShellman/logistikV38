@@ -389,6 +389,33 @@
     return [{id: factory?.id, inputs: normalizeRecipeMap(factory?.inputs), outputs: normalizeRecipeMap(factory?.outputs ?? factory?.output)}];
   }
 
+  function scaledRecipeMap(map = {}, multiplier = 1) {
+    const factor = Math.max(0, Number(multiplier) || 0);
+    const scaled = {};
+    for (const [goodId, kg] of Object.entries(map || {})) {
+      const amount = Math.max(0, Number(kg) || 0) * factor;
+      if (amount > 0) scaled[goodId] = amount;
+    }
+    return scaled;
+  }
+
+  function recipeOutputCapacityKg(recipe) {
+    return Object.values(recipe?.outputs || {}).reduce((sum, kg) => sum + (Number(kg) || 0), 0);
+  }
+
+  function factoryProductionLevel(cityId, factoryRef) {
+    return Math.max(1, Math.trunc(Number(window.HFV2Factories?.getFactoryLevel?.(cityId, factoryRef)) || 1));
+  }
+
+  function outputMultiplierForLevel(level) {
+    return Math.max(1, Number(window.HFV2Factories?.outputMultiplierForLevel?.(level)) || Math.max(1, Number(level) || 1));
+  }
+
+  function adjustedRecipeForLevel(recipe, outputMultiplier = 1) {
+    // Inputs intentionally scale with upgraded output, so higher-level factories do not create free extra production.
+    return {...recipe, inputs: scaledRecipeMap(recipe.inputs, outputMultiplier), outputs: scaledRecipeMap(recipe.outputs, outputMultiplier)};
+  }
+
   function recipeMissingKg(recipe, missingMap) {
     return Object.entries(recipe.outputs || {}).reduce((sum, [goodId, kg]) => sum + Math.min(Number(kg) || 0, Math.max(0, Number(missingMap[goodId]) || 0)), 0);
   }
@@ -422,8 +449,12 @@
   function estimateCityFactoryProduction(cityId, factoryId) {
     configure();
     const id = assertCityId(cityId);
-    const factory = factoryDefinition(factoryId);
-    const summary = {cityId: id, factoryId: String(factoryId || ''), recipeId: null, madeKg: 0, capacityKg: 0, scale: 0, reason: 'unknown-factory', outputs: {}};
+    const factoryRef = factoryId && typeof factoryId === 'object' ? factoryId : factoryId;
+    const resolvedFactoryId = factoryId && typeof factoryId === 'object' ? String(factoryId.id ?? factoryId.factoryId ?? '').trim() : String(factoryId || '').trim();
+    const factory = factoryDefinition(resolvedFactoryId);
+    const level = factoryProductionLevel(id, factoryRef);
+    const outputMultiplier = outputMultiplierForLevel(level);
+    const summary = {cityId: id, factoryId: resolvedFactoryId, recipeId: null, madeKg: 0, capacityKg: 0, level, outputMultiplier, upgradeAdjustedCapacityKg: 0, scale: 0, reason: 'unknown-factory', outputs: {}};
     if (!factory) return summary;
 
     const targetDemand = getCityProductionTargetDemandMap(id);
@@ -435,13 +466,14 @@
     }
 
     const recipes = recipeOptions(factory)
+      .map(recipe => ({baseCapacityKg: recipeOutputCapacityKg(recipe), ...adjustedRecipeForLevel(recipe, outputMultiplier)}))
       .filter(recipe => Object.keys(recipe.outputs).length)
       .map(recipe => ({...recipe, missingKg: recipeMissingKg(recipe, missingMap)}))
       .sort((a, b) => b.missingKg - a.missingKg);
     const recipe = recipes[0] || null;
     if (!recipe) return {...summary, reason: 'no-output'};
 
-    const outputKgPerCycle = Object.values(recipe.outputs).reduce((sum, kg) => sum + (Number(kg) || 0), 0);
+    const outputKgPerCycle = recipeOutputCapacityKg(recipe);
     const demandScale = Math.min(1, maxDemandScale(recipe.outputs, missingMap));
     const freeCapacityKg = Math.max(0, getCapacityKg(id) - getUsedCapacityKg(id));
     const capacityScale = outputKgPerCycle > 0 ? Math.min(1, freeCapacityKg / outputKgPerCycle) : 0;
@@ -453,7 +485,7 @@
     const reason = scale <= 0
       ? (demandScale <= 0 ? 'demand-limited' : capacityScale <= 0 ? 'capacity-limited' : inputScale <= 0 ? 'input-limited' : 'blocked')
       : (inputScale < Math.min(demandScale, capacityScale) ? 'input-limited' : demandScale < 1 ? 'demand-limited' : capacityScale < Math.min(1, demandScale) ? 'capacity-limited' : 'ready');
-    return {cityId: id, factoryId: factory.id, recipeId: recipe.id, madeKg: Math.round(madeKg * 1000) / 1000, capacityKg: outputKgPerCycle, scale, reason, outputs};
+    return {cityId: id, factoryId: factory.id, recipeId: recipe.id, madeKg: Math.round(madeKg * 1000) / 1000, capacityKg: recipe.baseCapacityKg, level, outputMultiplier, upgradeAdjustedCapacityKg: outputKgPerCycle, scale, reason, outputs};
   }
 
   function productionDebugRows(cityId) {
@@ -466,9 +498,9 @@
     const planned = {};
     const blockers = {};
     const addBlocker = (goodId, label) => { if (!goodId || !label) return; (blockers[goodId] = blockers[goodId] || []).push(label); };
-    const builtFactories = window.HFV2Factories?.getCityFactories?.(id) || [];
-    for (const factoryId of builtFactories) {
-      const estimate = estimateCityFactoryProduction(id, factoryId);
+    const builtFactories = window.HFV2Factories?.getCityFactoryInstances?.(id) || (window.HFV2Factories?.getCityFactories?.(id) || []).map((factoryId, index) => ({id: factoryId, index}));
+    for (const factoryInstance of builtFactories) {
+      const estimate = estimateCityFactoryProduction(id, factoryInstance);
       for (const [goodId, kg] of Object.entries(estimate.outputs || {})) addPositive(planned, goodId, kg);
       if (estimate.reason === 'input-limited') for (const goodId of Object.keys(estimate.outputs || {})) addBlocker(goodId, 'keine Vorprodukte');
       if (estimate.reason === 'capacity-limited') for (const goodId of Object.keys(estimate.outputs || {})) addBlocker(goodId, 'Lagerkapazität');
@@ -508,8 +540,11 @@
         if (missingKg > 0) missingMap[goodId] = missingKg;
       }
 
-      const builtFactories = factoryApi.getCityFactories(cityId);
-      for (const factoryId of builtFactories) {
+      const builtFactories = factoryApi.getCityFactoryInstances?.(cityId) || factoryApi.getCityFactories(cityId).map((factoryId, index) => ({id: factoryId, index}));
+      for (const factoryInstance of builtFactories) {
+        const factoryId = factoryInstance.id;
+        const level = factoryProductionLevel(cityId, factoryInstance);
+        const outputMultiplier = outputMultiplierForLevel(level);
         const factory = factoryDefinition(factoryId);
         summary.factories += 1;
         if (!factory) {
@@ -518,6 +553,7 @@
         }
 
         const recipes = recipeOptions(factory)
+          .map(recipe => adjustedRecipeForLevel(recipe, outputMultiplier))
           .filter(recipe => Object.keys(recipe.outputs).length && recipeMissingKg(recipe, missingMap) > 0)
           .sort((a, b) => recipeMissingKg(b, missingMap) - recipeMissingKg(a, missingMap));
         const recipe = recipes[0] || null;
@@ -528,7 +564,7 @@
         }
 
         const demandScale = Math.min(1, maxDemandScale(recipe.outputs, missingMap));
-        const outputKgPerCycle = Object.values(recipe.outputs).reduce((sum, kg) => sum + (Number(kg) || 0), 0);
+        const outputKgPerCycle = recipeOutputCapacityKg(recipe);
         const freeCapacityKg = Math.max(0, getCapacityKg(cityId) - getUsedCapacityKg(cityId));
         const capacityScale = outputKgPerCycle > 0 ? Math.min(1, freeCapacityKg / outputKgPerCycle) : 0;
         const inputScale = Math.min(1, maxInputScale(cityId, recipe.inputs));

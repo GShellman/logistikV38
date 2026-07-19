@@ -39,11 +39,11 @@
     return factoryRecipeOptions(factory).reduce((sum, recipe) => sum + Object.values(recipe.outputs || {}).reduce((recipeSum, kg) => recipeSum + Math.max(0, Number(kg) || 0), 0), 0);
   }
 
-  function factoryOutputEntries(factory) {
+  function factoryOutputEntries(factory, outputMultiplier = 1) {
     const totals = {};
     for (const recipe of factoryRecipeOptions(factory)) {
       for (const [goodId, kg] of Object.entries(recipe.outputs || {})) {
-        totals[goodId] = (Number(totals[goodId]) || 0) + Math.max(0, Number(kg) || 0);
+        totals[goodId] = (Number(totals[goodId]) || 0) + Math.max(0, Number(kg) || 0) * Math.max(1, Number(outputMultiplier) || 1);
       }
     }
     return Object.entries(totals)
@@ -52,14 +52,14 @@
       .sort((a, b) => b.kg - a.kg || a.name.localeCompare(b.name, 'de-CH'));
   }
 
-  function factoryOutputsText(factory) {
-    const entries = factoryOutputEntries(factory);
+  function factoryOutputsText(factory, outputMultiplier = 1) {
+    const entries = factoryOutputEntries(factory, outputMultiplier);
     if (!entries.length) return 'Keine Outputs im Katalog';
     return entries.map(entry => `${entry.name || entry.goodId} ${formatDailyKg(entry.kg)}`).join(' · ');
   }
 
-  function compactFactoryOutputsText(factory, limit = 3) {
-    const entries = factoryOutputEntries(factory);
+  function compactFactoryOutputsText(factory, limit = 3, outputMultiplier = 1) {
+    const entries = factoryOutputEntries(factory, outputMultiplier);
     if (!entries.length) return 'Keine Outputs im Katalog';
     const visible = entries.slice(0, limit).map(entry => `${entry.name || entry.goodId} ${formatDailyKg(entry.kg)}`);
     if (entries.length > limit) visible.push(`+${entries.length - limit} weitere`);
@@ -101,16 +101,19 @@
   }
 
   function renderBuiltFactories(cityId) {
-    const builtFactories = factoryApi()?.getCityFactories?.(cityId) || [];
+    const builtFactories = factoryApi()?.getCityFactoryInstances?.(cityId) || (factoryApi()?.getCityFactories?.(cityId) || []).map((factoryId, index) => ({id: factoryId, index}));
     if (!builtFactories.length) return '<p class="hf-v2-fleet-empty">In dieser Stadt wurden noch keine Betriebe gebaut.</p>';
 
     return `
       <div class="hf-v2-fleet-grid" aria-label="Bereits gebaute Betriebe">
-        ${builtFactories.map(factoryId => {
+        ${builtFactories.map(factoryInstance => {
+          const factoryId = factoryInstance.id;
           const factory = factoryById(factoryId);
-          const capacityKg = factoryDailyCapacityKg(factory);
-          const outputsTitle = factoryOutputsText(factory);
-          const outputsSummary = compactFactoryOutputsText(factory);
+          const estimate = window.HFV2Goods?.estimateCityFactoryProduction?.(cityId, factoryInstance);
+          const capacityKg = Math.max(0, Number(estimate?.upgradeAdjustedCapacityKg) || factoryDailyCapacityKg(factory));
+          const outputMultiplier = Math.max(1, Number(estimate?.outputMultiplier) || 1);
+          const outputsTitle = factoryOutputsText(factory, outputMultiplier);
+          const outputsSummary = compactFactoryOutputsText(factory, 3, outputMultiplier);
           return `
             <article class="hf-v2-fleet-card">
               <div class="hf-v2-fleet-card__icon" aria-hidden="true">${factoryVisual(factoryId, factory || {icon: '🏭'})}</div>
