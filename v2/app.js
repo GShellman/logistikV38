@@ -200,7 +200,7 @@
     return `<section class="hf-v2-production-debug" aria-label="Lokale Produktionsplanung"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Debug</p><h3>Produktionsplanung · Eigenbedarf</h3></div><strong>${rows.length.toLocaleString('de-CH')}</strong></div><div class="hf-v2-production-debug-grid">${rows.map(row => {
       const good = goodById(row.goodId);
       const blockers = row.blockers?.length ? `<em>Blocker: ${row.blockers.map(escapeHtml).join(', ')}</em>` : '<small>Keine Blocker erkannt</small>';
-      return `<article class="hf-v2-production-debug-row"><b>${escapeHtml(good.name || row.goodId)}</b><span><small>lokaler Bedarf</small>${formatGoodAmount(row.goodId, row.localDemandKg)}</span><span><small>Bestand</small>${formatGoodAmount(row.goodId, row.stockKg)}</span><span><small>Produktionsplan</small>${formatGoodAmount(row.goodId, row.plannedProductionKg)}</span>${blockers}</article>`;
+      return `<article class="hf-v2-production-debug-row"><b>${escapeHtml(good.name || row.goodId)}</b><span><small>Lokaler Bedarf</small>${formatGoodAmount(row.goodId, row.localDemandKg)}</span><span><small>Exportbedarf</small>${formatGoodAmount(row.goodId, row.exportDemandKg)}</span><span><small>Zielbestand</small>${formatGoodAmount(row.goodId, row.targetDemandKg)}</span><span><small>Bestand</small>${formatGoodAmount(row.goodId, row.stockKg)}</span><span><small>Produktionsplan</small>${formatGoodAmount(row.goodId, row.plannedProductionKg)}</span>${blockers}</article>`;
     }).join('')}</div></section>`;
   }
 

@@ -457,6 +457,8 @@
     configure();
     const id = assertCityId(cityId);
     const local = getCityDailyDemandMap(id);
+    const exportDemand = getOutgoingLogisticsDemandMap(id);
+    const target = mergeDemandMaps(local, exportDemand);
     const inventory = getCityInventory(id);
     const planned = {};
     const blockers = {};
@@ -468,13 +470,17 @@
       if (estimate.reason === 'input-limited') for (const goodId of Object.keys(estimate.outputs || {})) addBlocker(goodId, 'keine Vorprodukte');
       if (estimate.reason === 'capacity-limited') for (const goodId of Object.keys(estimate.outputs || {})) addBlocker(goodId, 'Lagerkapazität');
     }
-    const goods = Array.from(new Set([...Object.keys(local), ...Object.keys(inventory), ...Object.keys(planned)]));
+    const goods = Array.from(new Set([...Object.keys(target), ...Object.keys(inventory), ...Object.keys(planned)]));
     return goods.sort((a, b) => String(a).localeCompare(String(b), 'de-CH')).map(goodId => {
       const localKg = Math.max(0, Number(local[goodId]) || 0);
+      const exportKg = Math.max(0, Number(exportDemand[goodId]) || 0);
+      const targetKg = Math.max(0, Number(target[goodId]) || 0);
       const stockKg = Math.max(0, Number(inventory[goodId]) || 0);
+      const plannedKg = Math.max(0, Number(planned[goodId]) || 0);
       const rowBlockers = blockers[goodId] || [];
       if (localKg > 0 && stockKg <= localKg + 0.001) rowBlockers.push('lokaler Reservebestand');
-      return {goodId, localDemandKg: localKg, stockKg, plannedProductionKg: Math.max(0, Number(planned[goodId]) || 0), blockers: Array.from(new Set(rowBlockers))};
+      if (exportKg > 0 && stockKg <= targetKg + 0.001) rowBlockers.push('Exportauftrag offen');
+      return {goodId, localDemandKg: localKg, exportDemandKg: exportKg, targetDemandKg: targetKg, stockKg, plannedProductionKg: plannedKg, blockers: Array.from(new Set(rowBlockers))};
     });
   }
 
