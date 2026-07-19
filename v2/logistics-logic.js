@@ -80,8 +80,13 @@
     const departureAbsMinute = Number(shipment.departureAbsMinute);
     const arrivalAbsMinute = Number(shipment.arrivalAbsMinute);
     if (!id || !orderId || !fromCityId || !toCityId || !goodId || amountKg <= 0 || !Number.isFinite(departureAbsMinute) || !Number.isFinite(arrivalAbsMinute)) return null;
-    const status = ['active', 'delivered', 'cancelled'].includes(shipment.status) ? shipment.status : 'active';
-    return {...shipment, id, orderId, fromCityId, toCityId, goodId, amountKg, departureAbsMinute, arrivalAbsMinute, status};
+    const vehicleCount = positiveInteger(shipment.vehicleCount, 1);
+    const status = ['active', 'delivered', 'failed', 'partial'].includes(shipment.status) ? shipment.status : 'active';
+    const createdAtAbsMinute = Number.isFinite(Number(shipment.createdAtAbsMinute)) ? Number(shipment.createdAtAbsMinute) : departureAbsMinute;
+    const pathNodeIds = Array.isArray(shipment.pathNodeIds) ? shipment.pathNodeIds.map(normalizeId).filter(Boolean) : [];
+    const pathEdgeIds = Array.isArray(shipment.pathEdgeIds) ? shipment.pathEdgeIds.map(normalizeId).filter(Boolean) : [];
+    const geometry = Array.isArray(shipment.geometry) ? shipment.geometry : (Array.isArray(shipment.routeGeometry) ? shipment.routeGeometry : []);
+    return {...shipment, id, orderId, fromCityId, toCityId, goodId, amountKg, vehicleCount, pathNodeIds, pathEdgeIds, geometry, routeGeometry: geometry, departureAbsMinute, arrivalAbsMinute, status, createdAtAbsMinute};
   }
 
   function configure(options = {}) {
@@ -165,6 +170,10 @@
     return geometry;
   }
 
+  function pathEdgeId(edge) {
+    return normalizeId(edge?.id || `${edge?.a || ''}-${edge?.b || ''}-${edge?.type || ''}`);
+  }
+
   function pathRouteGeometry(path) {
     const nodes = Array.isArray(path?.nodes) ? path.nodes : [];
     const edges = Array.isArray(path?.edges) ? path.edges : [];
@@ -238,6 +247,15 @@
     return Math.max(1, Math.ceil((Number(path?.duration) || 1) * 60));
   }
 
+  function sourceStockKg(cityId, goodId) {
+    return Math.max(0, Number(window.HFV2Goods?.getCityInventory?.(cityId)?.[goodId]) || 0);
+  }
+
+  function markOrderDispatchResult(order, result) {
+    order.lastDispatchResult = result;
+    order.lastDispatchAbsMinute = absoluteMinute(currentTime());
+  }
+
   function tick() {
     configure();
     const time = currentTime();
@@ -247,25 +265,65 @@
       if (!orderDueToday(order, time)) continue;
       const vehicleType = order.vehicleType || DEFAULT_VEHICLE_TYPE;
       const capacityKg = vehicleCapacityKg(vehicleType);
-      const loads = splitIntoVehicleLoads(order.amountKg, capacityKg);
-      if (!loads.length) continue;
-      const path = validateRoute(order.fromCityId, order.toCityId);
-      const arrivalAbsMinute = nowAbsMinute + shipmentDurationMinutes(path, vehicleType);
-      const removed = window.HFV2Goods?.removeFromInventory?.(order.fromCityId, order.goodId, order.amountKg);
-      if (!removed?.removedKg) continue;
-      const scale = Math.min(1, removed.removedKg / order.amountKg);
-      const dispatchLoads = splitIntoVehicleLoads(order.amountKg * scale, capacityKg);
-      const reservation = window.HFNetwork?.reservePathCapacity?.(path, {startAbsMinute: nowAbsMinute, endAbsMinute: arrivalAbsMinute, units: dispatchLoads.length});
-      if (reservation && reservation.ok === false) {
-        window.HFV2Goods?.addToInventory?.(order.fromCityId, order.goodId, removed.removedKg);
+      const vehicleCount = splitIntoVehicleLoads(order.amountKg, capacityKg).length;
+      if (!vehicleCount) {
+        markOrderDispatchResult(order, 'capacity-invalid');
         continue;
       }
-      for (const loadKg of dispatchLoads) {
-        const shipment = {id: state.nextShipmentId++, orderId: order.id, fromCityId: order.fromCityId, toCityId: order.toCityId, goodId: order.goodId, vehicleType, amountKg: loadKg, departureAbsMinute: nowAbsMinute, arrivalAbsMinute, status: 'active', routeGeometry: pathRouteGeometry(path), reservationId: reservation?.reservationId || null};
-        state.shipments.push(shipment);
-        created.push(shipment);
+
+      const availableKg = sourceStockKg(order.fromCityId, order.goodId);
+      if (availableKg < order.amountKg) {
+        markOrderDispatchResult(order, 'stock-limited');
+        continue;
       }
+
+      let path;
+      try {
+        path = validateRoute(order.fromCityId, order.toCityId);
+      } catch (error) {
+        markOrderDispatchResult(order, 'route-invalid');
+        continue;
+      }
+
+      const arrivalAbsMinute = nowAbsMinute + shipmentDurationMinutes(path, vehicleType);
+      const reservation = window.HFNetwork?.reservePathCapacity?.(path, {startAbsMinute: nowAbsMinute, endAbsMinute: arrivalAbsMinute, units: vehicleCount});
+      if (reservation && reservation.ok === false) {
+        markOrderDispatchResult(order, reservation.reason || 'capacity-limited');
+        continue;
+      }
+
+      const reservationId = reservation?.reservationId || null;
+      const removed = window.HFV2Goods?.removeFromInventory?.(order.fromCityId, order.goodId, order.amountKg);
+      if (!removed?.ok || Number(removed.removedKg) !== order.amountKg) {
+        if (reservationId) window.HFNetwork?.releaseCapacityReservation?.(reservationId);
+        markOrderDispatchResult(order, removed?.reason || 'stock-limited');
+        continue;
+      }
+
+      const geometry = pathRouteGeometry(path);
+      const shipment = {
+        id: state.nextShipmentId++,
+        orderId: order.id,
+        fromCityId: order.fromCityId,
+        toCityId: order.toCityId,
+        goodId: order.goodId,
+        amountKg: order.amountKg,
+        vehicleType,
+        vehicleCount,
+        pathNodeIds: Array.isArray(path.nodes) ? path.nodes.map(normalizeId).filter(Boolean) : [],
+        pathEdgeIds: Array.isArray(path.edges) ? path.edges.map(pathEdgeId).filter(Boolean) : [],
+        geometry,
+        routeGeometry: geometry,
+        departureAbsMinute: nowAbsMinute,
+        arrivalAbsMinute,
+        reservationId,
+        status: 'active',
+        createdAtAbsMinute: nowAbsMinute,
+      };
+      state.shipments.push(shipment);
+      created.push(shipment);
       order.lastDispatchedDay = Math.max(1, Math.trunc(Number(time.day) || 1));
+      markOrderDispatchResult(order, 'created');
     }
     if (created.length) window.HFV2Save?.dispatchStateChanged?.('logistics-shipments-created');
     return created;
