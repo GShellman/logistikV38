@@ -143,6 +143,8 @@
     transport.weekPlan = Array.isArray(transport.weekPlan) ? transport.weekPlan.filter(row => row && typeof row === 'object') : [];
     transport.unresolved = Array.isArray(transport.unresolved) ? transport.unresolved.filter(row => row && typeof row === 'object') : [];
     transport.sourceDepartures = transport.sourceDepartures && typeof transport.sourceDepartures === 'object' && !Array.isArray(transport.sourceDepartures) ? transport.sourceDepartures : {};
+    transport.autoExportCities = transport.autoExportCities && typeof transport.autoExportCities === 'object' && !Array.isArray(transport.autoExportCities) ? transport.autoExportCities : {};
+    transport.lastAutoExportAt = transport.lastAutoExportAt && typeof transport.lastAutoExportAt === 'object' && !Array.isArray(transport.lastAutoExportAt) ? transport.lastAutoExportAt : null;
     transport.schemaVersion = Number.isFinite(Number(transport.schemaVersion)) ? Number(transport.schemaVersion) : 1;
     delete goods.cash;
     delete orders.cash;

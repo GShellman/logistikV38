@@ -2153,3 +2153,22 @@ code { background: #edf4f9; color: #174a78; }
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+.hf-v2-auto-export-card .hf-v2-demand-head {
+  align-items: center;
+}
+
+.hf-v2-auto-export-switch {
+  align-items: center;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.hf-v2-auto-export-switch input {
+  accent-color: var(--green);
+  height: 18px;
+  width: 18px;
+}
