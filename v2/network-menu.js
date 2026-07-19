@@ -297,9 +297,28 @@
         <p class="hf-v2-network-eyebrow">Verbindung gebaut</p>
         <h3>${escapeHtml(origin?.name || project.a)} → ${escapeHtml(target?.name || project.b)}</h3>
         ${renderCashBadge()}
-        <p class="hf-v2-network-hint">${escapeHtml(typeLabel)} · ${formatKm(builtDistance)} · Baukosten ${formatMoney(project.cost)} · Unterhalt ${formatMoney(project.maintenance)}/Tag</p>
-      </div>
-      ${renderTargetPicker(project.a)}`;
+        <p class="hf-v2-network-hint">Die Verbindung wurde erfolgreich gebaut und die Zielstadt ist jetzt im Netz sichtbar.</p>
+        <div class="hf-v2-network-option__rows">
+          <span><em>Verbindungstyp</em><strong>${escapeHtml(typeLabel)}</strong></span>
+          <span><em>Distanz</em><strong>${formatKm(builtDistance)}</strong></span>
+          <span><em>Neue Netzstadt</em><strong>${escapeHtml(target?.name || project.b)}</strong></span>
+        </div>
+        <div class="hf-v2-network-grid">
+          <button class="hf-v2-network-back" type="button" data-action="show-target-picker">Weitere Verbindung bauen</button>
+          <button class="hf-v2-network-back" type="button" data-action="close-network-modal">Schließen</button>
+        </div>
+      </div>`;
+  }
+
+  function renderBuildFailure() {
+    return `
+      <div class="hf-v2-network-menu">
+        <p class="hf-v2-network-eyebrow">Projekt nicht gebaut</p>
+        <h3>Projekt konnte nicht gebaut werden</h3>
+        ${renderCashBadge()}
+        <p class="hf-v2-network-hint">Projekt konnte nicht gebaut werden – Kapital oder Projektstatus prüfen.</p>
+        <button class="hf-v2-network-back" type="button" data-action="back-to-build-options">Weitere Option wählen</button>
+      </div>`;
   }
 
   async function handleBuild(type, originId = activeOriginId, targetId = activeTargetId) {
@@ -318,19 +337,12 @@
       </div>`);
       return;
     }
-    const edge = window.HF_V2?.confirmProject?.();
-    if (!edge) {
-      setBody(`
-        <div class="hf-v2-network-menu">
-          <p class="hf-v2-network-eyebrow">Projekt nicht gebaut</p>
-          <h3>Verbindung konnte nicht gebaut werden</h3>
-          ${renderCashBadge()}
-          <p class="hf-v2-network-hint">Bitte prüfe Budget und Zielstatus und wähle die Option erneut.</p>
-          <button class="hf-v2-network-back" type="button" data-action="back-to-build-options">Weitere Option wählen</button>
-        </div>`);
+    const confirmedEdge = await window.HF_V2?.confirmProject?.();
+    if (!confirmedEdge) {
+      setBody(renderBuildFailure());
       return;
     }
-    showNetworkBody(project.a, renderBuildSuccess(project, edge));
+    showNetworkBody(project.a, renderBuildSuccess(project, confirmedEdge));
   }
 
   function bindNetworkMenuEvents() {
@@ -369,6 +381,11 @@
 
       if (action === 'back-to-build-options') {
         setBody(activeTargetId ? renderBuildOptions(activeOriginId, activeTargetId) : renderTargetPicker(activeOriginId));
+        return;
+      }
+
+      if (action === 'close-network-modal') {
+        window.HF_V2?.closeModal?.();
       }
     });
   }
