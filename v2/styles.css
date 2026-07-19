@@ -1895,22 +1895,15 @@ code { background: #edf4f9; color: #174a78; }
 
 .hf-v2-shipment-marker {
   align-items: center;
-  background: rgba(255, 255, 255, .96);
-  border: 2px solid #f0b23f;
+  background: rgba(245, 248, 252, .95);
+  border: 1px solid rgba(93, 109, 127, .38);
   border-radius: 999px;
-  box-shadow: 0 8px 18px rgba(15, 31, 52, .18), 0 1px 4px rgba(15, 31, 52, .16);
+  box-shadow: 0 6px 14px rgba(15, 31, 52, .16);
   display: flex;
   height: 34px;
   justify-content: center;
   overflow: hidden;
   width: 44px;
-}
-
-.hf-v2-shipment-marker__image img {
-  display: block;
-  height: 28px;
-  object-fit: contain;
-  width: 36px;
 }
 
 .hf-v2-shipment-marker__emoji {
@@ -2048,25 +2041,23 @@ code { background: #edf4f9; color: #174a78; }
 
 .hf-v2-shipment-marker {
   align-items: center;
-  background: #fff;
-  border: 2px solid var(--hf-accent);
+  background: rgba(245, 248, 252, .95);
+  border: 1px solid rgba(93, 109, 127, .38);
   border-radius: 999px;
-  box-shadow: 0 10px 24px rgba(15, 31, 52, .22), 0 2px 7px rgba(15, 31, 52, .18);
+  box-shadow: 0 6px 14px rgba(15, 31, 52, .16);
   display: inline-flex;
-  height: 40px;
+  height: 34px;
   justify-content: center;
   overflow: hidden;
-  padding: 3px 5px;
-  width: 48px;
+  width: 44px;
 }
 
-.hf-v2-shipment-marker img,
-.hf-v2-shipment-marker__image img {
+.hf-v2-shipment-asset {
   display: block;
-  height: 30px;
-  max-width: 36px;
-  object-fit: contain;
-  width: auto;
+  filter: drop-shadow(0 5px 7px rgba(0, 0, 0, .35));
+  height: auto;
+  pointer-events: none;
+  width: 62px;
 }
 
 .hf-v2-shipment-marker--delayed {

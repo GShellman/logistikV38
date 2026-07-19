@@ -110,9 +110,9 @@
     const src = window.HFV2VehicleAssets?.vehicleImage?.(vehicleType) || '';
     const fallback = window.HFVehicleCatalog?.VEHICLE_CATALOG?.[vehicleType]?.icon || '🚚';
     const html = src
-      ? `<span class="hf-v2-shipment-marker__image"><img src="${escapeHtml(src)}" alt="" aria-hidden="true"></span>`
-      : `<span class="hf-v2-shipment-marker__emoji" aria-hidden="true">${escapeHtml(fallback)}</span>`;
-    return L.divIcon({className: '', html: `<div class="hf-v2-shipment-marker">${html}</div>`, iconSize: [44, 34], iconAnchor: [22, 17]});
+      ? `<img class="hf-v2-shipment-asset" src="${escapeHtml(src)}" alt="" aria-hidden="true">`
+      : `<div class="hf-v2-shipment-marker"><span class="hf-v2-shipment-marker__emoji" aria-hidden="true">${escapeHtml(fallback)}</span></div>`;
+    return L.divIcon({className: '', html, iconSize: [62, 48], iconAnchor: [31, 24]});
   }
 
   function initLogisticsLayer(map) {
