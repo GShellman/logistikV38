@@ -220,17 +220,32 @@
     return statusMessage(delivery, chosen.trips > 1 ? `In ${chosen.trips} Fahrten geplant.` : 'Lieferung geplant.');
   }
 
-  function generatePlannedDeliveries(fromTime, toTime) {
+  function nextSchedulableSlot(order, slot, boundaryAbs, includeBoundary) {
+    let day = normalizeInteger(slot?.day, 1, 1);
+    let minute = normalizeInteger(slot?.minute, DEFAULT_DEPARTURE_MINUTE, 0, 1439);
+    const slotAbs = absoluteMinute(day, minute);
+    const isDue = includeBoundary ? slotAbs < boundaryAbs : slotAbs <= boundaryAbs;
+    if (!isDue) return {day, minute};
+    if (order?.frequency === 'weekly') return {day: day + (Math.floor((boundaryAbs - slotAbs) / (7 * 1440)) + 1) * 7, minute};
+    if (order?.frequency && order.frequency !== 'once') return {day: day + (Math.floor((boundaryAbs - slotAbs) / 1440) + 1), minute};
+    const nextAbs = boundaryAbs + 1;
+    return {day: Math.floor(nextAbs / 1440) + 1, minute: nextAbs % 1440};
+  }
+
+  function generatePlannedDeliveries(fromTime, toTime, options = {}) {
     const state = ordersState();
     state.deliveries = Array.isArray(state.deliveries) ? state.deliveries : [];
     const fromAbs = timeAbsoluteMinute(fromTime);
     const toAbs = timeAbsoluteMinute(toTime) + SCHEDULE_HORIZON_DAYS * 1440;
+    const includeBoundaryMinute = options?.includeBoundaryMinute === true;
     const fromDay = Math.max(1, Math.floor(fromAbs / 1440) + 1);
     const toDay = Math.max(fromDay, Math.floor(toAbs / 1440) + 1);
     let created = 0;
     for (const order of state.orders || []) {
       if (!order || order.status !== 'active') continue;
-      for (const slot of scheduledDatesForOrder(order, fromDay, toDay)) {
+      for (const rawSlot of scheduledDatesForOrder(order, fromDay, toDay)) {
+        const slot = nextSchedulableSlot(order, rawSlot, fromAbs, includeBoundaryMinute);
+        if (absoluteMinute(slot.day, slot.minute) > toAbs) continue;
         if (hasScheduledDelivery(order.id, slot.day, slot.minute)) continue;
         state.deliveries.push(createPlannedDelivery(order, slot.day, slot.minute));
         created += 1;
@@ -268,14 +283,20 @@
 
   function processDueDeliveries(timeBefore, timeAfter) {
     const state = ordersState();
-    generatePlannedDeliveries(timeBefore, timeAfter);
+    const existingDeliveryIds = new Set((state.deliveries || []).map(delivery => delivery?.id).filter(Boolean));
+    generatePlannedDeliveries(timeBefore, timeAfter, {includeBoundaryMinute: true});
     const beforeAbs = timeAbsoluteMinute(timeBefore);
     const afterAbs = timeAbsoluteMinute(timeAfter);
     let processed = 0;
     for (const delivery of state.deliveries || []) {
       if (delivery.status !== STATUS.PLANNED) continue;
       const dueAbs = absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute);
-      if (dueAbs < beforeAbs || dueAbs > afterAbs) continue;
+      // Tick window semantics: deliveries generated during this tick use [beforeAbs, afterAbs],
+      // while deliveries that already existed before generation use (beforeAbs, afterAbs].
+      // This lets a just-created 08:00 delivery run in the 08:00→09:00 tick without
+      // re-running an older delivery that was already considered at exactly 08:00.
+      const wasGeneratedThisTick = delivery.id && !existingDeliveryIds.has(delivery.id);
+      if (dueAbs > afterAbs || dueAbs < beforeAbs || (dueAbs === beforeAbs && !wasGeneratedThisTick)) continue;
       completeDelivery(delivery);
       processed += 1;
     }
