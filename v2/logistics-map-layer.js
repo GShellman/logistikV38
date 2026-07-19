@@ -2,6 +2,7 @@
   'use strict';
 
   let logisticsVehicleLayer = null;
+  const shipmentMarkers = new Map();
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>\"]/g, char => ({
@@ -123,15 +124,79 @@
     return logisticsVehicleLayer;
   }
 
+  function cancelMarkerAnimation(marker) {
+    const animationId = marker?._hfV2AnimationFrame;
+    if (animationId) window.cancelAnimationFrame?.(animationId);
+    if (marker) marker._hfV2AnimationFrame = null;
+  }
+
+  function animateMarkerTo(marker, targetLatLng, durationMs = 650) {
+    if (!marker || !Array.isArray(targetLatLng) || targetLatLng.length < 2) return;
+    const targetLat = Number(targetLatLng[0]);
+    const targetLng = Number(targetLatLng[1]);
+    if (!Number.isFinite(targetLat) || !Number.isFinite(targetLng)) return;
+    cancelMarkerAnimation(marker);
+
+    const current = marker.getLatLng?.();
+    const startLat = Number(current?.lat);
+    const startLng = Number(current?.lng);
+    if (!Number.isFinite(startLat) || !Number.isFinite(startLng) || durationMs <= 0 || !window.requestAnimationFrame) {
+      marker.setLatLng([targetLat, targetLng]);
+      return;
+    }
+
+    if (Math.abs(startLat - targetLat) < 0.000001 && Math.abs(startLng - targetLng) < 0.000001) {
+      marker.setLatLng([targetLat, targetLng]);
+      return;
+    }
+
+    const startedAt = window.performance?.now?.() ?? Date.now();
+    const duration = Math.max(1, Number(durationMs) || 650);
+    const step = timestamp => {
+      const elapsed = (Number(timestamp) || Date.now()) - startedAt;
+      const ratio = clamp01(elapsed / duration);
+      const lat = startLat + (targetLat - startLat) * ratio;
+      const lng = startLng + (targetLng - startLng) * ratio;
+      marker.setLatLng([lat, lng]);
+      if (ratio < 1) {
+        marker._hfV2AnimationFrame = window.requestAnimationFrame(step);
+      } else {
+        marker._hfV2AnimationFrame = null;
+      }
+    };
+    marker._hfV2AnimationFrame = window.requestAnimationFrame(step);
+  }
+
   function clearLogisticsVehicles() {
+    shipmentMarkers.forEach(marker => cancelMarkerAnimation(marker));
+    shipmentMarkers.clear();
     logisticsVehicleLayer?.clearLayers?.();
+  }
+
+  function shipmentId(shipment) {
+    return String(shipment?.id ?? shipment?.shipmentId ?? '').trim();
+  }
+
+  function shipmentTooltip(shipment, fromCity, toCity) {
+    const good = goodById(shipment.goodId);
+    return [
+      `<strong>${escapeHtml(fromCity?.name || shipment.fromCityId)} → ${escapeHtml(toCity?.name || shipment.toCityId)}</strong>`,
+      `Ware: ${escapeHtml(good.name || shipment.goodId)}`,
+      `Menge: ${escapeHtml(formatGoodAmount(shipment.goodId, shipment.amountKg))}`,
+      `Abfahrt: ${escapeHtml(formatAbsMinute(shipment.departureAbsMinute))}`,
+      `Ankunft: ${escapeHtml(formatAbsMinute(shipment.arrivalAbsMinute))}`,
+      `Status: ${escapeHtml(shipment.status)}`,
+    ].join('<br>');
   }
 
   function renderActiveShipments(shipments = [], citiesById = {}) {
     if (!logisticsVehicleLayer || !window.L) return null;
-    clearLogisticsVehicles();
     const nowAbsMinute = currentAbsMinute();
+    const activeShipmentIds = new Set();
+
     shipments.filter(shipment => shipment?.status === 'active').forEach(shipment => {
+      const id = shipmentId(shipment);
+      if (!id) return;
       const fromCity = citiesById[shipment.fromCityId];
       const toCity = citiesById[shipment.toCityId];
       const coords = routeGeometry(shipment, fromCity, toCity);
@@ -139,19 +204,32 @@
       const progress = duration > 0 ? clamp01((nowAbsMinute - Number(shipment.departureAbsMinute)) / duration) : 1;
       const position = interpolateAlongPolyline(coords, progress);
       if (!position) return;
-      const good = goodById(shipment.goodId);
-      const marker = L.marker(position, {icon: vehicleIcon(shipment), title: `${fromCity?.name || shipment.fromCityId} → ${toCity?.name || shipment.toCityId}`, zIndexOffset: 700}).addTo(logisticsVehicleLayer);
-      marker.bindTooltip([
-        `<strong>${escapeHtml(fromCity?.name || shipment.fromCityId)} → ${escapeHtml(toCity?.name || shipment.toCityId)}</strong>`,
-        `Ware: ${escapeHtml(good.name || shipment.goodId)}`,
-        `Menge: ${escapeHtml(formatGoodAmount(shipment.goodId, shipment.amountKg))}`,
-        `Abfahrt: ${escapeHtml(formatAbsMinute(shipment.departureAbsMinute))}`,
-        `Ankunft: ${escapeHtml(formatAbsMinute(shipment.arrivalAbsMinute))}`,
-        `Status: ${escapeHtml(shipment.status)}`,
-      ].join('<br>'), {direction: 'top', sticky: true, className: 'city-label'});
+
+      activeShipmentIds.add(id);
+      const title = `${fromCity?.name || shipment.fromCityId} → ${toCity?.name || shipment.toCityId}`;
+      let marker = shipmentMarkers.get(id);
+      if (!marker) {
+        marker = L.marker(position, {icon: vehicleIcon(shipment), title, zIndexOffset: 700}).addTo(logisticsVehicleLayer);
+        marker.bindTooltip(shipmentTooltip(shipment, fromCity, toCity), {direction: 'top', sticky: true, className: 'city-label'});
+        shipmentMarkers.set(id, marker);
+        return;
+      }
+
+      marker.options.title = title;
+      marker.setIcon?.(vehicleIcon(shipment));
+      marker.setTooltipContent?.(shipmentTooltip(shipment, fromCity, toCity));
+      animateMarkerTo(marker, position);
     });
+
+    shipmentMarkers.forEach((marker, id) => {
+      if (activeShipmentIds.has(id)) return;
+      cancelMarkerAnimation(marker);
+      logisticsVehicleLayer.removeLayer(marker);
+      shipmentMarkers.delete(id);
+    });
+
     return logisticsVehicleLayer;
   }
 
-  window.HFV2LogisticsLayer = {initLogisticsLayer, renderActiveShipments, clearLogisticsVehicles};
+  window.HFV2LogisticsLayer = {initLogisticsLayer, renderActiveShipments, clearLogisticsVehicles, animateMarkerTo};
 })();
