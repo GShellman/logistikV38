@@ -168,6 +168,9 @@
 
   function getOutgoingLogisticsDemandMap(cityId) {
     const id = assertCityId(cityId);
+    const productionDemand = window.HFV2Logistics?.getOutgoingProductionDemandMap?.(id);
+    if (productionDemand && typeof productionDemand === 'object') return normalizePositiveNumberMap(productionDemand);
+
     const orders = window.HFV2Logistics?.getState?.().orders || [];
     const demandMap = {};
     for (const order of orders) {
