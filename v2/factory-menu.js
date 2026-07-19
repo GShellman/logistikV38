@@ -14,6 +14,58 @@
     return `CHF ${Math.round(Number(value) || 0).toLocaleString('de-CH')}`;
   }
 
+  function formatDailyKg(value) {
+    const kg = Math.max(0, Number(value) || 0);
+    if (kg >= 1000) return `${(kg / 1000).toLocaleString('de-CH', {maximumFractionDigits: 1})} t/Tag`;
+    return `${kg.toLocaleString('de-CH', {maximumFractionDigits: kg >= 10 ? 0 : 1})} kg/Tag`;
+  }
+
+  function goodById(goodId) {
+    const id = String(goodId || '').trim();
+    return (window.HFV2GoodsCatalog || []).find(good => good.id === id) || window.HF_GOODS_DATABASE?.goods?.[id] || {id, name: id, icon: '📦'};
+  }
+
+  function factoryRecipeOptions(factory) {
+    const recipes = Array.isArray(factory?.recipes) ? factory.recipes : [];
+    if (recipes.length) return recipes.map(recipe => ({
+      id: recipe.id || factory.id,
+      name: recipe.name || factory.name,
+      outputs: recipe.outputs || recipe.output || {},
+    }));
+    return [{id: factory?.id, name: factory?.name, outputs: factory?.outputs || factory?.output || {}}];
+  }
+
+  function factoryDailyCapacityKg(factory) {
+    return factoryRecipeOptions(factory).reduce((sum, recipe) => sum + Object.values(recipe.outputs || {}).reduce((recipeSum, kg) => recipeSum + Math.max(0, Number(kg) || 0), 0), 0);
+  }
+
+  function factoryOutputEntries(factory) {
+    const totals = {};
+    for (const recipe of factoryRecipeOptions(factory)) {
+      for (const [goodId, kg] of Object.entries(recipe.outputs || {})) {
+        totals[goodId] = (Number(totals[goodId]) || 0) + Math.max(0, Number(kg) || 0);
+      }
+    }
+    return Object.entries(totals)
+      .filter(([, kg]) => kg > 0)
+      .map(([goodId, kg]) => ({goodId, kg, name: goodById(goodId).name || goodId}))
+      .sort((a, b) => b.kg - a.kg || a.name.localeCompare(b.name, 'de-CH'));
+  }
+
+  function factoryOutputsText(factory) {
+    const entries = factoryOutputEntries(factory);
+    if (!entries.length) return 'Keine Outputs im Katalog';
+    return entries.map(entry => `${entry.name || entry.goodId} ${formatDailyKg(entry.kg)}`).join(' · ');
+  }
+
+  function compactFactoryOutputsText(factory, limit = 3) {
+    const entries = factoryOutputEntries(factory);
+    if (!entries.length) return 'Keine Outputs im Katalog';
+    const visible = entries.slice(0, limit).map(entry => `${entry.name || entry.goodId} ${formatDailyKg(entry.kg)}`);
+    if (entries.length > limit) visible.push(`+${entries.length - limit} weitere`);
+    return visible.join(' · ');
+  }
+
   function citiesById() {
     return window.HFV2CitiesById || {};
   }
@@ -56,6 +108,9 @@
       <div class="hf-v2-fleet-grid" aria-label="Bereits gebaute Betriebe">
         ${builtFactories.map(factoryId => {
           const factory = factoryById(factoryId);
+          const capacityKg = factoryDailyCapacityKg(factory);
+          const outputsTitle = factoryOutputsText(factory);
+          const outputsSummary = compactFactoryOutputsText(factory);
           return `
             <article class="hf-v2-fleet-card">
               <div class="hf-v2-fleet-card__icon" aria-hidden="true">${factoryVisual(factoryId, factory || {icon: '🏭'})}</div>
@@ -68,6 +123,10 @@
                   <span class="hf-v2-fleet-owned">Aktiv</span>
                 </div>
                 <p>${escapeHtml(factory?.desc || 'Bereits gebauter Betrieb in dieser Stadt.')}</p>
+                <dl class="hf-v2-fleet-stats">
+                  <div><dt>Produktion</dt><dd>${formatDailyKg(capacityKg)}</dd></div>
+                  <div><dt>Output</dt><dd title="${escapeHtml(outputsTitle)}">${escapeHtml(outputsSummary)}</dd></div>
+                </dl>
               </div>
             </article>`;
         }).join('')}
@@ -108,6 +167,9 @@
     const result = factoryApi()?.canBuildFactory?.(cityId, factory.id) || {ok: false, reason: 'unavailable'};
     const disabledText = result.ok ? '' : ` disabled aria-disabled="true" title="${escapeHtml(buildDisabledTitle(result))}"`;
     const ownedLabel = ownedCount > 0 ? `${ownedCount.toLocaleString('de-CH')} gebaut` : 'Noch nicht gebaut';
+    const capacityKg = factoryDailyCapacityKg(factory);
+    const outputsTitle = factoryOutputsText(factory);
+    const outputsSummary = compactFactoryOutputsText(factory);
 
     return `
       <article class="hf-v2-fleet-card${result.ok ? '' : ' is-disabled'}">
@@ -124,6 +186,8 @@
           <dl class="hf-v2-fleet-stats">
             <div><dt>Kosten</dt><dd>${formatMoney(factory.cost)}</dd></div>
             <div><dt>Status</dt><dd>${escapeHtml(ownedLabel)}</dd></div>
+            <div><dt>Produktion</dt><dd>${formatDailyKg(capacityKg)}</dd></div>
+            <div><dt>Output</dt><dd title="${escapeHtml(outputsTitle)}">${escapeHtml(outputsSummary)}</dd></div>
           </dl>
         </div>
         <button class="hf-v2-fleet-buy" type="button" data-action="build-factory" data-city-id="${escapeHtml(cityId)}" data-factory-id="${escapeHtml(factory.id)}"${disabledText}><span>Bauen</span><strong>${formatMoney(factory.cost)}</strong></button>
