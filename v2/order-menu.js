@@ -74,12 +74,14 @@
     const dailyKg = Math.max(0, Number(demandMap[good.id]) || 0);
     const sources = window.HFV2Orders?.sourceCandidates?.(city.id, good.id) || [];
     const sourceOptions = sources.length ? sources.map((source, index) => {
-      const checked = index === 0 && source.transportReady ? 'checked' : '';
-      const disabled = source.transportReady ? '' : 'disabled';
+      const selectable = source.transportReady || source.canBackorder;
+      const checked = index === 0 && selectable ? 'checked' : '';
+      const disabled = selectable ? '' : 'disabled';
       const productionLabel = source.estimatedProductionKg > 0 ? ` · ca. ${formatGoodAmount(good.id, source.estimatedProductionKg)}/Tag` : '';
-      const sourceStatus = source.transportReady ? 'transportbereit' : (source.reachable ? 'keine Ware in der Quelle' : 'nicht verbunden');
-      return `<label class="hf-v2-order-source${source.transportReady ? '' : ' hf-v2-order-source--unreachable'}"><input type="radio" name="hfV2OrderSource" value="${escapeHtml(source.city.id)}" ${checked} ${disabled}><span><b>${escapeHtml(source.city.name)}</b><small>${sourceStatus} · Produktion verfügbar${productionLabel} · ${formatGoodAmount(good.id, source.inventoryKg)} im Lager</small></span></label>`;
-    }).join('') : '<p class="hf-v2-muted">Keine passende Quelle mit Produktion, Lagerbestand und erreichbarer Transportverbindung gefunden.</p>';
+      const sourceStatus = source.transportReady ? 'transportbereit' : (source.canBackorder ? 'wartet auf Tagesproduktion' : (source.reachable ? 'keine Ware in der Quelle' : 'nicht verbunden'));
+      const hint = source.canBackorder ? ' · Produktion vorhanden, Lieferung wird blockiert geplant und nach Tagesproduktion automatisch erneut geprüft' : '';
+      return `<label class="hf-v2-order-source${selectable ? '' : ' hf-v2-order-source--unreachable'}"><input type="radio" name="hfV2OrderSource" value="${escapeHtml(source.city.id)}" ${checked} ${disabled}><span><b>${escapeHtml(source.city.name)}</b><small>${sourceStatus} · Produktion verfügbar${productionLabel} · ${formatGoodAmount(good.id, source.inventoryKg)} im Lager${hint}</small></span></label>`;
+    }).join('') : '<p class="hf-v2-muted">Keine passende Quelle mit Produktion und erreichbarer Transportverbindung gefunden.</p>';
     return `<form class="hf-v2-order-modal" data-order-city-id="${escapeHtml(city.id)}" data-order-good-id="${escapeHtml(good.id)}"><div class="hf-v2-order-hero"><div class="hf-v2-demand-icon">${goodIcon(good)}</div><div><p class="hf-v2-kicker">Nachfrageware bestellen</p><h3>${escapeHtml(good.name)}</h3><p>${escapeHtml(city.name)}</p></div></div><div class="hf-v2-order-stats"><span><small>Tagesbedarf</small><b>${formatGoodAmount(good.id, dailyKg)}</b></span><span><small>Ziel täglich</small><b>${formatGoodAmount(good.id, dailyKg)}</b></span><span><small>Ziel wöchentlich</small><b>${formatGoodAmount(good.id, dailyKg * 7)}</b></span></div><section><h4>Quelle wählen</h4><div class="hf-v2-order-source-list">${sourceOptions}</div></section><section><h4>Frequenz</h4><div class="hf-v2-order-frequency"><label><input type="radio" name="hfV2OrderFrequency" value="daily" checked> Täglich · ${formatGoodAmount(good.id, dailyKg)}</label><label><input type="radio" name="hfV2OrderFrequency" value="weekly"> Wöchentlich · ${formatGoodAmount(good.id, dailyKg * 7)}</label></div></section><label class="hf-v2-order-field"><span>Abfahrtstag</span><select name="hfV2OrderLeadTime"><option value="next-day">Nächster Tag</option><option value="two-days">2 Tage</option></select></label><label class="hf-v2-order-field"><span>Abfahrtszeit</span><input type="time" name="hfV2OrderTime" value="08:00"></label><label class="hf-v2-order-field" data-hf-v2-weekday-field hidden><span>Wochentag</span><select name="hfV2OrderWeekday">${renderOrderWeekdayOptions()}</select></label><p class="hf-v2-muted" data-hf-v2-order-status role="status" aria-live="polite"></p><div class="hf-v2-modal-actions"><button class="hf-v2-button hf-v2-button--primary" type="submit">Versorgung speichern</button></div></form>`;
   }
 
@@ -103,7 +105,7 @@
     event.preventDefault();
     const sourceId = form.querySelector('input[name="hfV2OrderSource"]:checked')?.value || '';
     if (!sourceId) {
-      setOrderStatus(form, 'Bitte zuerst eine transportbereite Quelle wählen. Es wurde keine Lieferung gespeichert.');
+      setOrderStatus(form, 'Bitte zuerst eine transportbereite Quelle oder eine Quelle mit wartender Tagesproduktion wählen. Es wurde keine Lieferung gespeichert.');
       return;
     }
     const dependencies = transportPlanningDependencies();

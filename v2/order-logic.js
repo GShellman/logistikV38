@@ -272,6 +272,7 @@
       const reachable = sourceCityId === destinationId || path?.reachable === true;
       const availableKg = inventoryKg + estimatedProductionKg;
       const transportableKg = inventoryKg;
+      const canBackorder = reachable && sourceCityId !== destinationId && transportableKg <= 0 && estimatedProductionKg > 0;
       return {
         city,
         cityId: sourceCityId,
@@ -285,9 +286,10 @@
         transportableKg,
         reachable,
         transportReady: reachable && sourceCityId !== destinationId && transportableKg > 0,
+        canBackorder,
         path,
       };
-    }).filter(Boolean).sort((a, b) => Number(b.transportReady) - Number(a.transportReady) || b.availableKg - a.availableKg || a.city.name.localeCompare(b.city.name, 'de-CH'));
+    }).filter(Boolean).sort((a, b) => Number(b.transportReady) - Number(a.transportReady) || Number(b.canBackorder) - Number(a.canBackorder) || b.availableKg - a.availableKg || a.city.name.localeCompare(b.city.name, 'de-CH'));
   }
 
   function createOrder(payload = {}) {
