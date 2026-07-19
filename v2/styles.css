@@ -1917,3 +1917,170 @@ code { background: #edf4f9; color: #174a78; }
   font-size: 22px;
   line-height: 1;
 }
+
+/* Logistics order form, city panels, and shipment markers */
+.hf-v2-logistics-form {
+  background: linear-gradient(135deg, rgba(255, 255, 255, .9), rgba(244, 248, 252, .88));
+  border: 1px solid rgba(202, 213, 226, .82);
+  border-radius: 18px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 14px;
+}
+
+.hf-v2-logistics-field { display: grid; gap: 6px; min-width: 0; }
+
+.hf-v2-logistics-field label,
+.hf-v2-logistics-card small,
+.hf-v2-logistics-order small,
+.hf-v2-logistics-shipment small {
+  color: var(--hf-muted);
+  display: block;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.hf-v2-logistics-field input,
+.hf-v2-logistics-field select,
+.hf-v2-logistics-field textarea {
+  background: rgba(255, 255, 255, .94);
+  border: 1px solid #d4dee9;
+  border-radius: 12px;
+  color: var(--hf-ink);
+  font: inherit;
+  min-height: 42px;
+  min-width: 0;
+  padding: 10px 12px;
+  width: 100%;
+}
+
+.hf-v2-logistics-field input:focus,
+.hf-v2-logistics-field select:focus,
+.hf-v2-logistics-field textarea:focus {
+  border-color: var(--hf-primary-2);
+  box-shadow: 0 0 0 3px rgba(31, 95, 143, .14);
+  outline: none;
+}
+
+.hf-v2-logistics-field textarea { resize: vertical; }
+
+.hf-v2-logistics-preview,
+.hf-v2-logistics-warning,
+.hf-v2-logistics-error {
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+  padding: 10px 12px;
+}
+
+.hf-v2-logistics-preview {
+  background: rgba(255, 255, 255, .78);
+  border: 1px solid rgba(202, 213, 226, .86);
+  color: var(--hf-ink);
+  display: grid;
+  gap: 6px;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.hf-v2-logistics-warning {
+  background: #fff8e8;
+  border: 1px solid #f2d19a;
+  color: #8a4a0f;
+  grid-column: 1 / -1;
+}
+
+.hf-v2-logistics-error {
+  background: #fff0ed;
+  border: 1px solid #f1c0ad;
+  color: #9e351e;
+  grid-column: 1 / -1;
+}
+
+.hf-v2-logistics-card,
+.hf-v2-logistics-order,
+.hf-v2-logistics-shipment {
+  background: linear-gradient(135deg, rgba(255, 255, 255, .94), rgba(244, 248, 252, .88));
+  border: 1px solid rgba(202, 213, 226, .82);
+  border-radius: 16px;
+  box-shadow: 0 10px 24px rgba(15, 31, 52, .08);
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.hf-v2-logistics-card { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.hf-v2-logistics-order,
+.hf-v2-logistics-shipment { grid-template-columns: minmax(0, 1fr) auto; }
+
+.hf-v2-logistics-card b,
+.hf-v2-logistics-order b,
+.hf-v2-logistics-shipment b {
+  color: var(--hf-primary);
+  display: block;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hf-v2-logistics-progress {
+  background: rgba(15, 23, 42, .09);
+  border-radius: 999px;
+  display: block;
+  grid-column: 1 / -1;
+  height: 8px;
+  overflow: hidden;
+}
+
+.hf-v2-logistics-progress i {
+  background: linear-gradient(90deg, var(--hf-accent), var(--hf-primary-2));
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  min-width: 6px;
+}
+
+.hf-v2-shipment-marker {
+  align-items: center;
+  background: #fff;
+  border: 2px solid var(--hf-accent);
+  border-radius: 999px;
+  box-shadow: 0 10px 24px rgba(15, 31, 52, .22), 0 2px 7px rgba(15, 31, 52, .18);
+  display: inline-flex;
+  height: 40px;
+  justify-content: center;
+  overflow: hidden;
+  padding: 3px 5px;
+  width: 48px;
+}
+
+.hf-v2-shipment-marker img,
+.hf-v2-shipment-marker__image img {
+  display: block;
+  height: 30px;
+  max-width: 36px;
+  object-fit: contain;
+  width: auto;
+}
+
+.hf-v2-shipment-marker--delayed {
+  border-color: #d45b3f;
+  box-shadow: 0 10px 24px rgba(158, 53, 30, .26), 0 0 0 4px rgba(212, 91, 63, .14);
+}
+
+@media (max-width: 680px) {
+  .hf-v2-logistics-form,
+  .hf-v2-logistics-card,
+  .hf-v2-logistics-order,
+  .hf-v2-logistics-shipment,
+  .hf-v2-logistics-preview { grid-template-columns: 1fr; }
+
+  .hf-v2-logistics-form { padding: 12px; }
+  .hf-v2-logistics-preview { gap: 5px; }
+}
