@@ -23,6 +23,16 @@
     freightTrain: 'assets/vehicles/freight_train.png',
   });
 
+  const VEHICLE_ROAD_PNG_ASSETS = Object.freeze({
+    van: 'assets/vehicles/van_road.png',
+    largeVan: 'assets/vehicles/large_van_road.png',
+    lightTruck: 'assets/vehicles/light_truck_road.png',
+    heavyTruck: 'assets/vehicles/heavy_truck_road.png',
+    artic: 'assets/vehicles/artic_road.png',
+    reefer: 'assets/vehicles/reefer_road.png',
+    tipper: 'assets/vehicles/tipper_road.png',
+  });
+
   function normalizeVehicleId(vehicleId) {
     return String(vehicleId || '').trim();
   }
@@ -37,5 +47,10 @@
     return pngAsset || embeddedVehicleImage(vehicleId);
   }
 
-  window.HFV2VehicleAssets = Object.freeze({vehicleImage, embeddedVehicleImage});
+  function roadVehicleImage(vehicleId) {
+    const roadAsset = VEHICLE_ROAD_PNG_ASSETS[normalizeVehicleId(vehicleId)];
+    return roadAsset || vehicleImage(vehicleId);
+  }
+
+  window.HFV2VehicleAssets = Object.freeze({vehicleImage, roadVehicleImage, embeddedVehicleImage});
 })();
