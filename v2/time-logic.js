@@ -81,8 +81,18 @@
     time.hour = Math.floor(dayMinute / 60);
     time.minute = dayMinute % 60;
 
-    if (elapsedDays > 0) runMidnightCallbacks(elapsedDays);
-    window.HFV2Transport?.processDueDeliveries?.(before, {...time});
+    if (elapsedDays > 0) {
+      let windowStart = before;
+      for (let dayOffset = 0; dayOffset < elapsedDays; dayOffset += 1) {
+        const midnight = {day: before.day + dayOffset + 1, hour: 0, minute: 0};
+        window.HFV2Transport?.processDueDeliveries?.(windowStart, midnight);
+        runMidnightCallbacks(1);
+        windowStart = midnight;
+      }
+      if (dayMinute > 0) window.HFV2Transport?.processDueDeliveries?.(windowStart, {...time});
+    } else {
+      window.HFV2Transport?.processDueDeliveries?.(before, {...time});
+    }
     dispatchTimeAdvanced(options);
     return time;
   }
