@@ -66,14 +66,12 @@
   }
 
   function v2DemandRows(city) {
-    const goods = window.HF_GOODS_DATABASE?.goods || {};
-    const demandGoods = Object.keys(goods).filter(id => goods[id]?.demand?.enabled === true);
-    const demands = window.HF_GAME_MECHANICS?.makeDemandsV2?.(city, demandGoods) || {};
-    return Object.entries(demands).map(([goodId, demand]) => {
-      const good = goods[goodId] || {id: goodId, name: goodId, icon: '📦'};
-      const dailyKg = Math.max(0, (Number(demand.need) || 0) * (Number(demand.dailyRate) || 1));
-      return {good, demand, dailyKg};
-    }).filter(row => row.dailyKg > 0).sort((a, b) => b.dailyKg - a.dailyKg || a.good.name.localeCompare(b.good.name, 'de-CH'));
+    const demandMap = window.HFV2Goods?.getCityDailyDemandMap?.(city.id) || {};
+    return Object.entries(demandMap).map(([goodId, dailyKg]) => ({
+      good: goodById(goodId),
+      demand: {need: dailyKg, dailyRate: 1},
+      dailyKg: Math.max(0, Number(dailyKg) || 0),
+    })).filter(row => row.dailyKg > 0).sort((a, b) => b.dailyKg - a.dailyKg || a.good.name.localeCompare(b.good.name, 'de-CH'));
   }
 
   function producedGoodIds() {

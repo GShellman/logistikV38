@@ -129,16 +129,27 @@
     return Math.max(DEFAULT_CITY_CAPACITY_KG, (TIER_CAPACITY_KG[tier] || DEFAULT_CITY_CAPACITY_KG) + (slots * 5000));
   }
 
+  function isCatalogDemandGood(good) {
+    if (!good || !good.id) return false;
+    if (good.demand?.enabled === true) return true;
+    if (good.properties?.rawMaterial === true || good.properties?.rawMaterial === 'true') return false;
+    if (Math.max(0, Number(good.price) || 0) <= 0) return false;
+    return ['vegetable', 'fruit', 'animal_products', 'processed_food', 'consumer_goods'].includes(String(good.category || ''));
+  }
+
+  function demandGoodIds() {
+    const goods = window.HF_GOODS_DATABASE?.goods || {};
+    const databaseGoodIds = Object.keys(goods).filter(goodId => goods[goodId]?.demand?.enabled === true);
+    const catalogGoodIds = (window.HFV2GoodsCatalog || []).filter(isCatalogDemandGood).map(good => good.id);
+    return Array.from(new Set([...databaseGoodIds, ...catalogGoodIds])).filter(Boolean);
+  }
+
   function getCityDailyDemandMap(cityId) {
     const id = assertCityId(cityId);
     const city = citiesById[id] || window.HFV2CitiesById?.[id] || null;
     if (!city) return {};
-    const goods = window.HF_GOODS_DATABASE?.goods || {};
-    const demandGoodIds = Object.keys(goods).filter(goodId => goods[goodId]?.demand?.enabled === true);
-    const catalogGoodIds = (window.HFV2GoodsCatalog || []).filter(good => good?.demand?.enabled === true).map(good => good.id);
-    const goodIds = Array.from(new Set([...demandGoodIds, ...catalogGoodIds])).filter(Boolean);
     const demandMap = {};
-    for (const goodId of goodIds) {
+    for (const goodId of demandGoodIds()) {
       const kg = Math.max(0, Number(dailyDemandKgForCity(city, goodId)) || 0);
       if (kg > 0) demandMap[String(goodId)] = kg;
     }
@@ -255,13 +266,31 @@
     return {...(fallbackByCategory[good?.category] || {}), ...databaseEconomics, ...catalogEconomics};
   }
 
+  function fallbackDailyDemandKgForCity(city, goodId) {
+    const good = goodDefinition(goodId);
+    if (!isCatalogDemandGood(good)) return 0;
+    const economics = goodEconomics(good);
+    const maxDailyDemandKg = Math.max(0, Number(economics.maxDailyDemandKg) || 0);
+    if (maxDailyDemandKg <= 0) return 0;
+    const population = Math.max(0, Number(city?.population) || 0);
+    const populationScale = population > 0 ? clamp(Math.sqrt(population / 400000), 0.08, 1.35) : 0.18;
+    const tier = clamp(Math.trunc(Number(city?.tier) || 1), 1, 3);
+    const tierScale = 0.75 + tier * 0.12;
+    const wealth = clamp(Number(city?.wealthFactor) || 1, 0.55, 1.8);
+    const luxuryScale = economics.luxuryDemand === true ? clamp((wealth - 0.35) / 0.95, 0.15, 1.45) : 1;
+    const profileScale = String(city?.demandProfile || '').toLowerCase().includes('touris') ? 1.12 : 1;
+    return Math.round(maxDailyDemandKg * populationScale * tierScale * wealth * luxuryScale * profileScale * 10) / 10;
+  }
+
   function dailyDemandKgForCity(city, goodId) {
     const id = assertGoodId(goodId);
     const goods = window.HF_GOODS_DATABASE?.goods || {};
-    const demandGoods = Object.keys(goods).filter(key => goods[key]?.demand?.enabled === true);
-    const demands = window.HF_GAME_MECHANICS?.makeDemandsV2?.(city, demandGoods) || {};
+    const mechanicsGoodIds = demandGoodIds();
+    const demands = window.HF_GAME_MECHANICS?.makeDemandsV2?.(city, mechanicsGoodIds) || {};
     const demand = demands[id] || null;
-    return Math.max(0, (Number(demand?.need) || 0) * (Number(demand?.dailyRate) || 1));
+    const mechanicsKg = Math.max(0, (Number(demand?.need) || 0) * (Number(demand?.dailyRate) || 1));
+    if (mechanicsKg > 0 || goods[id]?.demand?.enabled === true) return mechanicsKg;
+    return fallbackDailyDemandKgForCity(city, id);
   }
 
   function stableVolatility(cityId, goodId, volatility) {
@@ -341,10 +370,9 @@
 
   function runDailySales() {
     configure();
-    const goods = window.HF_GOODS_DATABASE?.goods || {};
-    const demandGoodIds = Object.keys(goods).filter(goodId => goods[goodId]?.demand?.enabled === true);
+    const demandIds = demandGoodIds();
     const summary = {revenue: 0, soldKg: 0, cities: 0, goods: 0, byCity: {}, byGood: {}};
-    if (!demandGoodIds.length) return summary;
+    if (!demandIds.length) return summary;
 
     for (const cityId of knownCityIds()) {
       const city = citiesById[cityId] || window.HFV2CitiesById?.[cityId] || {id: cityId, wealthFactor: 1};
@@ -352,7 +380,7 @@
       let cityRevenue = 0;
       let citySoldKg = 0;
 
-      for (const goodId of demandGoodIds) {
+      for (const goodId of demandIds) {
         const inventoryKg = Math.max(0, Number(inventory[goodId]) || 0);
         if (inventoryKg <= 0) continue;
         const dailyDemandKg = Math.max(0, Number(dailyDemandKgForCity(city, goodId)) || 0);
