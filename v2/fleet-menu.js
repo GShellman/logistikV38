@@ -87,6 +87,7 @@
       completed: {label: 'Angekommen', title: 'Ins Ziellager gebucht'},
       partial: {label: 'Teillieferung', title: 'Nur teilweise geliefert'},
       blocked: {label: 'Blockiert', title: 'Transport konnte nicht starten'},
+      'waiting-production': {label: 'Wartet auf Produktion', title: 'Quelle produziert erst nach Tagesabschluss'},
     };
     return labels[normalized] || {label: normalized || 'Unbekannt', title: normalized || 'Unbekannter Status'};
   }
@@ -94,6 +95,7 @@
   function transportTimeLabel(entry) {
     if (entry.status === 'running' && entry.arrivalDay) return `Ankunft Tag ${entry.arrivalDay} · ${formatTime(entry.arrivalMinute)}`;
     if (entry.status === 'completed' || entry.status === 'partial') return entry.arrivalDay ? `Angekommen Tag ${entry.arrivalDay} · ${formatTime(entry.arrivalMinute)}` : 'Angekommen';
+    if (entry.status === 'waiting-production' || entry.waitingForProduction === true) return 'Wartet auf Produktion';
     if (entry.status === 'blocked') return 'Blockiert';
     return `Abfahrt ${formatTime(entry.minute)}`;
   }

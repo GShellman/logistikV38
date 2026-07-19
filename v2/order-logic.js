@@ -5,7 +5,7 @@
   const DEFAULT_FREQUENCY = 'daily';
   const VALID_FREQUENCIES = new Set(['once', 'daily', 'weekly']);
   const VALID_STATUSES = new Set(['active', 'cancelled', 'paused', 'completed']);
-  const VALID_DELIVERY_STATUSES = new Set(['planned', 'running', 'completed', 'partial', 'blocked', 'failed', 'cancelled']);
+  const VALID_DELIVERY_STATUSES = new Set(['planned', 'running', 'completed', 'partial', 'blocked', 'waiting-production', 'failed', 'cancelled']);
 
   let state = null;
 
@@ -125,6 +125,7 @@
       statusMessage: String(delivery.statusMessage || delivery.message || ''),
       updatedAtMinute: normalizeInteger(delivery.updatedAtMinute, 0, 0),
       status: normalizeDeliveryStatus(delivery.status || 'planned'),
+      waitingForProduction: delivery.waitingForProduction === true,
     };
 
     if ('departureDay' in delivery) normalized.departureDay = normalizeInteger(delivery.departureDay, scheduledDay, 1);
@@ -287,6 +288,7 @@
         reachable,
         transportReady: reachable && sourceCityId !== destinationId && transportableKg > 0,
         canBackorder,
+        waitingForProduction: canBackorder,
         path,
       };
     }).filter(Boolean).sort((a, b) => Number(b.transportReady) - Number(a.transportReady) || Number(b.canBackorder) - Number(a.canBackorder) || b.availableKg - a.availableKg || a.city.name.localeCompare(b.city.name, 'de-CH'));

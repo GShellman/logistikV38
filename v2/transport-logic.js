@@ -4,7 +4,7 @@
   const KG_PER_TONNE = 1000;
   const SCHEDULE_HORIZON_DAYS = 14;
   const DEFAULT_DEPARTURE_MINUTE = 8 * 60;
-  const STATUS = Object.freeze({PLANNED: 'planned', RUNNING: 'running', COMPLETED: 'completed', PARTIAL: 'partial', BLOCKED: 'blocked', FAILED: 'failed'});
+  const STATUS = Object.freeze({PLANNED: 'planned', RUNNING: 'running', COMPLETED: 'completed', PARTIAL: 'partial', BLOCKED: 'blocked', WAITING_PRODUCTION: 'waiting-production', FAILED: 'failed'});
   const DISPATCH_MODEL = Object.freeze({SEQUENTIAL_SHUTTLE: 'sequential-shuttle'});
 
   let transportState = null;
@@ -358,6 +358,37 @@
     return {stockKg, reservedKg, availableKg: Math.max(0, stockKg - reservedKg)};
   }
 
+  function sourceProductionEstimateKg(sourceCityId, goodId) {
+    const targetGoodId = String(goodId || '').trim();
+    const factoryIds = window.HFV2Factories?.getState?.().cityFactories?.[sourceCityId] || [];
+    return (Array.isArray(factoryIds) ? factoryIds : []).reduce((sum, factoryId) => {
+      const factory = (window.HFV2FactoryCatalog || []).find(item => item?.id === factoryId) || null;
+      const recipes = Array.isArray(factory?.recipes) && factory.recipes.length ? factory.recipes : [{outputs: factory?.outputs || factory?.output || {}}];
+      if (!recipes.some(recipe => Number((recipe.outputs || recipe.output || {})[targetGoodId]) > 0)) return sum;
+      const estimate = window.HFV2Goods?.estimateCityFactoryProduction?.(sourceCityId, factoryId);
+      const producedKg = Number(estimate?.outputs?.[targetGoodId] ?? estimate?.production?.[targetGoodId] ?? estimate?.[targetGoodId] ?? 0) || 0;
+      return sum + Math.max(0, producedKg);
+    }, 0);
+  }
+
+  function canWaitForProduction(sourceCityId, destinationCityId, goodId) {
+    if (!sourceCityId || sourceCityId === destinationCityId) return false;
+    const path = window.HFNetwork?.findPath?.(sourceCityId, destinationCityId) || null;
+    return path?.reachable === true && sourceProductionEstimateKg(sourceCityId, goodId) > 0;
+  }
+
+  function markWaitingForProduction(delivery, requestedQuantityKg, prefix = '') {
+    clearUnresolvedForDelivery(delivery);
+    const intro = prefix ? `${prefix}: ` : '';
+    return statusMessage(Object.assign(delivery, {
+      status: STATUS.WAITING_PRODUCTION,
+      waitingForProduction: true,
+      quantityKg: 0,
+      plannedQuantityKg: 0,
+      requestedQuantityKg: normalizeNonNegative(requestedQuantityKg),
+    }), `${intro}Wartet auf Produktion: Quelle produziert erst nach Tagesabschluss; erste Abfahrt nach Produktion möglich.`);
+  }
+
   function inventoryBlockMessage(availability, requestedQuantityKg, prefix = '') {
     const requestedKg = normalizeNonNegative(requestedQuantityKg);
     const stockKg = normalizeNonNegative(availability?.stockKg);
@@ -397,12 +428,16 @@
       vehicleType: '',
       tripIndex: 1,
       status: STATUS.PLANNED,
+      waitingForProduction: false,
     };
     if (!sourceCityId) { markUnresolved(delivery, 'Keine Lieferquelle gefunden.', requestedQuantityKg); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine Lieferquelle gefunden.'); }
     const reservations = options?.inventoryReservations;
     const availability = inventoryAvailability(sourceCityId, order.goodId, reservations);
     const availableKg = availability.availableKg;
-    if (availableKg <= 0) { const message = inventoryBlockMessage(availability, requestedQuantityKg); markUnresolved(delivery, message, requestedQuantityKg); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), message); }
+    if (availableKg <= 0) {
+      if (canWaitForProduction(sourceCityId, order.destinationCityId, order.goodId)) return markWaitingForProduction(delivery, requestedQuantityKg);
+      const message = inventoryBlockMessage(availability, requestedQuantityKg); markUnresolved(delivery, message, requestedQuantityKg); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED, waitingForProduction: false}), message);
+    }
     if (quantityKg > availableKg) quantityKg = availableKg;
     delivery.quantityKg = quantityKg;
     delivery.plannedQuantityKg = quantityKg;
@@ -423,6 +458,7 @@
       distanceKm: chosen.path.distance,
       transportCost: transportCost(chosen.path, chosen.vehicle, quantityKg),
       status: STATUS.PLANNED,
+      waitingForProduction: false,
     });
     applyAggregateTiming(delivery);
     const reservation = reserveDeliveryRoute(delivery, chosen.path);
@@ -500,7 +536,8 @@
     const reservations = options?.inventoryReservations || createInventoryReservations();
     let redispatched = 0;
     for (const delivery of state.deliveries) {
-      if (!delivery || delivery.status !== STATUS.BLOCKED) continue;
+      if (!delivery || ![STATUS.BLOCKED, STATUS.WAITING_PRODUCTION].includes(delivery.status)) continue;
+      if (options?.waitingProductionOnly === true && delivery.status !== STATUS.WAITING_PRODUCTION && delivery.waitingForProduction !== true) continue;
       const order = activeOrders.get(delivery.orderId);
       if (!order) continue;
       const requestedQuantityKg = window.HFV2Orders?.contractRequired?.(order, delivery.scheduledDay ?? delivery.deliveryDay, false) || normalizeNonNegative(delivery.requestedQuantityKg || delivery.quantityKg || deliveryQuantityForOrder(order));
@@ -509,7 +546,10 @@
       releaseInventoryReservation(reservations, delivery);
       const availability = inventoryAvailability(sourceCityId, order.goodId, reservations);
       const availableKg = availability.availableKg;
-      if (availableKg <= 0) { const message = inventoryBlockMessage(availability, requestedQuantityKg, 'Weiterhin blockiert'); markUnresolved(delivery, message, requestedQuantityKg); statusMessage(delivery, message); continue; }
+      if (availableKg <= 0) {
+        if (delivery.status === STATUS.WAITING_PRODUCTION || delivery.waitingForProduction === true || canWaitForProduction(sourceCityId, order.destinationCityId, order.goodId)) { markWaitingForProduction(delivery, requestedQuantityKg, 'Weiterhin'); continue; }
+        const message = inventoryBlockMessage(availability, requestedQuantityKg, 'Weiterhin blockiert'); markUnresolved(delivery, message, requestedQuantityKg); statusMessage(delivery, message); continue;
+      }
       const quantityKg = Math.min(requestedQuantityKg, availableKg);
       const originalScheduledAbs = absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute);
       const windowStartAbs = Number.isFinite(Number(options?.windowStartAbs)) ? Number(options.windowStartAbs) : null;
@@ -549,6 +589,7 @@
         distanceKm: chosen.path.distance,
         transportCost: transportCost(chosen.path, chosen.vehicle, quantityKg),
         status: STATUS.PLANNED,
+        waitingForProduction: false,
       });
       delivery.tripSegments = createTripSegments(quantityKg, chosen.capacityKg, absoluteMinute(slot.day, slot.minute), delivery.routeMinutes, chosen.duration);
       applyAggregateTiming(delivery);
@@ -795,7 +836,12 @@
 
   window.addEventListener?.('hf:v2:state-changed', event => {
     const reason = String(event?.detail?.reason || '');
-    if (['network-build', 'network', 'fleet-buy', 'goods-production', 'goods-daily-production', 'goods-inventory-added'].includes(reason)) {
+    if (reason === 'goods-daily-production') {
+      const redispatched = retryBlockedDeliveries(undefined, {waitingProductionOnly: true});
+      if (redispatched) dispatch('transport-redispatched');
+      return;
+    }
+    if (['network-build', 'network', 'fleet-buy', 'goods-production', 'goods-inventory-added'].includes(reason)) {
       const redispatched = retryBlockedDeliveries();
       if (redispatched) dispatch('transport-redispatched');
     }
