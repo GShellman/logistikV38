@@ -115,11 +115,58 @@
     return rawLoad <= 100 ? Math.round(rawLoad * KG_PER_TONNE) : Math.round(rawLoad);
   }
 
-  function pathForVehicle(sourceCityId, destinationCityId, vehicleType) {
+  function pathForVehicle(sourceCityId, destinationCityId, vehicleType, options = {}) {
     const vehicle = vehicleCatalog()[vehicleType];
     const mode = vehicle?.mode || null;
     if (sourceCityId === destinationCityId) return {reachable: true, nodes: [sourceCityId], edges: [], distance: 0, duration: 0};
-    return window.HFNetwork?.findPath?.(sourceCityId, destinationCityId, mode ? {mode} : {}) || null;
+    return window.HFNetwork?.findPath?.(sourceCityId, destinationCityId, {...(mode ? {mode} : {}), ...options}) || null;
+  }
+
+
+  function tripCapacityWindow(segment, routeMinutesValue) {
+    const start = Number.isFinite(Number(segment?.departureAbsMinute))
+      ? Number(segment.departureAbsMinute)
+      : absoluteMinute(segment?.departureDay, segment?.departureMinute);
+    return {start, end: start + Math.max(1, normalizeInteger(routeMinutesValue, 1, 1))};
+  }
+
+  function routeReservationId(delivery, segment) {
+    return `${delivery?.id || 'delivery'}:${segment?.tripIndex || 1}:route`;
+  }
+
+  function withRouteEdgeIds(delivery, path) {
+    delivery.routeEdgeIds = (Array.isArray(path?.edges) ? path.edges : []).map(edge => edge?.id).filter(Boolean);
+    return delivery;
+  }
+
+  function reserveDeliveryRoute(delivery, path, options = {}) {
+    const network = window.HFNetwork;
+    if (typeof network?.reservePathCapacity !== 'function') return {ok: true};
+    const segments = Array.isArray(delivery?.tripSegments) && delivery.tripSegments.length ? delivery.tripSegments : [delivery];
+    const reserved = [];
+    for (const segment of segments) {
+      if (segment.routeReservationId && options.force !== true) continue;
+      const window = tripCapacityWindow(segment, delivery.routeMinutes);
+      const reservationId = routeReservationId(delivery, segment);
+      const result = network.reservePathCapacity(path, {startAbsMinute: window.start, endAbsMinute: window.end, units: 1, reservationId});
+      if (!result?.ok) {
+        reserved.forEach(item => releaseSegmentRouteReservation(item));
+        return result;
+      }
+      segment.routeReservationId = reservationId;
+      reserved.push(segment);
+    }
+    return {ok: true};
+  }
+
+  function releaseSegmentRouteReservation(segment) {
+    if (segment?.routeReservationId) window.HFNetwork?.releaseCapacityReservation?.(segment.routeReservationId);
+    delete segment.routeReservationId;
+  }
+
+  function deliveryPath(delivery) {
+    if (delivery?.sourceCityId && delivery?.destinationCityId && delivery?.vehicleType) return pathForVehicle(delivery.sourceCityId, delivery.destinationCityId, delivery.vehicleType);
+    return null;
   }
 
   function routeMinutes(path, vehicle) {
@@ -182,23 +229,30 @@
   function chooseVehicle(sourceCityId, destinationCityId, quantityKg, scheduledDay, scheduledMinute) {
     const fleet = window.HFFleet?.getCityFleet?.(sourceCityId) || {};
     const catalog = vehicleCatalog();
+    let foundReachableVehicle = false;
+    let routeOverloaded = false;
     const candidates = Object.keys(fleet).map(vehicleType => {
       const owned = Math.max(0, Math.floor(Number(fleet[vehicleType]) || 0));
       const vehicle = catalog[vehicleType];
       const capacityKg = normalizeVehicleCapacityKg(vehicle);
       const path = owned > 0 && capacityKg > 0 ? pathForVehicle(sourceCityId, destinationCityId, vehicleType) : null;
       if (!owned || !vehicle || !capacityKg || path?.reachable !== true) return null;
+      foundReachableVehicle = true;
       const trips = Math.max(1, Math.ceil(normalizeNonNegative(quantityKg) / capacityKg));
       const duration = roundTripMinutes(path, vehicle);
+      const routeDuration = Math.max(1, Math.ceil(duration / 2));
       const startAbs = absoluteMinute(scheduledDay, scheduledMinute);
       const segmentStarts = Array.from({length: trips}, (_, index) => startAbs + (index * duration));
       // Interpretation: tripCount means sequential shuttle trips by one vehicle.
       // Each trip reserves exactly one vehicle slot for one full round trip.
-      const available = segmentStarts.every(segmentStart => vehicleBusyCount(vehicleType, segmentStart, duration) < owned) ? 1 : 0;
-      return {vehicleType, vehicle, owned, capacityKg, path, trips, duration, totalDuration: trips * duration, dispatchModel: DISPATCH_MODEL.SEQUENTIAL_SHUTTLE, vehicleSlots: 1, available};
+      const vehicleAvailable = segmentStarts.every(segmentStart => vehicleBusyCount(vehicleType, segmentStart, duration) < owned);
+      const routeAvailable = segmentStarts.every((segmentStart, index) => window.HFNetwork?.pathCapacityStatus?.(path, {startAbsMinute: segmentStart, endAbsMinute: segmentStart + routeDuration, units: 1, reservationId: `candidate:${vehicleType}:${startAbs}:${index}`})?.ok !== false);
+      if (vehicleAvailable && !routeAvailable) routeOverloaded = true;
+      const available = vehicleAvailable && routeAvailable ? 1 : 0;
+      return {vehicleType, vehicle, owned, capacityKg, path, trips, duration, totalDuration: trips * duration, dispatchModel: DISPATCH_MODEL.SEQUENTIAL_SHUTTLE, vehicleSlots: 1, available, routeOverloaded: vehicleAvailable && !routeAvailable};
     }).filter(Boolean).filter(candidate => candidate.available > 0);
     candidates.sort((a, b) => a.trips - b.trips || b.capacityKg - a.capacityKg || transportCost(a.path, a.vehicle, quantityKg) - transportCost(b.path, b.vehicle, quantityKg));
-    return candidates[0] || null;
+    return candidates[0] || (routeOverloaded && foundReachableVehicle ? {routeOverloaded: true} : null);
   }
 
   function sourceCityIdForOrder(order) {
@@ -280,9 +334,10 @@
     delivery.quantityKg = quantityKg;
     delivery.plannedQuantityKg = quantityKg;
     const chosen = chooseVehicle(sourceCityId, order.destinationCityId, quantityKg, day, minute);
-    if (!chosen) { markUnresolved(delivery, 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.', quantityKg); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.'); }
+    if (!chosen || chosen.routeOverloaded) { const message = chosen?.routeOverloaded ? 'Route überlastet.' : 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.'; markUnresolved(delivery, message, quantityKg); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), message); }
     const routeDuration = Math.max(1, Math.ceil(chosen.duration / 2));
     const tripSegments = createTripSegments(quantityKg, chosen.capacityKg, absoluteMinute(day, minute), routeDuration, chosen.duration);
+    withRouteEdgeIds(delivery, chosen.path);
     Object.assign(delivery, {
       vehicleType: chosen.vehicleType,
       vehicleCapacityKg: chosen.capacityKg,
@@ -297,6 +352,8 @@
       status: STATUS.PLANNED,
     });
     applyAggregateTiming(delivery);
+    const reservation = reserveDeliveryRoute(delivery, chosen.path);
+    if (!reservation.ok) { markUnresolved(delivery, 'Route überlastet.', quantityKg); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Route überlastet.'); }
     if (quantityKg + 0.001 < requestedQuantityKg) return statusMessage(delivery, chosen.trips > 1 ? `Teillieferung wegen Exporteur-Lagerbestand geplant: ${Math.round(quantityKg)} von ${Math.round(requestedQuantityKg)} kg in ${chosen.trips} Pendelfahrten mit 1 Fahrzeug.` : `Teillieferung wegen Exporteur-Lagerbestand geplant: ${Math.round(quantityKg)} von ${Math.round(requestedQuantityKg)} kg.`);
     return statusMessage(delivery, chosen.trips > 1 ? `${chosen.trips} Pendelfahrten mit 1 Fahrzeug geplant.` : 'Lieferung geplant.');
   }
@@ -387,7 +444,8 @@
       const scheduledAbs = Math.max(redispatchLowerBound, originalScheduledAbs);
       const slot = minuteToDayMinute(scheduledAbs);
       const chosen = chooseVehicle(sourceCityId, order.destinationCityId, quantityKg, slot.day, slot.minute);
-      if (!chosen) { markUnresolved(delivery, 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.', quantityKg); statusMessage(delivery, 'Weiterhin blockiert: Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.'); continue; }
+      if (!chosen || chosen.routeOverloaded) { const message = chosen?.routeOverloaded ? 'Route überlastet.' : 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.'; markUnresolved(delivery, message, quantityKg); statusMessage(delivery, `Weiterhin blockiert: ${message}`); continue; }
+      withRouteEdgeIds(delivery, chosen.path);
       Object.assign(delivery, {
         sourceType: 'city',
         sourceId: sourceCityId,
@@ -418,6 +476,8 @@
       });
       delivery.tripSegments = createTripSegments(quantityKg, chosen.capacityKg, absoluteMinute(slot.day, slot.minute), delivery.routeMinutes, chosen.duration);
       applyAggregateTiming(delivery);
+      const reservation = reserveDeliveryRoute(delivery, chosen.path);
+      if (!reservation.ok) { markUnresolved(delivery, 'Route überlastet.', quantityKg); statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Route überlastet.'); continue; }
       delete delivery.departedKg;
       delete delivery.openQuantityBumpedKg;
       clearUnresolvedForDelivery(delivery);
@@ -515,9 +575,12 @@
     const segment = activeTripSegment(delivery, STATUS.PLANNED);
     const plannedKg = normalizeNonNegative(segment?.quantityKg ?? delivery.quantityKg);
     const requestedKg = segment ? plannedKg : Math.max(plannedKg, normalizeNonNegative(delivery.requestedQuantityKg));
+    const path = deliveryPath(delivery);
+    const routeReservation = reserveDeliveryRoute(delivery, path);
+    if (!routeReservation.ok) { markUnresolved(delivery, 'Route überlastet.', plannedKg); return Object.assign(delivery, {status: STATUS.BLOCKED}, statusMessage(delivery, 'Route überlastet.')); }
     const removal = window.HFV2Goods?.removeFromInventory?.(delivery.sourceCityId, delivery.goodId, plannedKg);
     const removedKg = normalizeNonNegative(removal?.removedKg ?? removal);
-    if (removedKg <= 0) { bumpOpenQuantity(delivery, requestedKg); return Object.assign(delivery, {status: STATUS.BLOCKED}, statusMessage(delivery, 'Keine Ware in der Quelle verfügbar.')); }
+    if (removedKg <= 0) { releaseSegmentRouteReservation(segment || delivery); bumpOpenQuantity(delivery, requestedKg); return Object.assign(delivery, {status: STATUS.BLOCKED}, statusMessage(delivery, 'Keine Ware in der Quelle verfügbar.')); }
     if (removedKg + 0.001 < plannedKg) {
       const openKg = Math.max(0, requestedKg - removedKg);
       if (segment) segment.openQuantityBumpedKg = openKg;
@@ -558,6 +621,7 @@
     delivery.deliveredKg = previousDelivered + addedKg;
     delivery.bookedCost = normalizeNonNegative(delivery.bookedCost) + bookedCost;
     if (segment) {
+      releaseSegmentRouteReservation(segment);
       segment.deliveredKg = addedKg;
       segment.status = addedKg + 0.001 < transportedKg ? STATUS.PARTIAL : STATUS.COMPLETED;
       const missingKg = Math.max(0, transportedKg - addedKg - normalizeNonNegative(segment.openQuantityBumpedKg));
@@ -568,6 +632,7 @@
       else delivery.status = delivery.deliveredKg + 0.001 < normalizeNonNegative(delivery.quantityKg) ? STATUS.PARTIAL : STATUS.COMPLETED;
       return statusMessage(delivery, openSegments.length ? `Fahrt ${segment.tripIndex}/${segment.tripCount} angekommen: ${Math.round(addedKg)} kg geliefert. Gesamt: ${Math.round(delivery.deliveredKg)} von ${Math.round(delivery.quantityKg)} kg.` : (delivery.status === STATUS.PARTIAL ? `Angekommen als Teillieferung: ${Math.round(delivery.deliveredKg)} von ${Math.round(delivery.quantityKg)} kg geliefert.` : `Gesamtlieferung angekommen: ${Math.round(delivery.deliveredKg)} kg geliefert.`));
     }
+    releaseSegmentRouteReservation(delivery);
     const remainderKg = Math.max(0, requestedKg - addedKg);
     const unbumpedRemainderKg = Math.max(0, remainderKg - normalizeNonNegative(delivery.openQuantityBumpedKg));
     if (unbumpedRemainderKg > 0.001) bumpOpenQuantity(delivery, unbumpedRemainderKg);
@@ -599,6 +664,7 @@
     state.deliveries = Array.isArray(state.deliveries) ? state.deliveries : [];
     const beforeAbs = timeAbsoluteMinute(timeBefore);
     const afterAbs = timeAbsoluteMinute(timeAfter);
+    window.HFNetwork?.cleanupCapacityReservations?.(beforeAbs);
     const existingDeliveryIds = new Set(state.deliveries.map(delivery => delivery?.id).filter(Boolean));
     const redispatchedDeliveryIds = new Set();
     generatePlannedDeliveries(timeBefore, timeAfter, {includeBoundaryMinute: true, skipBlockedRetry: true});
