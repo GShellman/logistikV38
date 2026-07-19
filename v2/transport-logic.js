@@ -298,7 +298,79 @@
     return out;
   }
 
-  function createPlannedDelivery(order, day, minute) {
+
+  function reservationKey(sourceCityId, goodId) {
+    return `${String(sourceCityId || '').trim()}::${String(goodId || '').trim()}`;
+  }
+
+  function reservedQuantityForDelivery(delivery) {
+    if (!delivery || delivery.status !== STATUS.PLANNED) return 0;
+    const segments = Array.isArray(delivery.tripSegments) ? delivery.tripSegments : [];
+    if (segments.length) return segments.filter(segment => segment?.status === STATUS.PLANNED).reduce((sum, segment) => sum + normalizeNonNegative(segment.quantityKg), 0);
+    return normalizeNonNegative(delivery.quantityKg || delivery.plannedQuantityKg);
+  }
+
+  function createInventoryReservations(excludeDelivery) {
+    const reservations = new Map();
+    const excludeId = excludeDelivery?.id ? String(excludeDelivery.id) : '';
+    for (const delivery of ordersState().deliveries || []) {
+      if (!delivery || (excludeId && String(delivery.id || '') === excludeId)) continue;
+      const sourceCityId = String(delivery.sourceCityId || delivery.sourceId || '').trim();
+      const goodId = String(delivery.goodId || '').trim();
+      const reservedKg = reservedQuantityForDelivery(delivery);
+      if (!sourceCityId || !goodId || reservedKg <= 0) continue;
+      const key = reservationKey(sourceCityId, goodId);
+      reservations.set(key, normalizeNonNegative(reservations.get(key)) + reservedKg);
+    }
+    return reservations;
+  }
+
+  function reservedInventoryKg(reservations, sourceCityId, goodId) {
+    return normalizeNonNegative(reservations?.get?.(reservationKey(sourceCityId, goodId)));
+  }
+
+  function addInventoryReservation(reservations, delivery, amountKg) {
+    if (!reservations || delivery?.status !== STATUS.PLANNED) return;
+    const sourceCityId = String(delivery.sourceCityId || delivery.sourceId || '').trim();
+    const goodId = String(delivery.goodId || '').trim();
+    const quantityKg = normalizeNonNegative(amountKg ?? reservedQuantityForDelivery(delivery));
+    if (!sourceCityId || !goodId || quantityKg <= 0) return;
+    const key = reservationKey(sourceCityId, goodId);
+    reservations.set(key, normalizeNonNegative(reservations.get(key)) + quantityKg);
+  }
+
+  function releaseInventoryReservation(reservations, delivery, amountKg) {
+    if (!reservations) return;
+    const sourceCityId = String(delivery?.sourceCityId || delivery?.sourceId || '').trim();
+    const goodId = String(delivery?.goodId || '').trim();
+    const quantityKg = normalizeNonNegative(amountKg ?? reservedQuantityForDelivery(delivery));
+    if (!sourceCityId || !goodId || quantityKg <= 0) return;
+    const key = reservationKey(sourceCityId, goodId);
+    const next = Math.max(0, normalizeNonNegative(reservations.get(key)) - quantityKg);
+    if (next > 0) reservations.set(key, next);
+    else reservations.delete(key);
+  }
+
+  function inventoryAvailability(sourceCityId, goodId, reservations) {
+    const sourceInventory = window.HFV2Goods?.getCityInventory?.(sourceCityId) || {};
+    const stockKg = Math.max(0, Number(sourceInventory[goodId]) || 0);
+    const reservedKg = reservedInventoryKg(reservations, sourceCityId, goodId);
+    return {stockKg, reservedKg, availableKg: Math.max(0, stockKg - reservedKg)};
+  }
+
+  function inventoryBlockMessage(availability, requestedQuantityKg, prefix = '') {
+    const requestedKg = normalizeNonNegative(requestedQuantityKg);
+    const stockKg = normalizeNonNegative(availability?.stockKg);
+    const reservedKg = normalizeNonNegative(availability?.reservedKg);
+    const availableKg = normalizeNonNegative(availability?.availableKg);
+    const intro = prefix ? `${prefix}: ` : '';
+    if (stockKg <= 0) return `${intro}Noch nicht produziert: keine Ware in der Quelle verfügbar.`;
+    if (availableKg <= 0 && reservedKg > 0) return `${intro}Bereits für andere Lieferungen reserviert: ${Math.round(reservedKg)} kg von ${Math.round(stockKg)} kg Lagerbestand sind eingeplant.`;
+    if (availableKg + 0.001 < requestedKg) return `${intro}Zu wenig Bestand: ${Math.round(availableKg)} von ${Math.round(requestedKg)} kg verfügbar${reservedKg > 0 ? ` (${Math.round(reservedKg)} kg bereits reserviert)` : ''}.`;
+    return `${intro}Zu wenig Bestand.`;
+  }
+
+  function createPlannedDelivery(order, day, minute, options = {}) {
     const state = ordersState();
     const sourceCityId = sourceCityIdForOrder(order);
     const requestedQuantityKg = window.HFV2Orders?.contractRequired?.(order, day, false) || deliveryQuantityForOrder(order);
@@ -327,9 +399,10 @@
       status: STATUS.PLANNED,
     };
     if (!sourceCityId) { markUnresolved(delivery, 'Keine Lieferquelle gefunden.', requestedQuantityKg); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine Lieferquelle gefunden.'); }
-    const sourceInventory = window.HFV2Goods?.getCityInventory?.(sourceCityId) || {};
-    const availableKg = Math.max(0, Number(sourceInventory[order.goodId]) || 0);
-    if (availableKg <= 0) { markUnresolved(delivery, 'Wartet auf Tagesproduktion in der Quelle.', requestedQuantityKg); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Produktion vorhanden, aber erst nach Tagesproduktion transportierbar. Lieferung wartet auf Redispatch.'); }
+    const reservations = options?.inventoryReservations;
+    const availability = inventoryAvailability(sourceCityId, order.goodId, reservations);
+    const availableKg = availability.availableKg;
+    if (availableKg <= 0) { const message = inventoryBlockMessage(availability, requestedQuantityKg); markUnresolved(delivery, message, requestedQuantityKg); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), message); }
     if (quantityKg > availableKg) quantityKg = availableKg;
     delivery.quantityKg = quantityKg;
     delivery.plannedQuantityKg = quantityKg;
@@ -354,7 +427,8 @@
     applyAggregateTiming(delivery);
     const reservation = reserveDeliveryRoute(delivery, chosen.path);
     if (!reservation.ok) { markUnresolved(delivery, 'Route überlastet.', quantityKg); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Route überlastet.'); }
-    if (quantityKg + 0.001 < requestedQuantityKg) return statusMessage(delivery, chosen.trips > 1 ? `Teillieferung wegen Exporteur-Lagerbestand geplant: ${Math.round(quantityKg)} von ${Math.round(requestedQuantityKg)} kg in ${chosen.trips} Pendelfahrten mit 1 Fahrzeug.` : `Teillieferung wegen Exporteur-Lagerbestand geplant: ${Math.round(quantityKg)} von ${Math.round(requestedQuantityKg)} kg.`);
+    addInventoryReservation(reservations, delivery, quantityKg);
+    if (quantityKg + 0.001 < requestedQuantityKg) return statusMessage(delivery, chosen.trips > 1 ? `Teillieferung wegen ${availability.reservedKg > 0 ? 'Reservierungen/Exporteur-Lagerbestand' : 'Exporteur-Lagerbestand'} geplant: ${Math.round(quantityKg)} von ${Math.round(requestedQuantityKg)} kg in ${chosen.trips} Pendelfahrten mit 1 Fahrzeug.` : `Teillieferung wegen ${availability.reservedKg > 0 ? 'Reservierungen/Exporteur-Lagerbestand' : 'Exporteur-Lagerbestand'} geplant: ${Math.round(quantityKg)} von ${Math.round(requestedQuantityKg)} kg.`);
     return statusMessage(delivery, chosen.trips > 1 ? `${chosen.trips} Pendelfahrten mit 1 Fahrzeug geplant.` : 'Lieferung geplant.');
   }
 
@@ -423,6 +497,7 @@
     state.deliveries = Array.isArray(state.deliveries) ? state.deliveries : [];
     const activeOrders = new Map((state.orders || []).filter(order => order?.status === 'active').map(order => [order.id, order]));
     const currentAbs = timeAbsoluteMinute(currentTime);
+    const reservations = options?.inventoryReservations || createInventoryReservations();
     let redispatched = 0;
     for (const delivery of state.deliveries) {
       if (!delivery || delivery.status !== STATUS.BLOCKED) continue;
@@ -431,9 +506,10 @@
       const requestedQuantityKg = window.HFV2Orders?.contractRequired?.(order, delivery.scheduledDay ?? delivery.deliveryDay, false) || normalizeNonNegative(delivery.requestedQuantityKg || delivery.quantityKg || deliveryQuantityForOrder(order));
       const sourceCityId = sourceCityIdForOrder(order);
       if (!sourceCityId) { markUnresolved(delivery, 'Keine Lieferquelle gefunden.', requestedQuantityKg); statusMessage(delivery, 'Weiterhin blockiert: Keine Lieferquelle gefunden.'); continue; }
-      const sourceInventory = window.HFV2Goods?.getCityInventory?.(sourceCityId) || {};
-      const availableKg = Math.max(0, Number(sourceInventory[order.goodId]) || 0);
-      if (availableKg <= 0) { markUnresolved(delivery, 'Wartet auf Tagesproduktion in der Quelle.', requestedQuantityKg); statusMessage(delivery, 'Weiterhin blockiert: Produktion vorhanden, aber erst nach Tagesproduktion transportierbar.'); continue; }
+      releaseInventoryReservation(reservations, delivery);
+      const availability = inventoryAvailability(sourceCityId, order.goodId, reservations);
+      const availableKg = availability.availableKg;
+      if (availableKg <= 0) { const message = inventoryBlockMessage(availability, requestedQuantityKg, 'Weiterhin blockiert'); markUnresolved(delivery, message, requestedQuantityKg); statusMessage(delivery, message); continue; }
       const quantityKg = Math.min(requestedQuantityKg, availableKg);
       const originalScheduledAbs = absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute);
       const windowStartAbs = Number.isFinite(Number(options?.windowStartAbs)) ? Number(options.windowStartAbs) : null;
@@ -478,6 +554,7 @@
       applyAggregateTiming(delivery);
       const reservation = reserveDeliveryRoute(delivery, chosen.path);
       if (!reservation.ok) { markUnresolved(delivery, 'Route überlastet.', quantityKg); statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Route überlastet.'); continue; }
+      addInventoryReservation(reservations, delivery, quantityKg);
       delete delivery.departedKg;
       delete delivery.openQuantityBumpedKg;
       clearUnresolvedForDelivery(delivery);
@@ -496,7 +573,8 @@
     const includeBoundaryMinute = options?.includeBoundaryMinute === true;
     const fromDay = Math.max(1, Math.floor(fromAbs / 1440) + 1);
     const toDay = Math.max(fromDay, Math.floor(toAbs / 1440) + 1);
-    const redispatched = options?.skipBlockedRetry === true ? 0 : retryBlockedDeliveries(fromTime);
+    const reservations = createInventoryReservations();
+    const redispatched = options?.skipBlockedRetry === true ? 0 : retryBlockedDeliveries(fromTime, {...options, inventoryReservations: reservations});
     let created = 0;
     for (const order of state.orders || []) {
       if (!order || order.status !== 'active') continue;
@@ -504,7 +582,7 @@
         const slot = nextSchedulableSlot(order, rawSlot, fromAbs, includeBoundaryMinute);
         if (absoluteMinute(slot.day, slot.minute) > toAbs) continue;
         if (hasScheduledDelivery(order.id, slot.day, slot.minute)) continue;
-        state.deliveries.push(createPlannedDelivery(order, slot.day, slot.minute));
+        state.deliveries.push(createPlannedDelivery(order, slot.day, slot.minute, {inventoryReservations: reservations}));
         created += 1;
       }
     }
@@ -580,7 +658,7 @@
     if (!routeReservation.ok) { markUnresolved(delivery, 'Route überlastet.', plannedKg); return Object.assign(delivery, {status: STATUS.BLOCKED}, statusMessage(delivery, 'Route überlastet.')); }
     const removal = window.HFV2Goods?.removeFromInventory?.(delivery.sourceCityId, delivery.goodId, plannedKg);
     const removedKg = normalizeNonNegative(removal?.removedKg ?? removal);
-    if (removedKg <= 0) { releaseSegmentRouteReservation(segment || delivery); bumpOpenQuantity(delivery, requestedKg); return Object.assign(delivery, {status: STATUS.BLOCKED}, statusMessage(delivery, 'Keine Ware in der Quelle verfügbar.')); }
+    if (removedKg <= 0) { releaseSegmentRouteReservation(segment || delivery); bumpOpenQuantity(delivery, requestedKg); const availability = inventoryAvailability(delivery.sourceCityId, delivery.goodId, createInventoryReservations(delivery)); const message = inventoryBlockMessage(availability, plannedKg); markUnresolved(delivery, message, plannedKg); return Object.assign(delivery, {status: STATUS.BLOCKED}, statusMessage(delivery, message)); }
     if (removedKg + 0.001 < plannedKg) {
       const openKg = Math.max(0, requestedKg - removedKg);
       if (segment) segment.openQuantityBumpedKg = openKg;
