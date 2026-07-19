@@ -193,6 +193,16 @@
   }
 
 
+  function productionTargetMarkup(city) {
+    const rows = window.HFV2Goods?.productionDebugRows?.(city.id) || [];
+    const visibleRows = rows.filter(row => Math.max(0, Number(row.targetDemandKg) || 0) > 0);
+    if (!visibleRows.length) return '';
+    return `<section class="hf-v2-production-debug" aria-label="Produktionsziele"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3>Produktionsziele</h3></div><strong>${visibleRows.length.toLocaleString('de-CH')}</strong></div><p class="hf-v2-muted">Produktion startet beim nächsten Tageswechsel / Produktionszyklus.</p><div class="hf-v2-production-debug-grid">${visibleRows.map(row => {
+      const good = goodById(row.goodId);
+      return `<article class="hf-v2-production-debug-row"><b>${escapeHtml(good.name || row.goodId)}</b><span><small>Lokaler Bedarf</small>${formatGoodAmount(row.goodId, row.localDemandKg)}</span><span><small>Exportbedarf</small>${formatGoodAmount(row.goodId, row.exportDemandKg)}</span><span><small>Zielbestand</small>${formatGoodAmount(row.goodId, row.targetDemandKg)}</span><span><small>Bestand</small>${formatGoodAmount(row.goodId, row.stockKg)}</span><span><small>Geplanter nächster Zyklus</small>${formatGoodAmount(row.goodId, row.plannedProductionKg)}</span></article>`;
+    }).join('')}</div></section>`;
+  }
+
   function productionDebugMarkup(city) {
     if (!window.HFV2_DEBUG_PRODUCTION) return '';
     const rows = window.HFV2Goods?.productionDebugRows?.(city.id) || [];
@@ -206,7 +216,7 @@
 
   function factoryProductionMarkup(city) {
     const builtFactories = window.HFV2Factories?.getCityFactories?.(city.id) || [];
-    if (!builtFactories.length) return '<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div></div><p class="hf-v2-muted">Keine Fabriken gebaut.</p></section>' + productionDebugMarkup(city);
+    if (!builtFactories.length) return '<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div></div><p class="hf-v2-muted">Keine Fabriken gebaut.</p></section>' + productionTargetMarkup(city) + productionDebugMarkup(city);
     const rows = builtFactories.map(factoryId => {
       const factory = factoryById(factoryId) || {id: factoryId, name: factoryId, icon: '🏭'};
       const capacityKg = factoryDailyCapacityKg(factory);
@@ -216,7 +226,7 @@
       const status = estimate?.reason === 'demand-limited' ? 'Nachfrage gedeckt' : estimate?.reason === 'capacity-limited' ? 'Lager voll' : estimate?.reason === 'input-limited' ? 'Inputs fehlen' : estimate?.reason === 'no-output' ? 'Kein Output' : 'Potenzial heute';
       return `<article class="hf-v2-factory-production-item"><div class="hf-v2-factory-production-head"><span>${escapeHtml(factory.icon || '🏭')}</span><div><b>${escapeHtml(factory.name || factory.id)}</b><small>${factoryOutputsText(factory)}</small></div></div><div class="hf-v2-factory-production-bar"><span><i style="width:${fill}%"></i></span><small>${formatDailyKg(actualKg)} von ${formatDailyKg(capacityKg)} · ${status}</small></div></article>`;
     }).join('');
-    return `<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div><strong>${builtFactories.length.toLocaleString('de-CH')}</strong></div>${rows}</section>${productionDebugMarkup(city)}`;
+    return `<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div><strong>${builtFactories.length.toLocaleString('de-CH')}</strong></div>${rows}</section>${productionTargetMarkup(city)}${productionDebugMarkup(city)}`;
   }
 
 
