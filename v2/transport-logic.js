@@ -64,6 +64,41 @@
     return delivery;
   }
 
+  function unresolvedMatchesDelivery(entry, delivery) {
+    if (!entry || !delivery) return false;
+    const entryOrderId = String(entry.orderId || '').trim();
+    const deliveryOrderId = String(delivery.orderId || '').trim();
+    const entryDay = normalizeInteger(entry.day, 0, 0);
+    const deliveryDay = normalizeInteger(delivery.scheduledDay ?? delivery.deliveryDay, 0, 0);
+    const entryGoodId = String(entry.goodId || '').trim();
+    const deliveryGoodId = String(delivery.goodId || '').trim();
+    return (entry.deliveryId && entry.deliveryId === delivery.id) || (entryOrderId === deliveryOrderId && entryDay === deliveryDay && entryGoodId === deliveryGoodId);
+  }
+
+  function clearUnresolvedForDelivery(delivery) {
+    const state = getState();
+    state.unresolved = (state.unresolved || []).filter(entry => !unresolvedMatchesDelivery(entry, delivery));
+  }
+
+  function markUnresolved(delivery, reason, amountKg) {
+    const state = getState();
+    state.unresolved = Array.isArray(state.unresolved) ? state.unresolved : [];
+    const entry = {
+      deliveryId: delivery.id,
+      orderId: delivery.orderId,
+      day: delivery.scheduledDay ?? delivery.deliveryDay,
+      goodId: delivery.goodId,
+      amount: normalizeNonNegative(amountKg),
+      reason,
+      status: 'open',
+      updatedAtMinute: timeAbsoluteMinute(),
+    };
+    const index = state.unresolved.findIndex(item => unresolvedMatchesDelivery(item, delivery));
+    if (index >= 0) state.unresolved[index] = {...state.unresolved[index], ...entry};
+    else state.unresolved.push(entry);
+    return entry;
+  }
+
   function dispatch(reason) {
     window.HFV2Save?.dispatchStateChanged?.(reason || 'transport-updated');
   }
@@ -209,15 +244,15 @@
       tripIndex: 1,
       status: STATUS.PLANNED,
     };
-    if (!sourceCityId) { getState().unresolved.push({orderId: order.id, day, goodId: order.goodId, amount: requestedQuantityKg, reason: 'Keine Lieferquelle gefunden.'}); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine Lieferquelle gefunden.'); }
+    if (!sourceCityId) { markUnresolved(delivery, 'Keine Lieferquelle gefunden.', requestedQuantityKg); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine Lieferquelle gefunden.'); }
     const sourceInventory = window.HFV2Goods?.getCityInventory?.(sourceCityId) || {};
     const availableKg = Math.max(0, Number(sourceInventory[order.goodId]) || 0);
-    if (availableKg <= 0) { getState().unresolved.push({orderId: order.id, day, goodId: order.goodId, amount: requestedQuantityKg, reason: 'Keine Ware in der Quelle verfügbar.'}); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine Ware in der Quelle verfügbar.'); }
+    if (availableKg <= 0) { markUnresolved(delivery, 'Keine Ware in der Quelle verfügbar.', requestedQuantityKg); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine Ware in der Quelle verfügbar.'); }
     if (quantityKg > availableKg) quantityKg = availableKg;
     delivery.quantityKg = quantityKg;
     delivery.plannedQuantityKg = quantityKg;
     const chosen = chooseVehicle(sourceCityId, order.destinationCityId, quantityKg, day, minute);
-    if (!chosen) { getState().unresolved.push({orderId: order.id, day, goodId: order.goodId, amount: quantityKg, reason: 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.'}); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.'); }
+    if (!chosen) { markUnresolved(delivery, 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.', quantityKg); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.'); }
     Object.assign(delivery, {
       vehicleType: chosen.vehicleType,
       vehicleCapacityKg: chosen.capacityKg,
@@ -244,6 +279,58 @@
     return {day: Math.floor(nextAbs / 1440) + 1, minute: nextAbs % 1440};
   }
 
+  function retryBlockedDeliveries(currentTime) {
+    const state = ordersState();
+    state.deliveries = Array.isArray(state.deliveries) ? state.deliveries : [];
+    const activeOrders = new Map((state.orders || []).filter(order => order?.status === 'active').map(order => [order.id, order]));
+    const currentAbs = timeAbsoluteMinute(currentTime);
+    let redispatched = 0;
+    for (const delivery of state.deliveries) {
+      if (!delivery || delivery.status !== STATUS.BLOCKED) continue;
+      const order = activeOrders.get(delivery.orderId);
+      if (!order) continue;
+      const requestedQuantityKg = window.HFV2Orders?.contractRequired?.(order, delivery.scheduledDay ?? delivery.deliveryDay, false) || normalizeNonNegative(delivery.requestedQuantityKg || delivery.quantityKg || deliveryQuantityForOrder(order));
+      const sourceCityId = sourceCityIdForOrder(order);
+      if (!sourceCityId) { markUnresolved(delivery, 'Keine Lieferquelle gefunden.', requestedQuantityKg); statusMessage(delivery, 'Weiterhin blockiert: Keine Lieferquelle gefunden.'); continue; }
+      const sourceInventory = window.HFV2Goods?.getCityInventory?.(sourceCityId) || {};
+      const availableKg = Math.max(0, Number(sourceInventory[order.goodId]) || 0);
+      if (availableKg <= 0) { markUnresolved(delivery, 'Keine Ware in der Quelle verfügbar.', requestedQuantityKg); statusMessage(delivery, 'Weiterhin blockiert: Keine Ware in der Quelle verfügbar.'); continue; }
+      const quantityKg = Math.min(requestedQuantityKg, availableKg);
+      const scheduledAbs = Math.max(currentAbs, absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute));
+      const slot = minuteToDayMinute(scheduledAbs);
+      const chosen = chooseVehicle(sourceCityId, order.destinationCityId, quantityKg, slot.day, slot.minute);
+      if (!chosen) { markUnresolved(delivery, 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.', quantityKg); statusMessage(delivery, 'Weiterhin blockiert: Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.'); continue; }
+      Object.assign(delivery, {
+        sourceType: 'city',
+        sourceId: sourceCityId,
+        sourceCityId,
+        destinationCityId: order.destinationCityId,
+        goodId: order.goodId,
+        requestedQuantityKg,
+        quantityKg,
+        plannedQuantityKg: quantityKg,
+        scheduledDay: slot.day,
+        scheduledMinute: slot.minute,
+        deliveryDay: slot.day,
+        deliveryMinute: slot.minute,
+        vehicleType: chosen.vehicleType,
+        vehicleCapacityKg: chosen.capacityKg,
+        tripCount: chosen.trips,
+        routeMinutes: Math.max(1, Math.ceil(chosen.duration / 2)),
+        roundTripMinutes: chosen.duration,
+        distanceKm: chosen.path.distance,
+        transportCost: transportCost(chosen.path, chosen.vehicle, quantityKg),
+        status: STATUS.PLANNED,
+      });
+      delete delivery.departedKg;
+      delete delivery.openQuantityBumpedKg;
+      clearUnresolvedForDelivery(delivery);
+      statusMessage(delivery, quantityKg + 0.001 < requestedQuantityKg ? `Redispatch als Teillieferung geplant: ${Math.round(quantityKg)} von ${Math.round(requestedQuantityKg)} kg.` : 'Redispatch geplant.');
+      redispatched += 1;
+    }
+    return redispatched;
+  }
+
   function generatePlannedDeliveries(fromTime, toTime, options = {}) {
     const state = ordersState();
     state.deliveries = Array.isArray(state.deliveries) ? state.deliveries : [];
@@ -252,6 +339,7 @@
     const includeBoundaryMinute = options?.includeBoundaryMinute === true;
     const fromDay = Math.max(1, Math.floor(fromAbs / 1440) + 1);
     const toDay = Math.max(fromDay, Math.floor(toAbs / 1440) + 1);
+    const redispatched = options?.skipBlockedRetry === true ? 0 : retryBlockedDeliveries(fromTime);
     let created = 0;
     for (const order of state.orders || []) {
       if (!order || order.status !== 'active') continue;
@@ -264,8 +352,8 @@
       }
     }
     getState().weekPlan = (state.deliveries || []).filter(delivery => delivery.status === STATUS.PLANNED && normalizeInteger(delivery.scheduledDay ?? delivery.deliveryDay, 0) >= fromDay && normalizeInteger(delivery.scheduledDay ?? delivery.deliveryDay, 0) <= toDay).map(delivery => ({id: delivery.id, orderId: delivery.orderId, sourceCityId: delivery.sourceCityId, destinationCityId: delivery.destinationCityId, goodId: delivery.goodId, quantityKg: delivery.quantityKg, day: delivery.scheduledDay ?? delivery.deliveryDay, minute: delivery.scheduledMinute ?? delivery.deliveryMinute, vehicleType: delivery.vehicleType, tripCount: delivery.tripCount || 1, status: delivery.status}));
-    if (created) dispatch('transport-scheduled');
-    return created;
+    if (created || redispatched) dispatch(created ? 'transport-scheduled' : 'transport-redispatched');
+    return created + redispatched;
   }
 
   function setDeliveryTiming(delivery, departureAbs) {
@@ -337,7 +425,8 @@
   function processDueDeliveries(timeBefore, timeAfter) {
     const state = ordersState();
     const existingDeliveryIds = new Set((state.deliveries || []).map(delivery => delivery?.id).filter(Boolean));
-    generatePlannedDeliveries(timeBefore, timeAfter, {includeBoundaryMinute: true});
+    generatePlannedDeliveries(timeBefore, timeAfter, {includeBoundaryMinute: true, skipBlockedRetry: true});
+    retryBlockedDeliveries(timeAfter);
     const beforeAbs = timeAbsoluteMinute(timeBefore);
     const afterAbs = timeAbsoluteMinute(timeAfter);
     let processed = 0;
@@ -364,5 +453,13 @@
     return {processed, deliveries: state.deliveries};
   }
 
-  window.HFV2Transport = {STATUS, createTransportState, configure, getState, normalizeVehicleCapacityKg, generatePlannedDeliveries, processDueDeliveries, completeDelivery, chooseVehicle, scheduledDatesForOrder};
+  window.addEventListener?.('hf:v2:state-changed', event => {
+    const reason = String(event?.detail?.reason || '');
+    if (['network-build', 'network', 'fleet-buy', 'goods-production', 'goods-daily-production', 'goods-inventory-added'].includes(reason)) {
+      const redispatched = retryBlockedDeliveries();
+      if (redispatched) dispatch('transport-redispatched');
+    }
+  });
+
+  window.HFV2Transport = {STATUS, createTransportState, configure, getState, normalizeVehicleCapacityKg, generatePlannedDeliveries, retryBlockedDeliveries, processDueDeliveries, completeDelivery, chooseVehicle, scheduledDatesForOrder};
 })();
