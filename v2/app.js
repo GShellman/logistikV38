@@ -574,16 +574,42 @@
     });
   }
 
-  function applySavePackage(nextPackage) {
-    savePackage = window.HFV2Save?.hydrateState?.(nextPackage) || nextPackage;
+  function transportPlanningDependencies() {
+    const missing = [];
+    if (typeof window.HFV2Transport?.generatePlannedDeliveries !== 'function') missing.push('Transportplanung');
+    if (typeof window.HFNetwork?.findPath !== 'function') missing.push('Netzwerk-Routenfinder');
+    if (typeof window.HFFleet?.getCityFleet !== 'function') missing.push('Flottenverwaltung');
+    const catalog = window.HFVehicleCatalog?.VEHICLE_CATALOG;
+    if (!catalog || !Object.keys(catalog).length) missing.push('Fahrzeugkatalog');
+    if (typeof window.HFV2Goods?.getCityInventory !== 'function') missing.push('Güterverwaltung');
+    return {ready: missing.length === 0, missing};
+  }
+
+  function generatePlannedDeliveriesWhenReady(reason) {
+    const dependencies = transportPlanningDependencies();
+    if (!dependencies.ready) {
+      setSaveStatus(`Transportplanung übersprungen (${reason}): ${dependencies.missing.join(', ')} noch nicht verfügbar.`);
+      return false;
+    }
+    window.HFV2Transport?.generatePlannedDeliveries?.();
+    return true;
+  }
+
+  function configureGameSystems(cities) {
     window.HFV2Save?.configureState?.(savePackage);
     window.HFV2Time?.configure?.({state: savePackage.state.time});
-    networkState = window.HFNetwork?.configure({state: savePackage.state.network, cities: Object.values(citiesById), citiesById});
+    networkState = window.HFNetwork?.configure({state: savePackage.state.network, cities, citiesById});
     window.HFFleet?.configure?.({state: savePackage.state.fleet});
     window.HFV2Factories?.configure?.({state: savePackage.state.factories});
-    window.HFV2Goods?.configure?.({state: savePackage.state.goods, cities: Object.values(citiesById)});
+    window.HFV2Goods?.configure?.({state: savePackage.state.goods, cities});
     window.HFV2Orders?.configure?.({state: savePackage.state.orders});
     window.HFV2Transport?.configure?.({state: savePackage.state.transport});
+    generatePlannedDeliveriesWhenReady('Initialisierung');
+  }
+
+  function applySavePackage(nextPackage) {
+    savePackage = window.HFV2Save?.hydrateState?.(nextPackage) || nextPackage;
+    configureGameSystems(Object.values(citiesById));
     refreshNetworkView();
     renderClock();
     refreshSelectedCity();
@@ -642,14 +668,7 @@
     const cities = loadCities();
     citiesById = Object.fromEntries(cities.map(city => [city.id, city]));
     savePackage = window.HFV2Save?.createDefaultState?.() || {state: {network: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}), fleet: window.HFFleet?.createFleetState?.(), factories: window.HFV2Factories?.createFactoryState?.(), goods: window.HFV2Goods?.createGoodsState?.(), orders: window.HFV2Orders?.createOrderState?.(), transport: window.HFV2Transport?.createTransportState?.(), time: window.HFV2Save?.defaultTimeState?.() || {day: 1, hour: 8, minute: 0}}};
-    window.HFV2Save?.configureState?.(savePackage);
-    window.HFV2Time?.configure?.({state: savePackage.state.time});
-    networkState = window.HFNetwork?.configure({state: savePackage.state.network, cities, citiesById});
-    window.HFFleet?.configure?.({state: savePackage.state.fleet});
-    window.HFV2Factories?.configure?.({state: savePackage.state.factories});
-    window.HFV2Goods?.configure?.({state: savePackage.state.goods, cities});
-    window.HFV2Orders?.configure?.({state: savePackage.state.orders});
-    window.HFV2Transport?.configure?.({state: savePackage.state.transport});
+    configureGameSystems(cities);
     document.getElementById('hfV2CityCount').textContent = `${cities.length.toLocaleString('de-CH')} Orte`;
     bindSaveControls();
     bindTimeControls();
