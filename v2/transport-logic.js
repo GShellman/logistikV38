@@ -236,10 +236,14 @@
       requestedQuantityKg,
       quantityKg,
       plannedQuantityKg: quantityKg,
+      // scheduledDay/scheduledMinute use departure semantics. deliveryDay/deliveryMinute
+      // remain populated as legacy departure aliases for older saved games/UI consumers.
       scheduledDay: day,
       scheduledMinute: minute,
       deliveryDay: day,
       deliveryMinute: minute,
+      departureDay: day,
+      departureMinute: minute,
       vehicleType: '',
       tripIndex: 1,
       status: STATUS.PLANNED,
@@ -309,10 +313,14 @@
         requestedQuantityKg,
         quantityKg,
         plannedQuantityKg: quantityKg,
+        // scheduledDay/scheduledMinute use departure semantics. deliveryDay/deliveryMinute
+        // remain populated as legacy departure aliases for older saved games/UI consumers.
         scheduledDay: slot.day,
         scheduledMinute: slot.minute,
         deliveryDay: slot.day,
         deliveryMinute: slot.minute,
+        departureDay: slot.day,
+        departureMinute: slot.minute,
         vehicleType: chosen.vehicleType,
         vehicleCapacityKg: chosen.capacityKg,
         tripCount: chosen.trips,

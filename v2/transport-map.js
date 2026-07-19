@@ -34,17 +34,17 @@
     return !status || ACTIVE_STATUSES.has(status);
   }
 
-  function routeWindow(delivery) {
-    const arrivalDay = normalizeInteger(delivery?.scheduledDay ?? delivery?.deliveryDay, 1, 1);
-    const arrivalMinute = normalizeInteger(delivery?.scheduledMinute ?? delivery?.deliveryMinute, 0, 0, 1439);
-    const arrivalAbs = absoluteMinute(arrivalDay, arrivalMinute);
+  function deliveryWindow(delivery) {
+    const departureDay = normalizeInteger(delivery?.departureDay ?? delivery?.scheduledDay ?? delivery?.deliveryDay, 1, 1);
+    const departureMinute = normalizeInteger(delivery?.departureMinute ?? delivery?.scheduledMinute ?? delivery?.deliveryMinute, 0, 0, 1439);
+    const departureAbs = absoluteMinute(departureDay, departureMinute);
     const roundTripMinutes = Math.max(1, normalizeInteger(delivery?.roundTripMinutes, delivery?.durationMinutes ?? 120, 1));
     const outboundMinutes = Math.max(1, normalizeInteger(delivery?.outboundMinutes ?? delivery?.routeMinutes, Math.ceil(roundTripMinutes / 2), 1));
-    return {startAbs: arrivalAbs - outboundMinutes, endAbs: arrivalAbs, outboundMinutes};
+    return {startAbs: departureAbs, endAbs: departureAbs + outboundMinutes, outboundMinutes};
   }
 
   function deliveryProgress(delivery) {
-    const {startAbs, endAbs} = routeWindow(delivery);
+    const {startAbs, endAbs} = deliveryWindow(delivery);
     const now = currentAbsoluteMinute();
     if (now < startAbs || now > endAbs) return null;
     if (endAbs <= startAbs) return 1;
