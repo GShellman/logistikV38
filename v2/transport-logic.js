@@ -107,12 +107,13 @@
     const state = ordersState();
     const start = scheduledAbsMinute;
     const end = start + Math.max(1, normalizeInteger(durationMinutes, 1, 1));
-    return (state.deliveries || []).filter(delivery => {
-      if (delivery.status !== STATUS.PLANNED || delivery.vehicleType !== vehicleType) return false;
+    return (state.deliveries || []).reduce((busyCount, delivery) => {
+      if (delivery.status !== STATUS.PLANNED || delivery.vehicleType !== vehicleType) return busyCount;
       const otherStart = absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute);
       const otherEnd = otherStart + Math.max(1, normalizeInteger(delivery.roundTripMinutes, delivery.durationMinutes, 1));
-      return start < otherEnd && otherStart < end;
-    }).length;
+      if (!(start < otherEnd && otherStart < end)) return busyCount;
+      return busyCount + Math.max(1, Number(delivery.tripCount) || 1);
+    }, 0);
   }
 
   function chooseVehicle(sourceCityId, destinationCityId, quantityKg, scheduledDay, scheduledMinute) {
@@ -128,7 +129,7 @@
       const duration = roundTripMinutes(path, vehicle);
       const busy = vehicleBusyCount(vehicleType, absoluteMinute(scheduledDay, scheduledMinute), duration);
       return {vehicleType, vehicle, owned, capacityKg, path, trips, duration, available: Math.max(0, owned - busy)};
-    }).filter(Boolean).filter(candidate => candidate.available > 0);
+    }).filter(Boolean).filter(candidate => candidate.available >= candidate.trips);
     candidates.sort((a, b) => a.trips - b.trips || b.capacityKg - a.capacityKg || transportCost(a.path, a.vehicle, quantityKg) - transportCost(b.path, b.vehicle, quantityKg));
     return candidates[0] || null;
   }
