@@ -182,7 +182,7 @@
     if (explicit) return explicit;
     const primary = order.primarySource?.type === 'city' ? String(order.primarySource.id || '').trim() : '';
     if (primary) return primary;
-    return window.HFV2Orders?.sourceCandidates?.(order.destinationCityId, order.goodId)?.find(candidate => candidate.transportReady)?.sourceCityId || '';
+    return window.HFV2Orders?.sourceCandidates?.(order.destinationCityId, order.goodId)?.find(candidate => candidate.transportReady || candidate.canBackorder)?.sourceCityId || '';
   }
 
   function hasScheduledDelivery(orderId, scheduledDay, scheduledMinute) {
@@ -251,7 +251,7 @@
     if (!sourceCityId) { markUnresolved(delivery, 'Keine Lieferquelle gefunden.', requestedQuantityKg); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine Lieferquelle gefunden.'); }
     const sourceInventory = window.HFV2Goods?.getCityInventory?.(sourceCityId) || {};
     const availableKg = Math.max(0, Number(sourceInventory[order.goodId]) || 0);
-    if (availableKg <= 0) { markUnresolved(delivery, 'Keine Ware in der Quelle verfügbar.', requestedQuantityKg); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine Ware in der Quelle verfügbar.'); }
+    if (availableKg <= 0) { markUnresolved(delivery, 'Wartet auf Tagesproduktion in der Quelle.', requestedQuantityKg); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Produktion vorhanden, aber erst nach Tagesproduktion transportierbar. Lieferung wartet auf Redispatch.'); }
     if (quantityKg > availableKg) quantityKg = availableKg;
     delivery.quantityKg = quantityKg;
     delivery.plannedQuantityKg = quantityKg;
@@ -298,7 +298,7 @@
       if (!sourceCityId) { markUnresolved(delivery, 'Keine Lieferquelle gefunden.', requestedQuantityKg); statusMessage(delivery, 'Weiterhin blockiert: Keine Lieferquelle gefunden.'); continue; }
       const sourceInventory = window.HFV2Goods?.getCityInventory?.(sourceCityId) || {};
       const availableKg = Math.max(0, Number(sourceInventory[order.goodId]) || 0);
-      if (availableKg <= 0) { markUnresolved(delivery, 'Keine Ware in der Quelle verfügbar.', requestedQuantityKg); statusMessage(delivery, 'Weiterhin blockiert: Keine Ware in der Quelle verfügbar.'); continue; }
+      if (availableKg <= 0) { markUnresolved(delivery, 'Wartet auf Tagesproduktion in der Quelle.', requestedQuantityKg); statusMessage(delivery, 'Weiterhin blockiert: Produktion vorhanden, aber erst nach Tagesproduktion transportierbar.'); continue; }
       const quantityKg = Math.min(requestedQuantityKg, availableKg);
       const originalScheduledAbs = absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute);
       const windowStartAbs = Number.isFinite(Number(options?.windowStartAbs)) ? Number(options.windowStartAbs) : null;
