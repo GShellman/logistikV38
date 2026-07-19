@@ -263,16 +263,34 @@
     return window.HFV2Orders?.sourceCandidates?.(order.destinationCityId, order.goodId)?.find(candidate => candidate.transportReady || candidate.canBackorder)?.sourceCityId || '';
   }
 
+  function deliveryMatchesSchedule(delivery, orderId, scheduledDay, scheduledMinute) {
+    const deliveryOrderId = String(delivery?.orderId || '').trim();
+    const deliveryDay = normalizeInteger(delivery?.scheduledDay ?? delivery?.deliveryDay, 0, 0);
+    const deliveryMinute = normalizeInteger(delivery?.scheduledMinute ?? delivery?.deliveryMinute, -1, 0, 1439);
+    return deliveryOrderId === orderId && deliveryDay === scheduledDay && deliveryMinute === scheduledMinute && delivery?.status !== 'cancelled';
+  }
+
+  function isZeroKgWaitingProduction(delivery) {
+    return delivery?.status === STATUS.WAITING_PRODUCTION && normalizeNonNegative(delivery.quantityKg || delivery.plannedQuantityKg) <= 0;
+  }
+
+  function hasOnlyZeroKgWaitingProduction(orderId, scheduledDay, scheduledMinute) {
+    const targetOrderId = String(orderId || '').trim();
+    const targetDay = normalizeInteger(scheduledDay, 0, 0);
+    const targetMinute = normalizeInteger(scheduledMinute, -1, 0, 1439);
+    if (!targetOrderId || !targetDay || targetMinute < 0) return false;
+    const matches = (ordersState().deliveries || []).filter(delivery => deliveryMatchesSchedule(delivery, targetOrderId, targetDay, targetMinute));
+    return matches.length > 0 && matches.every(isZeroKgWaitingProduction);
+  }
+
   function hasScheduledDelivery(orderId, scheduledDay, scheduledMinute) {
     const targetOrderId = String(orderId || '').trim();
     const targetDay = normalizeInteger(scheduledDay, 0, 0);
     const targetMinute = normalizeInteger(scheduledMinute, -1, 0, 1439);
     if (!targetOrderId || !targetDay || targetMinute < 0) return false;
     return (ordersState().deliveries || []).some(delivery => {
-      const deliveryOrderId = String(delivery.orderId || '').trim();
-      const deliveryDay = normalizeInteger(delivery.scheduledDay ?? delivery.deliveryDay, 0, 0);
-      const deliveryMinute = normalizeInteger(delivery.scheduledMinute ?? delivery.deliveryMinute, -1, 0, 1439);
-      return deliveryOrderId === targetOrderId && deliveryDay === targetDay && deliveryMinute === targetMinute && delivery.status !== 'cancelled';
+      if (!deliveryMatchesSchedule(delivery, targetOrderId, targetDay, targetMinute)) return false;
+      return !isZeroKgWaitingProduction(delivery);
     });
   }
 
@@ -560,7 +578,15 @@
       const scheduledAbs = Math.max(redispatchLowerBound, originalScheduledAbs);
       const slot = minuteToDayMinute(scheduledAbs);
       const chosen = chooseVehicle(sourceCityId, order.destinationCityId, quantityKg, slot.day, slot.minute);
-      if (!chosen || chosen.routeOverloaded) { const message = chosen?.routeOverloaded ? 'Route überlastet.' : 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.'; markUnresolved(delivery, message, quantityKg); statusMessage(delivery, `Weiterhin blockiert: ${message}`); continue; }
+      if (!chosen || chosen.routeOverloaded) {
+        const reason = chosen?.routeOverloaded ? 'Route überlastet.' : 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.';
+        const message = delivery.status === STATUS.WAITING_PRODUCTION || delivery.waitingForProduction === true
+          ? `Produktion vorhanden, Neuplanung fehlgeschlagen: Grund ${reason}`
+          : `Weiterhin blockiert: ${reason}`;
+        markUnresolved(delivery, message, quantityKg);
+        statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED, waitingForProduction: false}), message);
+        continue;
+      }
       withRouteEdgeIds(delivery, chosen.path);
       Object.assign(delivery, {
         sourceType: 'city',
@@ -594,7 +620,15 @@
       delivery.tripSegments = createTripSegments(quantityKg, chosen.capacityKg, absoluteMinute(slot.day, slot.minute), delivery.routeMinutes, chosen.duration);
       applyAggregateTiming(delivery);
       const reservation = reserveDeliveryRoute(delivery, chosen.path);
-      if (!reservation.ok) { markUnresolved(delivery, 'Route überlastet.', quantityKg); statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Route überlastet.'); continue; }
+      if (!reservation.ok) {
+        const reason = 'Route überlastet.';
+        const message = delivery.waitingForProduction === true
+          ? `Produktion vorhanden, Neuplanung fehlgeschlagen: Grund ${reason}`
+          : reason;
+        markUnresolved(delivery, message, quantityKg);
+        statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED, waitingForProduction: false}), message);
+        continue;
+      }
       addInventoryReservation(reservations, delivery, quantityKg);
       delete delivery.departedKg;
       delete delivery.openQuantityBumpedKg;
@@ -622,7 +656,10 @@
       for (const rawSlot of scheduledDatesForOrder(order, fromDay, toDay)) {
         const slot = nextSchedulableSlot(order, rawSlot, fromAbs, includeBoundaryMinute);
         if (absoluteMinute(slot.day, slot.minute) > toAbs) continue;
-        if (hasScheduledDelivery(order.id, slot.day, slot.minute)) continue;
+        const onlyZeroKgWaitingProduction = hasOnlyZeroKgWaitingProduction(order.id, slot.day, slot.minute);
+        const canReplaceWaitingProduction = onlyZeroKgWaitingProduction && inventoryAvailability(sourceCityIdForOrder(order), order.goodId, reservations).availableKg > 0;
+        if (onlyZeroKgWaitingProduction && !canReplaceWaitingProduction) continue;
+        if (!canReplaceWaitingProduction && hasScheduledDelivery(order.id, slot.day, slot.minute)) continue;
         state.deliveries.push(createPlannedDelivery(order, slot.day, slot.minute, {inventoryReservations: reservations}));
         created += 1;
       }
