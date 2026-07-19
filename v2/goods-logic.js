@@ -166,6 +166,24 @@
     return merged;
   }
 
+  function getOutgoingLogisticsDemandMap(cityId) {
+    const id = assertCityId(cityId);
+    const orders = window.HFV2Logistics?.getState?.().orders || [];
+    const demandMap = {};
+    for (const order of orders) {
+      if (!order || String(order.fromCityId || '') !== id || order.enabled === false) continue;
+      addPositive(demandMap, order.goodId, order.amountKg);
+    }
+    return demandMap;
+  }
+
+  function getCityProductionTargetDemandMap(cityId) {
+    const id = assertCityId(cityId);
+    const localDemand = getCityDailyDemandMap(id);
+    const exportDemand = getOutgoingLogisticsDemandMap(id);
+    return mergeDemandMaps(localDemand, exportDemand);
+  }
+
 
   function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
@@ -405,7 +423,7 @@
     const summary = {cityId: id, factoryId: String(factoryId || ''), recipeId: null, madeKg: 0, capacityKg: 0, scale: 0, reason: 'unknown-factory', outputs: {}};
     if (!factory) return summary;
 
-    const targetDemand = getCityDailyDemandMap(id);
+    const targetDemand = getCityProductionTargetDemandMap(id);
     const inventory = cloneInventory(id);
     const missingMap = {};
     for (const [goodId, targetKg] of Object.entries(targetDemand)) {
@@ -473,7 +491,7 @@
     ]);
 
     for (const cityId of cityIds) {
-      const targetDemand = getCityDailyDemandMap(cityId);
+      const targetDemand = getCityProductionTargetDemandMap(cityId);
       const inventory = ensureCityInventory(cityId);
       const missingMap = {};
       for (const [goodId, targetKg] of Object.entries(targetDemand)) {
@@ -537,5 +555,5 @@
     return summary;
   }
 
-  window.HFV2Goods = {createGoodsState, configure, getState, ensureCityInventory, getCityInventory, addToInventory, removeFromInventory, getUsedCapacityKg, getCapacityKg, salePriceForCity, getCityDailyDemandMap, mergeDemandMaps, productionDebugRows, estimateCityFactoryProduction, runDailyProduction, runDailySales, sellCityDemandAtMidnight};
+  window.HFV2Goods = {createGoodsState, configure, getState, ensureCityInventory, getCityInventory, addToInventory, removeFromInventory, getUsedCapacityKg, getCapacityKg, salePriceForCity, getCityDailyDemandMap, getOutgoingLogisticsDemandMap, getCityProductionTargetDemandMap, mergeDemandMaps, productionDebugRows, estimateCityFactoryProduction, runDailyProduction, runDailySales, sellCityDemandAtMidnight};
 })();
