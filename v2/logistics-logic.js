@@ -152,7 +152,11 @@
 
   function validateRoute(fromCityId, toCityId, options = {}) {
     const path = window.HFNetwork?.findPath?.(fromCityId, toCityId, {mode: 'road', ...options});
-    if (!path?.reachable) throw new Error('No road route exists between source and target city');
+    if (!path?.reachable) {
+      const error = new Error('No road route exists between source and target city');
+      error.reason = 'no-route';
+      throw error;
+    }
     return path;
   }
 
@@ -192,7 +196,32 @@
   function assertFleetVehicle(cityId, vehicleType) {
     if (!vehicleType) return;
     const fleet = window.HFFleet?.getCityFleet?.(cityId) || {};
-    if ((Number(fleet[vehicleType]) || 0) <= 0) throw new Error('Selected vehicle type is not available in the source city fleet');
+    const vehicle = window.HFVehicleCatalog?.VEHICLE_CATALOG?.[vehicleType] || null;
+    if (!vehicle || vehicle.mode !== 'road' || (Number(fleet[vehicleType]) || 0) <= 0) throw new Error('Selected road vehicle type is not available in the source city fleet');
+  }
+
+  function validateRoadShipment({fromCityId, toCityId, vehicleType, amountKg, departureAbsMinute}) {
+    const path = window.HFNetwork?.findPath?.(fromCityId, toCityId, {mode: 'road'});
+    if (!path?.reachable) return {ok: false, reason: 'no-route'};
+
+    const fleet = window.HFFleet?.getCityFleet?.(fromCityId) || {};
+    const vehicle = window.HFVehicleCatalog?.VEHICLE_CATALOG?.[vehicleType] || null;
+    if (!vehicle || vehicle.mode !== 'road' || (Number(fleet[vehicleType]) || 0) <= 0) return {ok: false, reason: 'no-vehicle'};
+
+    const load = Number(vehicle.load);
+    const capacityKg = Number.isFinite(load) && load > 0 ? (load >= 100 ? load : load * 1000) : 0;
+    if (capacityKg <= 0) return {ok: false, reason: 'capacity-invalid'};
+
+    const vehicleCount = Math.ceil(Math.max(0, Number(amountKg) || 0) / capacityKg);
+    if (vehicleCount <= 0) return {ok: false, reason: 'capacity-invalid'};
+    if (vehicleCount > (Number(fleet[vehicleType]) || 0)) return {ok: false, reason: 'not-enough-vehicles', path, capacityKg, vehicleCount};
+
+    const startAbsMinute = Number(departureAbsMinute);
+    const endAbsMinute = startAbsMinute + Math.ceil((Number(path.duration) || 0) * 60);
+    const capacityStatus = window.HFNetwork?.pathCapacityStatus?.(path, {startAbsMinute, endAbsMinute, units: vehicleCount});
+    if (capacityStatus && capacityStatus.ok === false) return {ok: false, reason: capacityStatus.reason || 'route-overloaded', path, capacityKg, vehicleCount, arrivalAbsMinute: endAbsMinute, capacityStatus};
+
+    return {ok: true, path, capacityKg, vehicleCount, departureAbsMinute: startAbsMinute, arrivalAbsMinute: endAbsMinute};
   }
 
   function createOrder(options = {}) {
@@ -260,14 +289,15 @@
     configure();
     const time = currentTime();
     const nowAbsMinute = absoluteMinute(time);
+    window.HFNetwork?.cleanupCapacityReservations?.(nowAbsMinute - MINUTES_PER_DAY);
     const created = [];
     for (const order of state.orders) {
       if (!orderDueToday(order, time)) continue;
       const vehicleType = order.vehicleType || DEFAULT_VEHICLE_TYPE;
-      const capacityKg = vehicleCapacityKg(vehicleType);
-      const vehicleCount = splitIntoVehicleLoads(order.amountKg, capacityKg).length;
-      if (!vehicleCount) {
-        markOrderDispatchResult(order, 'capacity-invalid');
+      const departureAbsMinute = nowAbsMinute;
+      const validation = validateRoadShipment({fromCityId: order.fromCityId, toCityId: order.toCityId, vehicleType, amountKg: order.amountKg, departureAbsMinute});
+      if (!validation.ok) {
+        markOrderDispatchResult(order, validation.reason);
         continue;
       }
 
@@ -277,22 +307,14 @@
         continue;
       }
 
-      let path;
-      try {
-        path = validateRoute(order.fromCityId, order.toCityId);
-      } catch (error) {
-        markOrderDispatchResult(order, 'route-invalid');
-        continue;
-      }
-
-      const arrivalAbsMinute = nowAbsMinute + shipmentDurationMinutes(path, vehicleType);
-      const reservation = window.HFNetwork?.reservePathCapacity?.(path, {startAbsMinute: nowAbsMinute, endAbsMinute: arrivalAbsMinute, units: vehicleCount});
+      const {path, vehicleCount, arrivalAbsMinute} = validation;
+      const reservationId = `shipment-${state.nextShipmentId}`;
+      const reservation = window.HFNetwork?.reservePathCapacity?.(path, {startAbsMinute: departureAbsMinute, endAbsMinute: arrivalAbsMinute, units: vehicleCount, reservationId});
       if (reservation && reservation.ok === false) {
-        markOrderDispatchResult(order, reservation.reason || 'capacity-limited');
+        markOrderDispatchResult(order, reservation.reason || 'route-overloaded');
         continue;
       }
 
-      const reservationId = reservation?.reservationId || null;
       const removed = window.HFV2Goods?.removeFromInventory?.(order.fromCityId, order.goodId, order.amountKg);
       if (!removed?.ok || Number(removed.removedKg) !== order.amountKg) {
         if (reservationId) window.HFNetwork?.releaseCapacityReservation?.(reservationId);
@@ -314,9 +336,9 @@
         pathEdgeIds: Array.isArray(path.edges) ? path.edges.map(pathEdgeId).filter(Boolean) : [],
         geometry,
         routeGeometry: geometry,
-        departureAbsMinute: nowAbsMinute,
+        departureAbsMinute,
         arrivalAbsMinute,
-        reservationId,
+        reservationId: reservation?.reservationId || reservationId,
         status: 'active',
         createdAtAbsMinute: nowAbsMinute,
       };
@@ -346,5 +368,5 @@
     return delivered;
   }
 
-  window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, absoluteMinute, orderDueToday, vehicleCapacityKg, splitIntoVehicleLoads};
+  window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, absoluteMinute, orderDueToday, vehicleCapacityKg, splitIntoVehicleLoads, validateRoadShipment};
 })();
