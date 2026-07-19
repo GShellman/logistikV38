@@ -4,6 +4,7 @@
   const MAX_CONNECTION_DISTANCE_KM = 105;
   const STARTING_CASH = window.HFV2Save?.STARTING_CASH ?? 500000;
   const INTERSECTION_EPS = 1e-7;
+  const CAPACITY_WINDOW_MINUTES = 60;
 
   const TRANSPORT_TYPES = {
     localroad: {name: 'Gemeindestraße', short: 'GEMEINDE', mode: 'road', icon: '🛤️', capacity: 3, capacityUnit: 'Fahrzeuge', speed: 35, baseCost: 4000, buildKm: 280, maintenanceKm: 12, color: '#85796b', weight: 2, desc: 'Sehr günstig, aber langsam und mit geringer Tageskapazität.'},
@@ -36,6 +37,7 @@
   function configure(options = {}) {
     state = options.state || state || createNetworkState();
     state.cities = state.cities && typeof state.cities === 'object' ? state.cities : {};
+    state.usedCapacity = state.usedCapacity && typeof state.usedCapacity === 'object' ? state.usedCapacity : {};
     state.cities.zurich = {...(state.cities.zurich || {}), unlocked: true};
     cities = options.cities || cities;
     citiesById = options.citiesById || citiesById;
@@ -263,6 +265,107 @@
     });
   }
 
+
+  function edgeId(edge) {
+    return String(edge?.id || `${edge?.a || ''}-${edge?.b || ''}-${edge?.type || ''}`);
+  }
+
+  function edgeCapacity(edge) {
+    const spec = transportSpec(edge);
+    const value = Number(edge?.capacity ?? spec.capacity);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+  }
+
+  function capacityWindowKey(absMinute) {
+    const bucket = Math.floor(Math.max(0, Number(absMinute) || 0) / CAPACITY_WINDOW_MINUTES);
+    return `h${bucket}`;
+  }
+
+  function capacityWindowRange(startAbsMinute, endAbsMinute) {
+    const start = Math.max(0, Math.floor(Number(startAbsMinute) || 0));
+    const end = Math.max(start + 1, Math.ceil(Number(endAbsMinute) || start + 1));
+    const first = Math.floor(start / CAPACITY_WINDOW_MINUTES);
+    const last = Math.floor(Math.max(start, end - 1) / CAPACITY_WINDOW_MINUTES);
+    const keys = [];
+    for (let bucket = first; bucket <= last; bucket += 1) keys.push(capacityWindowKey(bucket * CAPACITY_WINDOW_MINUTES));
+    return keys;
+  }
+
+  function reservedUnitsFor(edge, windowKey, targetState = state, exceptReservationId = '') {
+    const reservations = targetState?.usedCapacity?.[edgeId(edge)]?.[windowKey] || {};
+    return Object.entries(reservations).reduce((total, [id, units]) => total + (id === exceptReservationId ? 0 : Math.max(0, Number(units) || 0)), 0);
+  }
+
+  function pathCapacityStatus(path, options = {}) {
+    const targetState = options.state || state || createNetworkState();
+    const edges = Array.isArray(path?.edges) ? path.edges : [];
+    const start = Number(options.startAbsMinute);
+    const end = Number(options.endAbsMinute);
+    const units = Math.max(1, Math.floor(Number(options.units) || 1));
+    const reservationId = String(options.reservationId || '');
+    if (!edges.length || !Number.isFinite(start) || !Number.isFinite(end)) return {ok: true, overloaded: []};
+    const overloaded = [];
+    for (const edge of edges) {
+      const capacity = edgeCapacity(edge);
+      for (const windowKey of capacityWindowRange(start, end)) {
+        if (reservedUnitsFor(edge, windowKey, targetState, reservationId) + units > capacity) overloaded.push({edgeId: edgeId(edge), windowKey, capacity});
+      }
+    }
+    return {ok: overloaded.length === 0, overloaded};
+  }
+
+  function reservePathCapacity(path, options = {}) {
+    const targetState = options.state || state || createNetworkState();
+    targetState.usedCapacity = targetState.usedCapacity && typeof targetState.usedCapacity === 'object' ? targetState.usedCapacity : {};
+    const status = pathCapacityStatus(path, {...options, state: targetState});
+    if (!status.ok) return {ok: false, reason: 'route-overloaded', overloaded: status.overloaded};
+    const reservationId = String(options.reservationId || `res-${Date.now()}${Math.random().toString(16).slice(2)}`);
+    const units = Math.max(1, Math.floor(Number(options.units) || 1));
+    for (const edge of Array.isArray(path?.edges) ? path.edges : []) {
+      const id = edgeId(edge);
+      targetState.usedCapacity[id] = targetState.usedCapacity[id] && typeof targetState.usedCapacity[id] === 'object' ? targetState.usedCapacity[id] : {};
+      for (const windowKey of capacityWindowRange(options.startAbsMinute, options.endAbsMinute)) {
+        targetState.usedCapacity[id][windowKey] = targetState.usedCapacity[id][windowKey] && typeof targetState.usedCapacity[id][windowKey] === 'object' ? targetState.usedCapacity[id][windowKey] : {};
+        targetState.usedCapacity[id][windowKey][reservationId] = units;
+      }
+    }
+    return {ok: true, reservationId};
+  }
+
+  function releaseCapacityReservation(reservationId, targetState = state) {
+    const id = String(reservationId || '');
+    if (!id || !targetState?.usedCapacity) return 0;
+    let removed = 0;
+    for (const edgeKey of Object.keys(targetState.usedCapacity)) {
+      for (const windowKey of Object.keys(targetState.usedCapacity[edgeKey] || {})) {
+        if (Object.prototype.hasOwnProperty.call(targetState.usedCapacity[edgeKey][windowKey], id)) {
+          delete targetState.usedCapacity[edgeKey][windowKey][id];
+          removed += 1;
+        }
+        if (!Object.keys(targetState.usedCapacity[edgeKey][windowKey]).length) delete targetState.usedCapacity[edgeKey][windowKey];
+      }
+      if (!Object.keys(targetState.usedCapacity[edgeKey] || {}).length) delete targetState.usedCapacity[edgeKey];
+    }
+    return removed;
+  }
+
+  function cleanupCapacityReservations(beforeAbsMinute, targetState = state) {
+    if (!targetState?.usedCapacity) return 0;
+    const minBucket = Math.floor(Math.max(0, Number(beforeAbsMinute) || 0) / CAPACITY_WINDOW_MINUTES);
+    let removed = 0;
+    for (const edgeKey of Object.keys(targetState.usedCapacity)) {
+      for (const windowKey of Object.keys(targetState.usedCapacity[edgeKey] || {})) {
+        const bucket = Number(String(windowKey).replace(/^h/, ''));
+        if (Number.isFinite(bucket) && bucket < minBucket) {
+          delete targetState.usedCapacity[edgeKey][windowKey];
+          removed += 1;
+        }
+      }
+      if (!Object.keys(targetState.usedCapacity[edgeKey] || {}).length) delete targetState.usedCapacity[edgeKey];
+    }
+    return removed;
+  }
+
   function findPath(fromId, toId, options = {}) {
     const start = String(fromId || '').trim();
     const target = String(toId || '').trim();
@@ -274,6 +377,10 @@
     for (const edge of targetState.connections || []) {
       if (!edge?.a || !edge?.b) continue;
       if (mode && transportSpec(edge).mode !== mode) continue;
+      if (options.requireCapacity === true) {
+        const status = pathCapacityStatus({edges: [edge]}, {state: targetState, startAbsMinute: options.startAbsMinute, endAbsMinute: options.endAbsMinute, units: options.units, reservationId: options.reservationId});
+        if (!status.ok) continue;
+      }
       if (!adjacency.has(edge.a)) adjacency.set(edge.a, []);
       if (!adjacency.has(edge.b)) adjacency.set(edge.b, []);
       adjacency.get(edge.a).push({node: edge.b, edge});
@@ -373,6 +480,7 @@
     const edges = splitRoadsForAutomaticJunctions(project);
     state.connections.push(...edges);
     state.cities = state.cities && typeof state.cities === 'object' ? state.cities : {};
+    state.usedCapacity = state.usedCapacity && typeof state.usedCapacity === 'object' ? state.usedCapacity : {};
     state.cities[project.a] = {...(state.cities[project.a] || {}), unlocked: true};
     state.cities[project.b] = {...(state.cities[project.b] || {}), unlocked: true};
     state.selected = project.b;
@@ -381,5 +489,5 @@
     return edges[0];
   }
 
-  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject};
+  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject, pathCapacityStatus, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
 })();
