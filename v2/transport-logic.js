@@ -4,7 +4,7 @@
   const KG_PER_TONNE = 1000;
   const SCHEDULE_HORIZON_DAYS = 14;
   const DEFAULT_DEPARTURE_MINUTE = 8 * 60;
-  const STATUS = Object.freeze({PLANNED: 'planned', COMPLETED: 'completed', PARTIAL: 'partial', BLOCKED: 'blocked', FAILED: 'failed'});
+  const STATUS = Object.freeze({PLANNED: 'planned', RUNNING: 'running', COMPLETED: 'completed', PARTIAL: 'partial', BLOCKED: 'blocked', FAILED: 'failed'});
 
   let transportState = null;
 
@@ -44,6 +44,11 @@
   function timeAbsoluteMinute(time) {
     const current = time || window.HFV2Time?.getState?.() || window.HFV2Save?.getState?.().time || {day: 1, hour: 8, minute: 0};
     return absoluteMinute(current.day, (normalizeInteger(current.hour, 0, 0, 23) * 60) + normalizeInteger(current.minute, 0, 0, 59));
+  }
+
+  function minuteToDayMinute(absMinute) {
+    const normalized = Math.max(0, normalizeInteger(absMinute, 0, 0));
+    return {day: Math.floor(normalized / 1440) + 1, minute: normalized % 1440};
   }
 
   function createDeliveryId(state) {
@@ -108,9 +113,12 @@
     const start = scheduledAbsMinute;
     const end = start + Math.max(1, normalizeInteger(durationMinutes, 1, 1));
     return (state.deliveries || []).reduce((busyCount, delivery) => {
-      if (delivery.status !== STATUS.PLANNED || delivery.vehicleType !== vehicleType) return busyCount;
-      const otherStart = absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute);
-      const otherEnd = otherStart + Math.max(1, normalizeInteger(delivery.roundTripMinutes, delivery.durationMinutes, 1));
+      if (![STATUS.PLANNED, STATUS.RUNNING].includes(delivery.status) || delivery.vehicleType !== vehicleType) return busyCount;
+      const otherStart = absoluteMinute(delivery.departureDay ?? delivery.scheduledDay ?? delivery.deliveryDay, delivery.departureMinute ?? delivery.scheduledMinute ?? delivery.deliveryMinute);
+      const fallbackEnd = otherStart + Math.max(1, normalizeInteger(delivery.roundTripMinutes, delivery.durationMinutes, 1));
+      const otherEnd = delivery.vehicleFreeDay
+        ? absoluteMinute(delivery.vehicleFreeDay, delivery.vehicleFreeMinute)
+        : fallbackEnd;
       if (!(start < otherEnd && otherStart < end)) return busyCount;
       return busyCount + Math.max(1, Number(delivery.tripCount) || 1);
     }, 0);
@@ -192,6 +200,7 @@
       goodId: order.goodId,
       requestedQuantityKg,
       quantityKg,
+      plannedQuantityKg: quantityKg,
       scheduledDay: day,
       scheduledMinute: minute,
       deliveryDay: day,
@@ -206,12 +215,14 @@
     if (availableKg <= 0) { getState().unresolved.push({orderId: order.id, day, goodId: order.goodId, amount: requestedQuantityKg, reason: 'Keine Ware in der Quelle verfügbar.'}); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine Ware in der Quelle verfügbar.'); }
     if (quantityKg > availableKg) quantityKg = availableKg;
     delivery.quantityKg = quantityKg;
+    delivery.plannedQuantityKg = quantityKg;
     const chosen = chooseVehicle(sourceCityId, order.destinationCityId, quantityKg, day, minute);
     if (!chosen) { getState().unresolved.push({orderId: order.id, day, goodId: order.goodId, amount: quantityKg, reason: 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.'}); return statusMessage(Object.assign(delivery, {status: STATUS.BLOCKED}), 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.'); }
     Object.assign(delivery, {
       vehicleType: chosen.vehicleType,
       vehicleCapacityKg: chosen.capacityKg,
       tripCount: chosen.trips,
+      routeMinutes: Math.max(1, Math.ceil(chosen.duration / 2)),
       roundTripMinutes: chosen.duration,
       distanceKm: chosen.path.distance,
       transportCost: transportCost(chosen.path, chosen.vehicle, quantityKg),
@@ -257,29 +268,70 @@
     return created;
   }
 
-  function completeDelivery(delivery) {
+  function setDeliveryTiming(delivery, departureAbs) {
+    const routeDuration = Math.max(1, normalizeInteger(delivery.routeMinutes, Math.ceil(normalizeInteger(delivery.roundTripMinutes, 2, 1) / 2), 1));
+    const roundTripDuration = Math.max(routeDuration, normalizeInteger(delivery.roundTripMinutes, routeDuration * 2, routeDuration));
+    const arrival = minuteToDayMinute(departureAbs + routeDuration);
+    const vehicleFree = minuteToDayMinute(departureAbs + roundTripDuration);
+    Object.assign(delivery, {
+      routeMinutes: routeDuration,
+      roundTripMinutes: roundTripDuration,
+      departureDay: Math.floor(departureAbs / 1440) + 1,
+      departureMinute: departureAbs % 1440,
+      arrivalDay: arrival.day,
+      arrivalMinute: arrival.minute,
+      vehicleFreeDay: vehicleFree.day,
+      vehicleFreeMinute: vehicleFree.minute,
+      vehicleFreeAtMinute: departureAbs + roundTripDuration,
+    });
+  }
+
+  function departDelivery(delivery) {
     if (!delivery.sourceCityId) return Object.assign(delivery, {status: STATUS.BLOCKED}, statusMessage(delivery, 'Keine Quelle hinterlegt.'));
     const plannedKg = normalizeNonNegative(delivery.quantityKg);
     const requestedKg = Math.max(plannedKg, normalizeNonNegative(delivery.requestedQuantityKg));
     const removal = window.HFV2Goods?.removeFromInventory?.(delivery.sourceCityId, delivery.goodId, plannedKg);
     const removedKg = normalizeNonNegative(removal?.removedKg ?? removal);
     if (removedKg <= 0) { bumpOpenQuantity(delivery, requestedKg); return Object.assign(delivery, {status: STATUS.BLOCKED}, statusMessage(delivery, 'Keine Ware in der Quelle verfügbar.')); }
-    const addition = window.HFV2Goods?.addToInventory?.(delivery.destinationCityId, delivery.goodId, removedKg);
-    const addedKg = normalizeNonNegative(addition?.addedKg ?? addition ?? removedKg);
-    if (addedKg + 0.001 < removedKg) statusMessage(delivery, `Ziellager begrenzt: ${Math.round(addedKg)} von ${Math.round(removedKg)} kg eingelagert.`);
-    const bookedCost = Math.round(normalizeNonNegative(delivery.transportCost) * (removedKg / Math.max(1, plannedKg)));
-    if (bookedCost > 0) window.HFV2Save?.changeCash?.(-bookedCost, 'goods-delivery');
+    if (removedKg + 0.001 < plannedKg) {
+      delivery.openQuantityBumpedKg = Math.max(0, requestedKg - removedKg);
+      bumpOpenQuantity(delivery, delivery.openQuantityBumpedKg);
+    }
+    delivery.quantityKg = removedKg;
+    delivery.departedKg = removedKg;
+    const departureAbs = absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute);
+    setDeliveryTiming(delivery, departureAbs);
+    delivery.status = STATUS.RUNNING;
+    return statusMessage(delivery, `Abgefahren: ${Math.round(removedKg)} kg, Ankunft Tag ${delivery.arrivalDay} um ${String(Math.floor(delivery.arrivalMinute / 60)).padStart(2, '0')}:${String(delivery.arrivalMinute % 60).padStart(2, '0')}.`);
+  }
+
+  function completeDelivery(delivery) {
+    const transportedKg = normalizeNonNegative(delivery.departedKg || delivery.quantityKg);
+    const requestedKg = Math.max(transportedKg, normalizeNonNegative(delivery.requestedQuantityKg));
+    if (transportedKg <= 0) return Object.assign(delivery, {status: STATUS.BLOCKED}, statusMessage(delivery, 'Keine Ware im Transport.'));
+    const addition = window.HFV2Goods?.addToInventory?.(delivery.destinationCityId, delivery.goodId, transportedKg);
+    const addedKg = normalizeNonNegative(addition?.addedKg ?? addition ?? transportedKg);
+    if (addedKg + 0.001 < transportedKg) statusMessage(delivery, `Ziellager begrenzt: ${Math.round(addedKg)} von ${Math.round(transportedKg)} kg eingelagert.`);
+    const plannedKg = Math.max(1, normalizeNonNegative(delivery.plannedQuantityKg || delivery.requestedQuantityKg || transportedKg));
+    const bookedCost = Math.round(normalizeNonNegative(delivery.transportCost) * (transportedKg / plannedKg));
+    if (bookedCost > 0 && !delivery.costBooked) window.HFV2Save?.changeCash?.(-bookedCost, 'goods-delivery');
+    delivery.costBooked = true;
     delivery.deliveredKg = normalizeNonNegative(delivery.deliveredKg) + addedKg;
     delivery.bookedCost = normalizeNonNegative(delivery.bookedCost) + bookedCost;
     const remainderKg = Math.max(0, requestedKg - addedKg);
-    if (remainderKg > 0.001) bumpOpenQuantity(delivery, remainderKg);
+    const unbumpedRemainderKg = Math.max(0, remainderKg - normalizeNonNegative(delivery.openQuantityBumpedKg));
+    if (unbumpedRemainderKg > 0.001) bumpOpenQuantity(delivery, unbumpedRemainderKg);
     delivery.status = addedKg + 0.001 < requestedKg ? STATUS.PARTIAL : STATUS.COMPLETED;
-    return statusMessage(delivery, delivery.status === STATUS.PARTIAL ? `Teillieferung: ${Math.round(addedKg)} von ${Math.round(requestedKg)} kg geliefert.` : `Geliefert: ${Math.round(addedKg)} kg.`);
+    return statusMessage(delivery, delivery.status === STATUS.PARTIAL ? `Angekommen als Teillieferung: ${Math.round(addedKg)} von ${Math.round(requestedKg)} kg geliefert.` : `Angekommen: ${Math.round(addedKg)} kg geliefert.`);
   }
 
   function bumpOpenQuantity(delivery, amountKg) {
     const order = (ordersState().orders || []).find(item => item.id === delivery.orderId);
     if (order) order.openQuantity = normalizeNonNegative(order.openQuantity) + normalizeNonNegative(amountKg);
+  }
+
+  function isDueInWindow(dueAbs, beforeAbs, afterAbs, includeBefore) {
+    return dueAbs <= afterAbs && dueAbs >= beforeAbs && (includeBefore || dueAbs !== beforeAbs);
   }
 
   function processDueDeliveries(timeBefore, timeAfter) {
@@ -291,13 +343,20 @@
     let processed = 0;
     for (const delivery of state.deliveries || []) {
       if (delivery.status !== STATUS.PLANNED) continue;
-      const dueAbs = absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute);
+      const departureAbs = absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute);
       // Tick window semantics: deliveries generated during this tick use [beforeAbs, afterAbs],
       // while deliveries that already existed before generation use (beforeAbs, afterAbs].
-      // This lets a just-created 08:00 delivery run in the 08:00→09:00 tick without
-      // re-running an older delivery that was already considered at exactly 08:00.
       const wasGeneratedThisTick = delivery.id && !existingDeliveryIds.has(delivery.id);
-      if (dueAbs > afterAbs || dueAbs < beforeAbs || (dueAbs === beforeAbs && !wasGeneratedThisTick)) continue;
+      if (!isDueInWindow(departureAbs, beforeAbs, afterAbs, wasGeneratedThisTick)) continue;
+      departDelivery(delivery);
+      processed += 1;
+    }
+    for (const delivery of state.deliveries || []) {
+      if (delivery.status !== STATUS.RUNNING) continue;
+      const arrivalAbs = delivery.arrivalDay
+        ? absoluteMinute(delivery.arrivalDay, delivery.arrivalMinute)
+        : absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute) + Math.max(1, normalizeInteger(delivery.routeMinutes, Math.ceil(normalizeInteger(delivery.roundTripMinutes, 2, 1) / 2), 1));
+      if (!isDueInWindow(arrivalAbs, beforeAbs, afterAbs, false)) continue;
       completeDelivery(delivery);
       processed += 1;
     }
