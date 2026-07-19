@@ -121,6 +121,32 @@
     return `<div class="hf-v2-fleet-cash" aria-label="Verfügbares Kapital"><span>Kapital</span><strong>${formatMoney(currentCash())}</strong></div>`;
   }
 
+  function recommendationForBuildOption(origin, target, type) {
+    const hfNetwork = network();
+    const specs = hfNetwork?.TRANSPORT_TYPES || {};
+    const available = BUILD_TYPES.map(entryType => {
+      const entrySpec = specs[entryType];
+      if (!entrySpec) return null;
+      const distance = estimatedDistanceForType(origin, target, entryType);
+      const quote = hfNetwork.buildQuote?.(entryType, distance);
+      const exists = hfNetwork.connectionExists?.(origin.id, target.id, entrySpec.mode);
+      const canAfford = !!quote && currentCash() >= quote.cost;
+      return {type: entryType, spec: entrySpec, quote, exists, canAfford};
+    }).filter(entry => entry && entry.quote && entry.canAfford && !entry.exists);
+
+    const cheapestRoad = available
+      .filter(entry => entry.spec.mode === 'road')
+      .sort((a, b) => a.quote.cost - b.quote.cost)[0];
+    const fastest = available
+      .filter(entry => entry.spec.mode === 'road')
+      .sort((a, b) => (b.spec.speed || 0) - (a.spec.speed || 0))[0];
+
+    if (type === 'rail') return 'Für Güterzüge';
+    if (cheapestRoad?.type === type) return 'Empfohlen für Start';
+    if (fastest?.type === type) return 'Schnellste Option';
+    return '';
+  }
+
   function renderBuildOption(origin, target, type) {
     const hfNetwork = network();
     const spec = hfNetwork?.TRANSPORT_TYPES?.[type];
@@ -130,8 +156,10 @@
     const quote = hfNetwork.buildQuote?.(type, distance);
     const canAfford = !!quote && currentCash() >= quote.cost;
     const disabled = exists || !quote || !canAfford;
-    const statusLabel = exists ? 'Besteht' : canAfford ? 'Planbar' : 'Nicht leistbar';
-    const statusClass = exists || !canAfford ? ' hf-v2-network-badge--disabled' : '';
+    const statusLabel = exists ? 'Bereits gebaut' : canAfford ? 'Planbar' : 'Budget fehlt';
+    const recommendation = recommendationForBuildOption(origin, target, type);
+    const ctaLabel = exists ? 'Verbindung besteht' : canAfford ? `Für ${formatMoney(quote.cost)} bauen` : `${formatMoney(quote?.cost || 0)} benötigt`;
+    const badgeClass = disabled ? ' hf-v2-network-badge--disabled' : ' hf-v2-network-badge--primary';
     return `
       <button class="hf-v2-network-option${disabled ? ' is-disabled' : ''}" type="button" data-action="plan-connection" data-origin="${escapeHtml(origin.id)}" data-target="${escapeHtml(target.id)}" data-type="${escapeHtml(type)}" ${disabled ? 'disabled' : ''}>
         <span class="hf-v2-network-option__header">
@@ -140,13 +168,18 @@
             <strong>${escapeHtml(DISPLAY_NAMES[type] || spec.name)}</strong>
             <small>${escapeHtml(spec.mode === 'rail' ? 'Schienentrasse' : 'Straßenverbindung')}</small>
           </span>
-          <span class="hf-v2-network-badge${statusClass}">${statusLabel}</span>
+          <span class="hf-v2-network-option__badges">
+            ${recommendation ? `<span class="hf-v2-network-badge hf-v2-network-badge--primary">${escapeHtml(recommendation)}</span>` : ''}
+            <span class="hf-v2-network-badge${badgeClass}">${escapeHtml(ctaLabel)}</span>
+          </span>
         </span>
+        <span class="hf-v2-network-option__desc">${escapeHtml(spec.desc || '')}</span>
         <span class="hf-v2-network-option__rows">
+          <span><em>Kapazität</em><strong>${escapeHtml(spec.capacity)} ${escapeHtml(spec.capacityUnit || 'Einheiten')}</strong></span>
+          <span><em>Geschwindigkeit</em><strong>${escapeHtml(spec.speed)} km/h</strong></span>
           <span><em>Distanz</em><strong>${formatKm(distance)}</strong></span>
-          <span><em>Baukosten</em><strong>${formatMoney(quote?.cost || 0)}</strong></span>
           <span><em>Unterhalt</em><strong>${formatMoney(quote?.maintenance || 0)}/Tag</strong></span>
-          <span><em>Status</em><strong>${statusLabel}</strong></span>
+          <span><em>Status</em><strong>${escapeHtml(statusLabel)}</strong></span>
         </span>
       </button>`;
   }

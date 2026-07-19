@@ -531,17 +531,29 @@ code {
   width: 100%;
 }
 .hf-v2-network-option {
+  background: linear-gradient(145deg, #fff 0%, #f8fbfd 100%);
+  border-color: rgba(202, 213, 226, .92);
+  border-radius: 18px;
+  box-shadow: 0 10px 24px rgba(16, 32, 51, .07);
   display: grid;
   gap: 12px;
   min-height: 0;
-  padding: 14px;
+  padding: 16px;
+  position: relative;
   text-align: left;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease, background .18s ease;
   width: 100%;
+}
+.hf-v2-network-option:hover:not(:disabled),
+.hf-v2-network-option:focus-visible:not(:disabled) {
+  background: linear-gradient(145deg, #fff 0%, #f4f8fc 100%);
+  border-color: rgba(240, 178, 63, .82);
+  box-shadow: 0 16px 34px rgba(16, 32, 51, .12), 0 0 0 3px rgba(240, 178, 63, .2);
+  outline: none;
+  transform: translateY(-2px);
 }
 .hf-v2-network-target:hover:not(:disabled),
 .hf-v2-network-target:focus-visible:not(:disabled),
-.hf-v2-network-option:hover:not(:disabled),
-.hf-v2-network-option:focus-visible:not(:disabled),
 .hf-v2-network-back:hover,
 .hf-v2-network-back:focus-visible {
   border-color: var(--hf-accent);
@@ -556,23 +568,39 @@ code {
   margin-top: 2px;
 }
 .hf-v2-network-option__header {
-  align-items: center;
+  align-items: flex-start;
   display: grid;
-  gap: 10px;
-  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  grid-template-columns: auto minmax(0, 1fr);
 }
-.hf-v2-network-option__title strong { display: block; }
+.hf-v2-network-option__title strong { display: block; font-size: 15px; }
+.hf-v2-network-option__badges {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  grid-column: 1 / -1;
+}
+.hf-v2-network-option__desc {
+  color: var(--hf-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
 .hf-v2-network-option__rows {
-  border-top: 1px solid #edf0ee;
+  background: rgba(237, 244, 249, .72);
+  border: 1px solid rgba(202, 220, 234, .8);
+  border-radius: 14px;
   display: grid;
   gap: 0;
+  overflow: hidden;
 }
 .hf-v2-network-option__rows span {
   align-items: center;
-  border-bottom: 1px solid #f0f2f1;
+  border-bottom: 1px solid rgba(202, 220, 234, .72);
   display: flex;
   justify-content: space-between;
-  padding: 7px 0;
+  padding: 8px 10px;
 }
 .hf-v2-network-option__rows span:last-child { border-bottom: 0; }
 .hf-v2-network-option__rows em {
@@ -609,22 +637,30 @@ code {
   border-color: #9ed8ad;
   color: #176d35;
 }
+.hf-v2-network-badge--primary {
+  background: linear-gradient(135deg, var(--hf-primary), var(--hf-primary-2));
+  border-color: rgba(20, 55, 95, .85);
+  color: #fff;
+  box-shadow: 0 6px 14px rgba(20, 55, 95, .18);
+}
 .hf-v2-network-badge--disabled {
-  background: #fff4ec;
-  border-color: #f1c8ae;
-  color: #8b4d2f;
+  background: #eef2f5;
+  border-color: #d8e0e8;
+  color: #6d7885;
 }
 .hf-v2-network-target.is-disabled,
 .hf-v2-network-option.is-disabled {
-  background: #f7f5f2;
-  border-color: #e0d8d0;
-  color: #5e625f;
+  background: #f7f9fb;
+  border-color: #dfe6ee;
+  box-shadow: none;
+  color: #66717e;
   cursor: not-allowed;
 }
 .hf-v2-network-target.is-disabled { opacity: .78; }
 .hf-v2-network-option.is-disabled .hf-v2-network-icon,
 .hf-v2-network-option.is-disabled .hf-v2-network-option__title,
-.hf-v2-network-option.is-disabled .hf-v2-network-option__rows { opacity: .82; }
+.hf-v2-network-option.is-disabled .hf-v2-network-option__desc,
+.hf-v2-network-option.is-disabled .hf-v2-network-option__rows { opacity: .76; }
 .hf-v2-network-icon {
   font-size: 22px;
   width: 28px;
@@ -1482,14 +1518,19 @@ code { background: #edf4f9; color: #174a78; }
 .hf-v2-factory-grid,
 .hf-v2-fleet-grid { gap: 8px; }
 .hf-v2-network-target,
-.hf-v2-network-option,
 .hf-v2-factory-card,
 .hf-v2-fleet-card {
   background: #fff;
   border-color: #dce5ee;
   box-shadow: 0 8px 20px rgba(18, 34, 54, .045);
 }
-.hf-v2-network-option,
+.hf-v2-network-option {
+  background: linear-gradient(145deg, #fff 0%, #f8fbfd 100%);
+  border-color: rgba(202, 213, 226, .92);
+  border-radius: 18px;
+  box-shadow: 0 10px 24px rgba(16, 32, 51, .07);
+  padding: 16px;
+}
 .hf-v2-factory-card { border-radius: 14px; padding: 12px; }
 .hf-v2-factory-card h4 { font-size: 14px; }
 .hf-v2-factory-card p { font-size: 12px; }
