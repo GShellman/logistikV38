@@ -145,6 +145,67 @@
     return loads;
   }
 
+
+  function nextOrderDueAbsMinute(order, time = currentTime()) {
+    if (!order?.enabled) return null;
+    const currentDay = Math.max(1, Math.trunc(Number(time?.day) || 1));
+    const departureDayMinute = order.departureHour * 60 + order.departureMinute;
+    const currentDayMinute = Math.max(0, Math.trunc(Number(time?.hour) || 0) * 60 + Math.trunc(Number(time?.minute) || 0));
+
+    if (order.frequency === 'daily') {
+      let dueDay = currentDay;
+      if (order.lastDispatchedDay === currentDay || currentDayMinute >= departureDayMinute) dueDay += 1;
+      return (dueDay - 1) * MINUTES_PER_DAY + departureDayMinute;
+    }
+
+    if (order.frequency === 'weekly') {
+      let dueDay = currentDay + ((7 - ((currentDay - 1) % 7)) % 7);
+      if ((order.lastDispatchedDay === dueDay) || (dueDay === currentDay && currentDayMinute >= departureDayMinute)) dueDay += 7;
+      return (dueDay - 1) * MINUTES_PER_DAY + departureDayMinute;
+    }
+
+    return null;
+  }
+
+  function addPositive(target, key, amount) {
+    const id = normalizeId(key);
+    const value = Math.max(0, Number(amount) || 0);
+    if (!id || value <= 0) return;
+    target[id] = Math.round(((Number(target[id]) || 0) + value) * 1000) / 1000;
+  }
+
+  function getOutgoingProductionDemandMap(cityId, options = {}) {
+    configure();
+    const id = normalizeId(cityId);
+    if (!id) return {};
+    const demandMap = {};
+    const time = options.time || currentTime();
+    const nowAbsMinute = absoluteMinute(time);
+    const dueWithinDays = Number(options.dueWithinDays ?? (options.onlyDueWithinNext7Days ? 7 : NaN));
+    const dueCutoffAbsMinute = Number.isFinite(dueWithinDays) && dueWithinDays >= 0 ? nowAbsMinute + dueWithinDays * MINUTES_PER_DAY : null;
+
+    for (const order of state.orders) {
+      if (!order || String(order.fromCityId || '') !== id || order.enabled === false) continue;
+      if (dueCutoffAbsMinute !== null) {
+        const dueAbsMinute = nextOrderDueAbsMinute(order, time);
+        if (!Number.isFinite(dueAbsMinute) || dueAbsMinute > dueCutoffAbsMinute) continue;
+      }
+      addPositive(demandMap, order.goodId, order.amountKg);
+    }
+
+    if (options.subtractActiveShipments !== false) {
+      for (const shipment of state.shipments) {
+        if (!shipment || shipment.status !== 'active' || String(shipment.fromCityId || '') !== id) continue;
+        const goodId = normalizeId(shipment.goodId);
+        if (!goodId || !(goodId in demandMap)) continue;
+        demandMap[goodId] = Math.max(0, Math.round(((Number(demandMap[goodId]) || 0) - (Number(shipment.amountKg) || 0)) * 1000) / 1000);
+        if (demandMap[goodId] <= 0) delete demandMap[goodId];
+      }
+    }
+
+    return demandMap;
+  }
+
   function plannedOrderAmountKg(toCityId, goodId, frequency) {
     const dailyDemand = window.HFV2Goods?.getCityDailyDemandMap?.(toCityId)?.[goodId] || 0;
     if (frequency === 'daily') return dailyDemand;
@@ -376,5 +437,5 @@
     return delivered;
   }
 
-  window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, absoluteMinute, orderDueToday, vehicleCapacityKg, splitIntoVehicleLoads, plannedOrderAmountKg, validateRoadShipment};
+  window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, absoluteMinute, orderDueToday, nextOrderDueAbsMinute, getOutgoingProductionDemandMap, vehicleCapacityKg, splitIntoVehicleLoads, plannedOrderAmountKg, validateRoadShipment};
 })();
