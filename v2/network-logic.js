@@ -386,24 +386,38 @@
       adjacency.get(edge.a).push({node: edge.b, edge});
       adjacency.get(edge.b).push({node: edge.a, edge});
     }
-    const queue = [{node: start, nodes: [start], edges: [], distance: 0, duration: 0}];
-    const visited = new Set([start]);
+    const weight = options.weight || options.metric || 'duration';
+    const edgeScore = edge => {
+      let value = null;
+      if (typeof options.cost === 'function') value = options.cost(edge);
+      else if (options.cost && typeof options.cost === 'object') value = options.cost[edge.id] ?? options.cost[`${edge.a}:${edge.b}`] ?? options.cost[`${edge.b}:${edge.a}`];
+      else if (typeof weight === 'function') value = weight(edge);
+      else if (typeof weight === 'string') value = edge[weight];
+      const score = Number(value);
+      if (Number.isFinite(score)) return Math.max(0, score);
+      return Math.max(0, Number(edge.duration) || 0);
+    };
+    const best = new Map([[start, 0]]);
+    const queue = [{node: start, score: 0, nodes: [start], edges: [], distance: 0, duration: 0}];
     while (queue.length) {
+      queue.sort((a, b) => a.score - b.score);
       const current = queue.shift();
+      if (current.score !== best.get(current.node)) continue;
+      if (current.node === target) return {reachable: true, nodes: current.nodes, edges: current.edges, distance: current.distance, duration: current.duration};
       for (const next of adjacency.get(current.node) || []) {
-        if (visited.has(next.node)) continue;
         const edgeDistance = Math.max(0, Number(next.edge.distance) || 0);
         const edgeDuration = Math.max(0, Number(next.edge.duration) || 0);
-        const candidate = {
+        const candidateScore = current.score + edgeScore(next.edge);
+        if (candidateScore >= (best.get(next.node) ?? Infinity)) continue;
+        best.set(next.node, candidateScore);
+        queue.push({
           node: next.node,
+          score: candidateScore,
           nodes: [...current.nodes, next.node],
           edges: [...current.edges, next.edge],
           distance: current.distance + edgeDistance,
           duration: current.duration + edgeDuration,
-        };
-        if (next.node === target) return {reachable: true, nodes: candidate.nodes, edges: candidate.edges, distance: candidate.distance, duration: candidate.duration};
-        visited.add(next.node);
-        queue.push(candidate);
+        });
       }
     }
     return null;
