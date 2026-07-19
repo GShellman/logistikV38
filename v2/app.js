@@ -280,6 +280,115 @@
     return `<article class="hf-v2-production-debug-row hf-v2-logistics-row"><b>${escapeHtml(good.name || shipment.goodId)}</b><span><small>Menge</small>${formatGoodAmount(shipment.goodId, shipment.amountKg)} · ${formatWeightKg(shipment.amountKg)}</span><span><small>Fahrzeuge</small>${(Number(shipment.vehicleCount) || 0).toLocaleString('de-CH')} × ${escapeHtml(vehicleLabel(shipment.vehicleType))}</span><span><small>Fortschritt</small>${progress.toLocaleString('de-CH', {maximumFractionDigits: 0})}%</span><span><small>Ankunft</small>${formatAbsMinute(shipment.arrivalAbsMinute)}</span><span><small>Status</small>${escapeHtml(shipment.status || 'active')}</span></article>`;
   }
 
+
+  function shipmentCalendarDayKey(absMinute) {
+    const total = Math.max(0, Math.trunc(Number(absMinute) || 0));
+    const day = Math.floor(total / 1440) + 1;
+    return `Tag ${day.toLocaleString('de-CH')}`;
+  }
+
+  function shipmentCalendarTimeLabel(absMinute) {
+    const total = Math.max(0, Math.trunc(Number(absMinute) || 0));
+    const minuteOfDay = total % 1440;
+    return formatClockTime(Math.floor(minuteOfDay / 60), minuteOfDay % 60);
+  }
+
+  function shipmentCalendarOrderAbsMinute(order) {
+    const logisticsApi = window.HFV2Logistics;
+    const nextDue = logisticsApi?.nextOrderDueAbsMinute?.(order, currentTimeState());
+    if (Number.isFinite(Number(nextDue))) return Number(nextDue);
+
+    const time = currentTimeState();
+    const currentDay = timeDay(time);
+    const currentDayMinute = timeMinuteOfDay(time);
+    const departureHour = Math.max(0, Math.min(23, Math.trunc(Number(order?.departureHour) || 0)));
+    const departureMinute = Math.max(0, Math.min(59, Math.trunc(Number(order?.departureMinute) || 0)));
+    const departureDayMinute = departureHour * 60 + departureMinute;
+    const lastDispatchedDay = Number.isFinite(Number(order?.lastDispatchedDay)) ? Math.trunc(Number(order.lastDispatchedDay)) : null;
+    let dueDay = currentDay;
+
+    if (order?.frequency === 'weekly') {
+      dueDay = currentDay + ((7 - ((currentDay - 1) % 7)) % 7);
+      if (lastDispatchedDay === dueDay || (dueDay === currentDay && currentDayMinute >= departureDayMinute)) dueDay += 7;
+    } else if (lastDispatchedDay === currentDay || currentDayMinute >= departureDayMinute) {
+      dueDay += 1;
+    }
+
+    return (Math.max(1, dueDay) - 1) * 1440 + departureDayMinute;
+  }
+
+  function shipmentCalendarRows(city, shipments, orders) {
+    const cityId = city?.id;
+    const relevantShipments = (Array.isArray(shipments) ? shipments : [])
+      .filter(shipment => shipment?.fromCityId === cityId || shipment?.toCityId === cityId)
+      .map(shipment => {
+        const departure = Number(shipment.departureAbsMinute);
+        const arrival = Number(shipment.arrivalAbsMinute);
+        return {
+          id: `shipment-${shipment.id}`,
+          orderId: shipment.orderId,
+          kind: shipment.status === 'delivered' ? 'delivered' : 'active',
+          sortAbsMinute: Number.isFinite(departure) ? departure : arrival,
+          departureAbsMinute: departure,
+          arrivalAbsMinute: arrival,
+          fromCityId: shipment.fromCityId,
+          toCityId: shipment.toCityId,
+          goodId: shipment.goodId,
+          amountKg: shipment.amountKg,
+          vehicleType: shipment.vehicleType,
+          vehicleCount: shipment.vehicleCount,
+          status: shipment.status === 'delivered' ? 'Geliefert' : 'Unterwegs',
+        };
+      })
+      .filter(row => Number.isFinite(row.sortAbsMinute));
+
+    const activeOrderIds = new Set(relevantShipments.filter(row => row.kind === 'active').map(row => String(row.orderId)));
+    const plannedOrders = (Array.isArray(orders) ? orders : [])
+      .filter(order => (order?.fromCityId === cityId || order?.toCityId === cityId) && !activeOrderIds.has(String(order.id)))
+      .map(order => {
+        const departureAbsMinute = shipmentCalendarOrderAbsMinute(order);
+        return {
+          id: `order-${order.id}`,
+          orderId: order.id,
+          kind: 'planned',
+          sortAbsMinute: departureAbsMinute,
+          departureAbsMinute,
+          arrivalAbsMinute: null,
+          fromCityId: order.fromCityId,
+          toCityId: order.toCityId,
+          goodId: order.goodId,
+          amountKg: order.amountKg,
+          vehicleType: order.vehicleType,
+          vehicleCount: null,
+          status: order.enabled === false ? 'Geplant · inaktiv' : `Geplant · ${dispatchResultLabel(order.lastDispatchResult || 'wartet')}`,
+        };
+      })
+      .filter(row => Number.isFinite(row.sortAbsMinute));
+
+    return [...relevantShipments, ...plannedOrders].sort((a, b) => a.sortAbsMinute - b.sortAbsMinute || String(a.id).localeCompare(String(b.id), 'de-CH'));
+  }
+
+  function shipmentCalendarMarkup(city) {
+    const logistics = window.HFV2Logistics?.getState?.() || {orders: [], shipments: []};
+    const rows = shipmentCalendarRows(city, logistics.shipments, logistics.orders);
+    if (!rows.length) return '<p class="hf-v2-muted">Keine Transporte oder geplanten Bestellungen.</p>';
+
+    const groups = new Map();
+    for (const row of rows) {
+      const dayKey = shipmentCalendarDayKey(row.sortAbsMinute);
+      if (!groups.has(dayKey)) groups.set(dayKey, []);
+      groups.get(dayKey).push(row);
+    }
+
+    return `<div class="hf-v2-transport-calendar">${Array.from(groups.entries()).map(([dayKey, dayRows]) => `<section class="hf-v2-transport-calendar__day"><h4 class="hf-v2-transport-calendar__day-title">${escapeHtml(dayKey)}</h4>${dayRows.map(row => {
+      const good = goodById(row.goodId);
+      const eventClass = `hf-v2-transport-calendar__event hf-v2-transport-calendar__event--${row.kind}`;
+      const arrivalLabel = Number.isFinite(Number(row.arrivalAbsMinute)) ? shipmentCalendarTimeLabel(row.arrivalAbsMinute) : 'wartet';
+      const vehicleText = row.vehicleCount ? `${Number(row.vehicleCount).toLocaleString('de-CH')} × ${vehicleLabel(row.vehicleType)}` : vehicleLabel(row.vehicleType);
+      return `<article class="hf-v2-transport-calendar__slot"><time class="hf-v2-transport-calendar__time" datetime="${escapeHtml(String(row.sortAbsMinute))}"><strong>${escapeHtml(shipmentCalendarTimeLabel(row.departureAbsMinute))}</strong><span>bis ${escapeHtml(arrivalLabel)}</span></time><div class="${eventClass}"><div><b>${escapeHtml(cityName(row.fromCityId))} → ${escapeHtml(cityName(row.toCityId))}</b><span>${escapeHtml(good.name || row.goodId)}</span></div><dl><div><dt>Ware</dt><dd>${escapeHtml(good.name || row.goodId)}</dd></div><div><dt>Menge</dt><dd>${formatGoodAmount(row.goodId, row.amountKg)} · ${formatWeightKg(row.amountKg)}</dd></div><div><dt>Fahrzeuge</dt><dd>${escapeHtml(vehicleText)}</dd></div><div><dt>Status</dt><dd>${escapeHtml(row.status)}</dd></div></dl></div></article>`;
+    }).join('')}</section>`).join('')}</div>`;
+  }
+
   function logisticsListMarkup(items, emptyText, rowMarkup) {
     return items.length ? `<div class="hf-v2-production-debug-grid">${items.map(rowMarkup).join('')}</div>` : `<p class="hf-v2-muted">${emptyText}</p>`;
   }
@@ -290,11 +399,9 @@
     const shipments = Array.isArray(logistics.shipments) ? logistics.shipments : [];
     const incomingOrders = orders.filter(order => order.toCityId === city.id);
     const outgoingOrders = orders.filter(order => order.fromCityId === city.id);
-    const incomingActiveShipments = shipments.filter(shipment => shipment.toCityId === city.id && shipment.status === 'active');
-    const outgoingActiveShipments = shipments.filter(shipment => shipment.fromCityId === city.id && shipment.status === 'active');
-    const activeShipments = [...incomingActiveShipments, ...outgoingActiveShipments].sort((a, b) => (Number(a.arrivalAbsMinute) || 0) - (Number(b.arrivalAbsMinute) || 0));
-    const total = incomingOrders.length + outgoingOrders.length + activeShipments.length;
-    return `<section class="hf-v2-demand-card hf-v2-city-logistics" aria-labelledby="hfV2LogisticsTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Warenlogistik</p><h3 id="hfV2LogisticsTitle">Warenlogistik</h3></div><strong>${total.toLocaleString('de-CH')}</strong></div><h4>Eingehende Bestellungen</h4>${logisticsListMarkup(incomingOrders, 'Keine eingehenden Bestellungen.', orderCardMarkup)}<h4>Ausgehende Bestellungen</h4>${logisticsListMarkup(outgoingOrders, 'Keine ausgehenden Bestellungen.', orderCardMarkup)}<h4>Aktive Transporte</h4>${logisticsListMarkup(activeShipments, 'Keine aktiven Transporte.', shipmentCardMarkup)}</section>`;
+    const calendarRows = shipmentCalendarRows(city, shipments, orders);
+    const total = incomingOrders.length + outgoingOrders.length + calendarRows.length;
+    return `<section class="hf-v2-demand-card hf-v2-city-logistics" aria-labelledby="hfV2LogisticsTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Warenlogistik</p><h3 id="hfV2LogisticsTitle">Warenlogistik</h3></div><strong>${total.toLocaleString('de-CH')}</strong></div><h4>Eingehende Bestellungen</h4>${logisticsListMarkup(incomingOrders, 'Keine eingehenden Bestellungen.', orderCardMarkup)}<h4>Ausgehende Bestellungen</h4>${logisticsListMarkup(outgoingOrders, 'Keine ausgehenden Bestellungen.', orderCardMarkup)}<h4>Transportkalender</h4>${shipmentCalendarMarkup(city)}</section>`;
   }
 
   function isCityUnlocked(cityId) {
