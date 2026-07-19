@@ -84,32 +84,102 @@
     return badges.join('');
   }
 
+  function targetSortValue(origin, target) {
+    return origin ? estimatedDistanceForType(origin, target, 'mainroad') : 0;
+  }
+
+  function renderTargetFilterBar() {
+    const filters = [
+      ['all', 'Alle'],
+      ['online', 'Am Netz'],
+      ['new', 'Neu'],
+      ['missing-road', 'Straße fehlt'],
+      ['missing-rail', 'Bahn fehlt'],
+    ];
+
+    return `
+      <div class="hf-v2-network-filterbar" role="toolbar" aria-label="Zielstädte filtern">
+        ${filters.map(([filter, label], index) => `
+          <button class="hf-v2-network-filter${index === 0 ? ' is-active' : ''}" type="button" data-action="filter-targets" data-network-filter="${escapeHtml(filter)}" aria-pressed="${index === 0 ? 'true' : 'false'}">${escapeHtml(label)}</button>
+        `).join('')}
+      </div>`;
+  }
+
+  function renderTargetCard(originId, origin, target) {
+    const state = connectionState(originId, target.id);
+    const fullyConnected = state.road && state.rail;
+    const distance = targetSortValue(origin, target);
+    const unlocked = isUnlockedCity(target.id);
+    return `
+      <button class="hf-v2-network-target${fullyConnected ? ' is-disabled' : ''}" type="button" data-action="select-target" data-target="${escapeHtml(target.id)}" data-network-status="${fullyConnected ? 'complete' : unlocked ? 'online' : 'new'}" data-unlocked="${unlocked ? 'true' : 'false'}" data-has-road="${state.road ? 'true' : 'false'}" data-has-rail="${state.rail ? 'true' : 'false'}" ${fullyConnected ? 'disabled' : ''}>
+        <span>
+          <strong>${escapeHtml(target.name)}</strong>
+          <small>${formatKm(distance)} · Stufe ${escapeHtml(target.tier)}</small>
+        </span>
+        <span class="hf-v2-network-badges">${renderExistingBadges(state, target.id)}</span>
+      </button>`;
+  }
+
+  function targetMatchesFilter(targetButton, filter) {
+    if (filter === 'online') return targetButton.dataset.unlocked === 'true';
+    if (filter === 'new') return targetButton.dataset.unlocked !== 'true';
+    if (filter === 'missing-road') return targetButton.dataset.hasRoad !== 'true';
+    if (filter === 'missing-rail') return targetButton.dataset.hasRail !== 'true';
+    return true;
+  }
+
+  function applyTargetFilter(menu, filter) {
+    if (!menu) return;
+    const activeFilter = filter || 'all';
+    menu.querySelectorAll('.hf-v2-network-filter').forEach(button => {
+      const isActive = button.dataset.networkFilter === activeFilter;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+
+    menu.querySelectorAll('.hf-v2-network-target').forEach(targetButton => {
+      targetButton.hidden = !targetMatchesFilter(targetButton, activeFilter);
+    });
+
+    menu.querySelectorAll('.hf-v2-network-section').forEach(section => {
+      const visibleTargets = section.querySelectorAll('.hf-v2-network-target:not([hidden])').length;
+      section.hidden = visibleTargets === 0;
+    });
+  }
+
   function renderTargetPicker(originId) {
     activeOriginId = originId;
     activeTargetId = null;
 
     const origin = cityById(originId);
-    const targets = candidateTargets(originId);
-    const rows = targets.length ? targets.map(target => {
-      const state = connectionState(originId, target.id);
-      const fullyConnected = state.road && state.rail;
-      const distance = origin ? estimatedDistanceForType(origin, target, 'mainroad') : 0;
-      return `
-        <button class="hf-v2-network-target${fullyConnected ? ' is-disabled' : ''}" type="button" data-action="select-target" data-target="${escapeHtml(target.id)}" ${fullyConnected ? 'disabled' : ''}>
-          <span>
-            <strong>${escapeHtml(target.name)}</strong>
-            <small>${formatKm(distance)} · Stufe ${escapeHtml(target.tier)}</small>
-          </span>
-          <span class="hf-v2-network-badges">${renderExistingBadges(state, target.id)}</span>
-        </button>`;
-    }).join('') : '<p class="hf-v2-network-empty">Keine potenziellen Zielstädte in Reichweite.</p>';
+    const targets = candidateTargets(originId)
+      .map(target => ({
+        target,
+        state: connectionState(originId, target.id),
+        distance: targetSortValue(origin, target),
+        unlocked: isUnlockedCity(target.id),
+      }))
+      .sort((a, b) => Number(b.unlocked) - Number(a.unlocked) || a.distance - b.distance);
+    const openTargets = targets.filter(entry => !entry.state.road || !entry.state.rail);
+    const completeTargets = targets.filter(entry => entry.state.road && entry.state.rail);
+    const rows = targets.length ? `
+      ${openTargets.length ? `
+        <div class="hf-v2-network-section" data-network-section="open">
+          <div class="hf-v2-network-grid">${openTargets.map(({target}) => renderTargetCard(originId, origin, target)).join('')}</div>
+        </div>` : ''}
+      ${completeTargets.length ? `
+        <div class="hf-v2-network-section hf-v2-network-section--complete" data-network-section="complete">
+          <p class="hf-v2-network-section-title">Bereits vollständig verbunden</p>
+          <div class="hf-v2-network-grid">${completeTargets.map(({target}) => renderTargetCard(originId, origin, target)).join('')}</div>
+        </div>` : ''}` : '<p class="hf-v2-network-empty">Keine potenziellen Zielstädte in Reichweite.</p>';
 
     return `
       <div class="hf-v2-network-menu" data-network-origin="${escapeHtml(originId)}">
         <p class="hf-v2-network-eyebrow">Ursprung</p>
         <h3>${escapeHtml(origin?.name || originId)}</h3>
         <p class="hf-v2-network-hint">Wähle eine Zielstadt aus dem Stadtkatalog. Bereits angebundene Städte und bestehende Verbindungen sind markiert; vollständig verbundene Ziele sind deaktiviert.</p>
-        <div class="hf-v2-network-grid">${rows}</div>
+        ${targets.length ? renderTargetFilterBar() : ''}
+        ${rows}
       </div>`;
   }
 
@@ -278,6 +348,12 @@
 
       if (action === 'select-target') {
         setBody(renderBuildOptions(activeOriginId, target));
+        return;
+      }
+
+      if (action === 'filter-targets') {
+        const menu = actionButton.closest('.hf-v2-network-menu');
+        applyTargetFilter(menu, actionButton.dataset.networkFilter);
         return;
       }
 
