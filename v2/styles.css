@@ -1892,3 +1892,28 @@ code { background: #edf4f9; color: #174a78; }
 @media (max-width: 980px) {
   .hf-v2-fleet-compact-panels { grid-template-columns: 1fr; }
 }
+
+.hf-v2-shipment-marker {
+  align-items: center;
+  background: rgba(255, 255, 255, .96);
+  border: 2px solid #f0b23f;
+  border-radius: 999px;
+  box-shadow: 0 8px 18px rgba(15, 31, 52, .18), 0 1px 4px rgba(15, 31, 52, .16);
+  display: flex;
+  height: 34px;
+  justify-content: center;
+  overflow: hidden;
+  width: 44px;
+}
+
+.hf-v2-shipment-marker__image img {
+  display: block;
+  height: 28px;
+  object-fit: contain;
+  width: 36px;
+}
+
+.hf-v2-shipment-marker__emoji {
+  font-size: 22px;
+  line-height: 1;
+}
