@@ -99,6 +99,25 @@
     network.usedCapacity = network.usedCapacity && typeof network.usedCapacity === 'object' ? network.usedCapacity : {};
     fleet.cityFleets = fleet.cityFleets && typeof fleet.cityFleets === 'object' ? fleet.cityFleets : {};
     factories.cityFactories = factories.cityFactories && typeof factories.cityFactories === 'object' && !Array.isArray(factories.cityFactories) ? factories.cityFactories : {};
+    factories.factoryUpgrades = factories.factoryUpgrades && typeof factories.factoryUpgrades === 'object' && !Array.isArray(factories.factoryUpgrades) ? factories.factoryUpgrades : {};
+    for (const [cityId, rawList] of Object.entries(factories.cityFactories)) {
+      const normalizedList = [];
+      const normalizedUpgrades = {};
+      if (Array.isArray(rawList)) {
+        rawList.forEach((entry, index) => {
+          const factoryId = typeof entry === 'string' ? String(entry || '').trim() : String(entry?.id ?? entry?.factoryId ?? '').trim();
+          if (!factoryId) return;
+          const normalizedIndex = normalizedList.length;
+          normalizedList.push(factoryId);
+          const inlineLevel = entry && typeof entry === 'object' ? entry.level : null;
+          const savedLevel = factories.factoryUpgrades?.[cityId]?.[String(index)] ?? inlineLevel;
+          const level = Math.max(1, Math.trunc(Number(savedLevel) || 1));
+          if (level > 1) normalizedUpgrades[String(normalizedIndex)] = level;
+        });
+      }
+      factories.cityFactories[cityId] = normalizedList;
+      factories.factoryUpgrades[cityId] = normalizedUpgrades;
+    }
     goods.cityInventories = goods.cityInventories && typeof goods.cityInventories === 'object' && !Array.isArray(goods.cityInventories) ? goods.cityInventories : {};
     goods.producedGoods = goods.producedGoods && typeof goods.producedGoods === 'object' && !Array.isArray(goods.producedGoods) ? goods.producedGoods : {};
     goods.productionCycles = goods.productionCycles && typeof goods.productionCycles === 'object' && !Array.isArray(goods.productionCycles) ? goods.productionCycles : {};
