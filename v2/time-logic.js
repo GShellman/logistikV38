@@ -86,6 +86,8 @@
         runMidnightCallbacks(1);
       }
     }
+    window.HFV2Logistics?.tick?.();
+    window.HFV2Logistics?.advanceShipments?.();
     dispatchTimeAdvanced(options);
     return time;
   }
