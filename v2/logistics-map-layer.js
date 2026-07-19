@@ -108,12 +108,13 @@
 
   function vehicleIcon(shipment, isMovingRight = false) {
     const vehicleType = String(shipment?.vehicleType || '').trim();
-    const src = window.HFV2VehicleAssets?.vehicleImage?.(vehicleType) || '';
+    const src = window.HFV2VehicleAssets?.roadVehicleImage?.(vehicleType) || window.HFV2VehicleAssets?.vehicleImage?.(vehicleType) || '';
+    const fallbackSrc = window.HFV2VehicleAssets?.vehicleImage?.(vehicleType) || '';
     const fallback = window.HFVehicleCatalog?.VEHICLE_CATALOG?.[vehicleType]?.icon || '🚚';
     const directionClass = isMovingRight ? ' hf-v2-shipment-asset--right' : '';
     const markerDirectionClass = isMovingRight ? ' hf-v2-shipment-marker--right' : '';
     const html = src
-      ? `<img class="hf-v2-shipment-asset${directionClass}" src="${escapeHtml(src)}" alt="" aria-hidden="true">`
+      ? `<img class="hf-v2-shipment-asset${directionClass}" src="${escapeHtml(src)}"${fallbackSrc && fallbackSrc !== src ? ` onerror="this.onerror=null;this.src='${escapeHtml(fallbackSrc)}';"` : ''} alt="" aria-hidden="true">`
       : `<div class="hf-v2-shipment-marker${markerDirectionClass}"><span class="hf-v2-shipment-marker__emoji" aria-hidden="true">${escapeHtml(fallback)}</span></div>`;
     return L.divIcon({className: '', html, iconSize: [50, 50], iconAnchor: [25, 25]});
   }
