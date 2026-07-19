@@ -132,7 +132,6 @@
   function isCatalogDemandGood(good) {
     if (!good || !good.id) return false;
     if (good.demand?.enabled === true) return true;
-    if (good.properties?.rawMaterial === true || good.properties?.rawMaterial === 'true') return false;
     if (Math.max(0, Number(good.price) || 0) <= 0) return false;
     return ['vegetable', 'fruit', 'animal_products', 'processed_food', 'consumer_goods'].includes(String(good.category || ''));
   }
