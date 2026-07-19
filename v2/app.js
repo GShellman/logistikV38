@@ -139,7 +139,7 @@
 
   function isOpenDeliveryForProjection(delivery) {
     const status = String(delivery?.status || delivery?.state || '').toLowerCase();
-    if (!['planned', 'running'].includes(status)) return false;
+    if (!['planned', 'running'].includes(status) || delivery?.waitingForProduction === true) return false;
     if (delivery?.blocked === true || delivery?.cancelled === true || delivery?.canceled === true || delivery?.completed === true || delivery?.processed === true || delivery?.processedAt || delivery?.processedAtMinute) return false;
     return true;
   }

@@ -47,6 +47,27 @@
     return hour * 60 + minute;
   }
 
+  function timeAbsoluteMinute(day, minute) {
+    return (Math.max(1, Math.trunc(Number(day) || 1)) - 1) * 1440 + Math.max(0, Math.min(1439, Math.trunc(Number(minute) || 0)));
+  }
+
+  function minuteToDayMinute(absMinute) {
+    const normalized = Math.max(0, Math.trunc(Number(absMinute) || 0));
+    return {day: Math.floor(normalized / 1440) + 1, minute: normalized % 1440};
+  }
+
+  function nextProductionReadySlot(day, minute) {
+    const time = window.HFV2Time?.getState?.() || window.HFV2Save?.getState?.().time || {day: 1};
+    const nextProductionAbs = timeAbsoluteMinute(Math.max(1, Math.trunc(Number(time.day) || 1)) + 1, 0);
+    const requestedAbs = timeAbsoluteMinute(day, minute);
+    return requestedAbs <= nextProductionAbs ? minuteToDayMinute(nextProductionAbs + 1) : {day, minute};
+  }
+
+  function formatClock(minute) {
+    const normalized = Math.max(0, Math.min(1439, Math.trunc(Number(minute) || 0)));
+    return `${String(Math.floor(normalized / 60)).padStart(2, '0')}:${String(normalized % 60).padStart(2, '0')}`;
+  }
+
   function updateWeekdayVisibility(form) {
     const isWeekly = form.querySelector('input[name="hfV2OrderFrequency"]:checked')?.value === 'weekly';
     const weekdayField = form.querySelector('[data-hf-v2-weekday-field]');
@@ -78,8 +99,8 @@
       const checked = index === 0 && selectable ? 'checked' : '';
       const disabled = selectable ? '' : 'disabled';
       const productionLabel = source.estimatedProductionKg > 0 ? ` · ca. ${formatGoodAmount(good.id, source.estimatedProductionKg)}/Tag` : '';
-      const sourceStatus = source.transportReady ? 'transportbereit' : (source.canBackorder ? 'wartet auf Tagesproduktion' : (source.reachable ? 'keine Ware in der Quelle' : 'nicht verbunden'));
-      const hint = source.canBackorder ? ' · Produktion vorhanden, Lieferung wird blockiert geplant und nach Tagesproduktion automatisch erneut geprüft' : '';
+      const sourceStatus = source.transportReady ? 'transportbereit' : (source.canBackorder ? 'wartet auf Produktion' : (source.reachable ? 'keine Ware in der Quelle' : 'nicht verbunden'));
+      const hint = source.canBackorder ? ' · Quelle produziert erst nach Tagesabschluss; erste Abfahrt nach Produktion möglich.' : '';
       return `<label class="hf-v2-order-source${selectable ? '' : ' hf-v2-order-source--unreachable'}"><input type="radio" name="hfV2OrderSource" value="${escapeHtml(source.city.id)}" ${checked} ${disabled}><span><b>${escapeHtml(source.city.name)}</b><small>${sourceStatus} · Produktion verfügbar${productionLabel} · ${formatGoodAmount(good.id, source.inventoryKg)} im Lager${hint}</small></span></label>`;
     }).join('') : '<p class="hf-v2-muted">Keine passende Quelle mit Produktion und erreichbarer Transportverbindung gefunden.</p>';
     return `<form class="hf-v2-order-modal" data-order-city-id="${escapeHtml(city.id)}" data-order-good-id="${escapeHtml(good.id)}"><div class="hf-v2-order-hero"><div class="hf-v2-demand-icon">${goodIcon(good)}</div><div><p class="hf-v2-kicker">Nachfrageware bestellen</p><h3>${escapeHtml(good.name)}</h3><p>${escapeHtml(city.name)}</p></div></div><div class="hf-v2-order-stats"><span><small>Tagesbedarf</small><b>${formatGoodAmount(good.id, dailyKg)}</b></span><span><small>Ziel täglich</small><b>${formatGoodAmount(good.id, dailyKg)}</b></span><span><small>Ziel wöchentlich</small><b>${formatGoodAmount(good.id, dailyKg * 7)}</b></span></div><section><h4>Quelle wählen</h4><div class="hf-v2-order-source-list">${sourceOptions}</div></section><section><h4>Frequenz</h4><div class="hf-v2-order-frequency"><label><input type="radio" name="hfV2OrderFrequency" value="daily" checked> Täglich · ${formatGoodAmount(good.id, dailyKg)}</label><label><input type="radio" name="hfV2OrderFrequency" value="weekly"> Wöchentlich · ${formatGoodAmount(good.id, dailyKg * 7)}</label></div></section><label class="hf-v2-order-field"><span>Abfahrtstag</span><select name="hfV2OrderLeadTime"><option value="next-day">Nächster Tag</option><option value="two-days">2 Tage</option></select></label><label class="hf-v2-order-field"><span>Abfahrtszeit</span><input type="time" name="hfV2OrderTime" value="08:00"></label><label class="hf-v2-order-field" data-hf-v2-weekday-field hidden><span>Wochentag</span><select name="hfV2OrderWeekday">${renderOrderWeekdayOptions()}</select></label><p class="hf-v2-muted" data-hf-v2-order-status role="status" aria-live="polite"></p><div class="hf-v2-modal-actions"><button class="hf-v2-button hf-v2-button--primary" type="submit">Versorgung speichern</button></div></form>`;
@@ -117,8 +138,15 @@
     const cityId = form.dataset.orderCityId;
     const goodId = form.dataset.orderGoodId;
     const dailyDemandKg = Math.max(0, Number(window.HFV2Goods?.getCityDailyDemandMap?.(cityId)?.[goodId]) || 0);
-    const departureDay = currentDeliveryDay(form.querySelector('[name="hfV2OrderLeadTime"]')?.value);
-    const departureMinute = departureMinuteFromTime(form.querySelector('[name="hfV2OrderTime"]')?.value);
+    let departureDay = currentDeliveryDay(form.querySelector('[name="hfV2OrderLeadTime"]')?.value);
+    let departureMinute = departureMinuteFromTime(form.querySelector('[name="hfV2OrderTime"]')?.value);
+    const selectedSource = (window.HFV2Orders?.sourceCandidates?.(form.dataset.orderCityId, form.dataset.orderGoodId) || []).find(source => source.sourceCityId === sourceId);
+    if (selectedSource?.canBackorder && !selectedSource.transportReady) {
+      const slot = nextProductionReadySlot(departureDay, departureMinute);
+      if (slot.day !== departureDay || slot.minute !== departureMinute) setOrderStatus(form, `Abfahrtszeit automatisch auf Tag ${slot.day} · ${formatClock(slot.minute)} gelegt, da die Quelle erst nach Tagesabschluss produziert.`);
+      departureDay = slot.day;
+      departureMinute = slot.minute;
+    }
     const weekday = Math.min(6, Math.max(0, Number(form.querySelector('[name="hfV2OrderWeekday"]')?.value) || 0));
     const orderPayload = {destinationCityId: cityId, goodId, sourceType: 'city', sourceId, primarySource: {type: 'city', id: sourceId}, frequency, dailyDemandKg, quantityKg: frequency === 'weekly' ? dailyDemandKg * 7 : dailyDemandKg, deliveryDay: departureDay, deliveryMinute: departureMinute, scheduledDay: departureDay, scheduledMinute: departureMinute, scheduleLegacyDelivery: false};
     if (frequency === 'weekly') Object.assign(orderPayload, {deliveryWeekday: weekday, weekday});

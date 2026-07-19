@@ -2,7 +2,7 @@
   'use strict';
 
   const ACTIVE_STATUSES = new Set(['planned', 'running', 'active']);
-  const INACTIVE_STATUSES = new Set(['completed', 'partial', 'blocked', 'failed', 'cancelled', 'canceled']);
+  const INACTIVE_STATUSES = new Set(['completed', 'partial', 'blocked', 'waiting-production', 'failed', 'cancelled', 'canceled']);
   const markerByDeliveryId = new Map();
   const trailByDeliveryId = new Map();
   let map = null;
