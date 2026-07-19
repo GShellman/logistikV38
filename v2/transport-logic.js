@@ -275,7 +275,7 @@
     for (const delivery of state.deliveries || []) {
       if (delivery.status !== STATUS.PLANNED) continue;
       const dueAbs = absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute);
-      if (dueAbs <= beforeAbs || dueAbs > afterAbs) continue;
+      if (dueAbs < beforeAbs || dueAbs > afterAbs) continue;
       completeDelivery(delivery);
       processed += 1;
     }
