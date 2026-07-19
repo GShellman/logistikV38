@@ -604,6 +604,11 @@ code {
   padding: 4px 8px;
   white-space: nowrap;
 }
+.hf-v2-network-badge.hf-v2-network-badge--online {
+  background: #e6f7ec;
+  border-color: #9ed8ad;
+  color: #176d35;
+}
 .hf-v2-network-badge--disabled {
   background: #fff4ec;
   border-color: #f1c8ae;

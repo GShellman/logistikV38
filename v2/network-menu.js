@@ -70,11 +70,17 @@
     };
   }
 
-  function renderExistingBadges(state) {
+  function isUnlockedCity(cityId) {
+    return cityId === 'zurich' || window.HFNetwork?.getState?.().cities?.[cityId]?.unlocked === true;
+  }
+
+  function renderExistingBadges(state, cityId) {
     const badges = [];
+    const isOnline = isUnlockedCity(cityId);
+    badges.push(`<span class="hf-v2-network-badge${isOnline ? ' hf-v2-network-badge--online' : ''}">${isOnline ? 'Am Netz' : 'Noch nicht angebunden'}</span>`);
     if (state.road) badges.push('<span class="hf-v2-network-badge hf-v2-network-badge--disabled">Straße besteht</span>');
     if (state.rail) badges.push('<span class="hf-v2-network-badge hf-v2-network-badge--disabled">Bahn besteht</span>');
-    if (!badges.length) badges.push('<span class="hf-v2-network-badge">Bebaubar</span>');
+    if (!state.road && !state.rail) badges.push('<span class="hf-v2-network-badge">Bebaubar</span>');
     return badges.join('');
   }
 
@@ -94,7 +100,7 @@
             <strong>${escapeHtml(target.name)}</strong>
             <small>${formatKm(distance)} · Stufe ${escapeHtml(target.tier)}</small>
           </span>
-          <span class="hf-v2-network-badges">${renderExistingBadges(state)}</span>
+          <span class="hf-v2-network-badges">${renderExistingBadges(state, target.id)}</span>
         </button>`;
     }).join('') : '<p class="hf-v2-network-empty">Keine potenziellen Zielstädte in Reichweite.</p>';
 
@@ -102,7 +108,7 @@
       <div class="hf-v2-network-menu" data-network-origin="${escapeHtml(originId)}">
         <p class="hf-v2-network-eyebrow">Ursprung</p>
         <h3>${escapeHtml(origin?.name || originId)}</h3>
-        <p class="hf-v2-network-hint">Wähle eine Zielstadt aus dem Stadtkatalog. Bereits vorhandene Verbindungen sind markiert; vollständig verbundene Ziele sind deaktiviert.</p>
+        <p class="hf-v2-network-hint">Wähle eine Zielstadt aus dem Stadtkatalog. Bereits angebundene Städte und bestehende Verbindungen sind markiert; vollständig verbundene Ziele sind deaktiviert.</p>
         <div class="hf-v2-network-grid">${rows}</div>
       </div>`;
   }
