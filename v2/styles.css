@@ -2056,11 +2056,11 @@ code { background: #edf4f9; color: #174a78; }
   display: block;
   filter: drop-shadow(0 4px 5px rgba(0, 0, 0, .32));
   height: auto;
-  max-height: 30px;
+  max-height: 50px;
   object-fit: contain;
   pointer-events: none;
   transform-origin: center;
-  width: 40px;
+  width: 50px;
 }
 
 .hf-v2-shipment-asset--right,

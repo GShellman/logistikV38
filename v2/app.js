@@ -245,9 +245,10 @@
   }
 
   function shipmentProgressPercent(shipment) {
-    const start = Number(shipment?.departureAbsMinute);
-    const end = Number(shipment?.arrivalAbsMinute);
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return shipment?.status === 'active' ? 0 : 100;
+    const isReturnTrip = shipment?.status === 'returning';
+    const start = Number(isReturnTrip ? shipment?.returnDepartureAbsMinute : shipment?.departureAbsMinute);
+    const end = Number(isReturnTrip ? shipment?.returnArrivalAbsMinute : shipment?.arrivalAbsMinute);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return shipment?.status === 'active' || shipment?.status === 'returning' ? 0 : 100;
     const now = window.HFV2Logistics?.absoluteMinute?.(currentTimeState()) || 0;
     return Math.max(0, Math.min(100, ((now - start) / (end - start)) * 100));
   }
@@ -274,10 +275,24 @@
     return `<article class="hf-v2-production-debug-row hf-v2-logistics-row${warningClass}"><b>${escapeHtml(cityName(order.fromCityId))} → ${escapeHtml(cityName(order.toCityId))}</b><span><small>Ware</small>${escapeHtml(good.name || order.goodId)}</span><span><small>Menge</small>${formatGoodAmount(order.goodId, order.amountKg)} · ${formatWeightKg(order.amountKg)}</span><span><small>Frequenz</small>${order.frequency === 'weekly' ? 'wöchentlich' : 'täglich'}</span><span><small>Uhrzeit</small>${formatClockTime(order.departureHour, order.departureMinute)}</span><span><small>Fahrzeugtyp</small>${escapeHtml(vehicleLabel(order.vehicleType))}</span><span><small>Status</small>${order.enabled === false ? 'Inaktiv' : 'Aktiv'}</span><span><small>Versand</small>${escapeHtml(dispatchResultLabel(dispatchResult))}</span>${dispatchTimeMarkup}<span><small>Aktion</small><button type="button" data-hf-v2-order-toggle="${order.id}">${order.enabled === false ? 'Aktivieren' : 'Deaktivieren'}</button> <button type="button" data-hf-v2-order-delete="${order.id}">Löschen</button></span></article>`;
   }
 
+  function shipmentStatusLabel(shipment) {
+    return {
+      active: 'Unterwegs',
+      returning: 'Rückfahrt',
+      returned: 'Zurück',
+      delivered: 'Geliefert',
+      failed: 'Fehlgeschlagen',
+      partial: 'Teilweise geliefert',
+    }[shipment?.status] || shipment?.status || 'Unterwegs';
+  }
+
   function shipmentCardMarkup(shipment) {
     const good = goodById(shipment.goodId);
     const progress = shipmentProgressPercent(shipment);
-    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row"><b>${escapeHtml(good.name || shipment.goodId)}</b><span><small>Menge</small>${formatGoodAmount(shipment.goodId, shipment.amountKg)} · ${formatWeightKg(shipment.amountKg)}</span><span><small>Fahrzeuge</small>${(Number(shipment.vehicleCount) || 0).toLocaleString('de-CH')} × ${escapeHtml(vehicleLabel(shipment.vehicleType))}</span><span><small>Fortschritt</small>${progress.toLocaleString('de-CH', {maximumFractionDigits: 0})}%</span><span><small>Ankunft</small>${formatAbsMinute(shipment.arrivalAbsMinute)}</span><span><small>Status</small>${escapeHtml(shipment.status || 'active')}</span></article>`;
+    const isReturnTrip = shipment.status === 'returning';
+    const arrivalAbsMinute = isReturnTrip ? shipment.returnArrivalAbsMinute : shipment.arrivalAbsMinute;
+    const arrivalLabel = isReturnTrip ? 'Rückkehr' : 'Ankunft';
+    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row"><b>${escapeHtml(good.name || shipment.goodId)}</b><span><small>Menge</small>${formatGoodAmount(shipment.goodId, shipment.amountKg)} · ${formatWeightKg(shipment.amountKg)}</span><span><small>Fahrzeuge</small>${(Number(shipment.vehicleCount) || 0).toLocaleString('de-CH')} × ${escapeHtml(vehicleLabel(shipment.vehicleType))}</span><span><small>Fortschritt</small>${progress.toLocaleString('de-CH', {maximumFractionDigits: 0})}%</span><span><small>${arrivalLabel}</small>${formatAbsMinute(arrivalAbsMinute)}</span><span><small>Status</small>${escapeHtml(shipmentStatusLabel(shipment))}</span></article>`;
   }
 
 
@@ -327,7 +342,7 @@
         return {
           id: `shipment-${shipment.id}`,
           orderId: shipment.orderId,
-          kind: shipment.status === 'delivered' ? 'delivered' : 'active',
+          kind: shipment.status === 'returned' || shipment.status === 'delivered' ? 'delivered' : 'active',
           sortAbsMinute: Number.isFinite(departure) ? departure : arrival,
           departureAbsMinute: departure,
           arrivalAbsMinute: arrival,
@@ -337,7 +352,9 @@
           amountKg: shipment.amountKg,
           vehicleType: shipment.vehicleType,
           vehicleCount: shipment.vehicleCount,
-          status: shipment.status === 'delivered' ? 'Geliefert' : 'Unterwegs',
+          returnDepartureAbsMinute: Number(shipment.returnDepartureAbsMinute),
+          returnArrivalAbsMinute: Number(shipment.returnArrivalAbsMinute),
+          status: shipmentStatusLabel(shipment),
         };
       })
       .filter(row => Number.isFinite(row.sortAbsMinute));
@@ -383,7 +400,7 @@
     return `<div class="hf-v2-transport-calendar">${Array.from(groups.entries()).map(([dayKey, dayRows]) => `<section class="hf-v2-transport-calendar__day"><h4 class="hf-v2-transport-calendar__day-title">${escapeHtml(dayKey)}</h4>${dayRows.map(row => {
       const good = goodById(row.goodId);
       const eventClass = `hf-v2-transport-calendar__event hf-v2-transport-calendar__event--${row.kind}`;
-      const arrivalLabel = Number.isFinite(Number(row.arrivalAbsMinute)) ? shipmentCalendarTimeLabel(row.arrivalAbsMinute) : 'wartet';
+      const arrivalLabel = row.status === 'Rückfahrt' && Number.isFinite(Number(row.returnArrivalAbsMinute)) ? `Rückkehr ${shipmentCalendarTimeLabel(row.returnArrivalAbsMinute)}` : (Number.isFinite(Number(row.arrivalAbsMinute)) ? shipmentCalendarTimeLabel(row.arrivalAbsMinute) : 'wartet');
       const vehicleText = row.vehicleCount ? `${Number(row.vehicleCount).toLocaleString('de-CH')} × ${vehicleLabel(row.vehicleType)}` : vehicleLabel(row.vehicleType);
       return `<article class="hf-v2-transport-calendar__slot"><time class="hf-v2-transport-calendar__time" datetime="${escapeHtml(String(row.sortAbsMinute))}"><strong>${escapeHtml(shipmentCalendarTimeLabel(row.departureAbsMinute))}</strong><span>bis ${escapeHtml(arrivalLabel)}</span></time><div class="${eventClass}"><div><b>${escapeHtml(cityName(row.fromCityId))} → ${escapeHtml(cityName(row.toCityId))}</b><span>${escapeHtml(good.name || row.goodId)}</span></div><dl><div><dt>Ware</dt><dd>${escapeHtml(good.name || row.goodId)}</dd></div><div><dt>Menge</dt><dd>${formatGoodAmount(row.goodId, row.amountKg)} · ${formatWeightKg(row.amountKg)}</dd></div><div><dt>Fahrzeuge</dt><dd>${escapeHtml(vehicleText)}</dd></div><div><dt>Status</dt><dd>${escapeHtml(row.status)}</dd></div></dl></div></article>`;
     }).join('')}</section>`).join('')}</div>`;

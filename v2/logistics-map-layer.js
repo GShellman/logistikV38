@@ -115,7 +115,7 @@
     const html = src
       ? `<img class="hf-v2-shipment-asset${directionClass}" src="${escapeHtml(src)}" alt="" aria-hidden="true">`
       : `<div class="hf-v2-shipment-marker${markerDirectionClass}"><span class="hf-v2-shipment-marker__emoji" aria-hidden="true">${escapeHtml(fallback)}</span></div>`;
-    return L.divIcon({className: '', html, iconSize: [42, 32], iconAnchor: [21, 16]});
+    return L.divIcon({className: '', html, iconSize: [50, 50], iconAnchor: [25, 25]});
   }
 
   function initLogisticsLayer(map) {
@@ -200,13 +200,16 @@
 
   function shipmentTooltip(shipment, fromCity, toCity) {
     const good = goodById(shipment.goodId);
+    const isReturnTrip = shipment.status === 'returning';
+    const departureAbsMinute = isReturnTrip ? shipment.returnDepartureAbsMinute : shipment.departureAbsMinute;
+    const arrivalAbsMinute = isReturnTrip ? shipment.returnArrivalAbsMinute : shipment.arrivalAbsMinute;
     return [
       `<strong>${escapeHtml(fromCity?.name || shipment.fromCityId)} → ${escapeHtml(toCity?.name || shipment.toCityId)}</strong>`,
       `Ware: ${escapeHtml(good.name || shipment.goodId)}`,
       `Menge: ${escapeHtml(formatGoodAmount(shipment.goodId, shipment.amountKg))}`,
-      `Abfahrt: ${escapeHtml(formatAbsMinute(shipment.departureAbsMinute))}`,
-      `Ankunft: ${escapeHtml(formatAbsMinute(shipment.arrivalAbsMinute))}`,
-      `Status: ${escapeHtml(shipment.status)}`,
+      `Abfahrt: ${escapeHtml(formatAbsMinute(departureAbsMinute))}`,
+      `Ankunft: ${escapeHtml(formatAbsMinute(arrivalAbsMinute))}`,
+      `Status: ${escapeHtml(isReturnTrip ? 'Rückfahrt' : shipment.status)}`,
     ].join('<br>');
   }
 
@@ -215,14 +218,17 @@
     const nowAbsMinute = currentAbsMinute();
     const activeShipmentIds = new Set();
 
-    shipments.filter(shipment => shipment?.status === 'active').forEach(shipment => {
+    shipments.filter(shipment => shipment?.status === 'active' || shipment?.status === 'returning').forEach(shipment => {
       const id = shipmentId(shipment);
       if (!id) return;
-      const fromCity = citiesById[shipment.fromCityId];
-      const toCity = citiesById[shipment.toCityId];
-      const coords = routeGeometry(shipment, fromCity, toCity);
-      const duration = Number(shipment.arrivalAbsMinute) - Number(shipment.departureAbsMinute);
-      const progress = duration > 0 ? clamp01((nowAbsMinute - Number(shipment.departureAbsMinute)) / duration) : 1;
+      const isReturnTrip = shipment.status === 'returning';
+      const fromCity = citiesById[isReturnTrip ? shipment.toCityId : shipment.fromCityId];
+      const toCity = citiesById[isReturnTrip ? shipment.fromCityId : shipment.toCityId];
+      const coords = isReturnTrip && Array.isArray(shipment.returnGeometry) && shipment.returnGeometry.length > 1 ? shipment.returnGeometry : routeGeometry(shipment, fromCity, toCity);
+      const departureAbsMinute = isReturnTrip ? Number(shipment.returnDepartureAbsMinute) : Number(shipment.departureAbsMinute);
+      const arrivalAbsMinute = isReturnTrip ? Number(shipment.returnArrivalAbsMinute) : Number(shipment.arrivalAbsMinute);
+      const duration = arrivalAbsMinute - departureAbsMinute;
+      const progress = duration > 0 ? clamp01((nowAbsMinute - departureAbsMinute) / duration) : 1;
       const position = interpolateAlongPolyline(coords, progress);
       if (!position) return;
 

@@ -81,12 +81,15 @@
     const arrivalAbsMinute = Number(shipment.arrivalAbsMinute);
     if (!id || !orderId || !fromCityId || !toCityId || !goodId || amountKg <= 0 || !Number.isFinite(departureAbsMinute) || !Number.isFinite(arrivalAbsMinute)) return null;
     const vehicleCount = positiveInteger(shipment.vehicleCount, 1);
-    const status = ['active', 'delivered', 'failed', 'partial'].includes(shipment.status) ? shipment.status : 'active';
+    const status = ['active', 'returning', 'returned', 'delivered', 'failed', 'partial'].includes(shipment.status) ? shipment.status : 'active';
     const createdAtAbsMinute = Number.isFinite(Number(shipment.createdAtAbsMinute)) ? Number(shipment.createdAtAbsMinute) : departureAbsMinute;
     const pathNodeIds = Array.isArray(shipment.pathNodeIds) ? shipment.pathNodeIds.map(normalizeId).filter(Boolean) : [];
     const pathEdgeIds = Array.isArray(shipment.pathEdgeIds) ? shipment.pathEdgeIds.map(normalizeId).filter(Boolean) : [];
     const geometry = Array.isArray(shipment.geometry) ? shipment.geometry : (Array.isArray(shipment.routeGeometry) ? shipment.routeGeometry : []);
-    return {...shipment, id, orderId, fromCityId, toCityId, goodId, amountKg, vehicleCount, pathNodeIds, pathEdgeIds, geometry, routeGeometry: geometry, departureAbsMinute, arrivalAbsMinute, status, createdAtAbsMinute};
+    const returnDepartureAbsMinute = Number.isFinite(Number(shipment.returnDepartureAbsMinute)) ? Number(shipment.returnDepartureAbsMinute) : null;
+    const returnArrivalAbsMinute = Number.isFinite(Number(shipment.returnArrivalAbsMinute)) ? Number(shipment.returnArrivalAbsMinute) : null;
+    const returnGeometry = Array.isArray(shipment.returnGeometry) ? shipment.returnGeometry : [...geometry].reverse();
+    return {...shipment, id, orderId, fromCityId, toCityId, goodId, amountKg, vehicleCount, pathNodeIds, pathEdgeIds, geometry, routeGeometry: geometry, returnGeometry, departureAbsMinute, arrivalAbsMinute, returnDepartureAbsMinute, returnArrivalAbsMinute, status, createdAtAbsMinute};
   }
 
   function configure(options = {}) {
@@ -420,21 +423,38 @@
     return created;
   }
 
+  function beginReturnTrip(shipment, nowAbsMinute) {
+    const outboundDuration = Math.max(1, Math.ceil(Number(shipment.arrivalAbsMinute) - Number(shipment.departureAbsMinute)));
+    shipment.returnDepartureAbsMinute = nowAbsMinute;
+    shipment.returnArrivalAbsMinute = nowAbsMinute + outboundDuration;
+    shipment.returnGeometry = Array.isArray(shipment.routeGeometry) ? [...shipment.routeGeometry].reverse() : [];
+    shipment.status = 'returning';
+  }
+
   function advanceShipments() {
     configure();
     const nowAbsMinute = absoluteMinute(currentTime());
-    const delivered = [];
+    const completed = [];
     for (const shipment of state.shipments) {
-      if (shipment.status !== 'active' || shipment.arrivalAbsMinute > nowAbsMinute) continue;
-      const result = window.HFV2Goods?.addToInventory?.(shipment.toCityId, shipment.goodId, shipment.amountKg);
-      shipment.deliveredKg = Math.max(0, Number(result?.addedKg) || 0);
-      shipment.undeliveredKg = Math.max(0, shipment.amountKg - shipment.deliveredKg);
-      shipment.status = 'delivered';
-      shipment.deliveredAbsMinute = nowAbsMinute;
-      delivered.push(shipment);
+      if (shipment.status === 'active' && shipment.arrivalAbsMinute <= nowAbsMinute) {
+        const result = window.HFV2Goods?.addToInventory?.(shipment.toCityId, shipment.goodId, shipment.amountKg);
+        shipment.deliveredKg = Math.max(0, Number(result?.addedKg) || 0);
+        shipment.undeliveredKg = Math.max(0, shipment.amountKg - shipment.deliveredKg);
+        shipment.deliveredAbsMinute = nowAbsMinute;
+        beginReturnTrip(shipment, nowAbsMinute);
+        completed.push(shipment);
+        continue;
+      }
+
+      const returnArrivalAbsMinute = Number(shipment.returnArrivalAbsMinute);
+      if (shipment.status === 'returning' && Number.isFinite(returnArrivalAbsMinute) && returnArrivalAbsMinute <= nowAbsMinute) {
+        shipment.status = 'returned';
+        shipment.returnedAbsMinute = nowAbsMinute;
+        completed.push(shipment);
+      }
     }
-    if (delivered.length) window.HFV2Save?.dispatchStateChanged?.('logistics-shipments-delivered');
-    return delivered;
+    if (completed.length) window.HFV2Save?.dispatchStateChanged?.('logistics-shipments-advanced');
+    return completed;
   }
 
   window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, absoluteMinute, orderDueToday, nextOrderDueAbsMinute, getOutgoingProductionDemandMap, vehicleCapacityKg, splitIntoVehicleLoads, plannedOrderAmountKg, validateRoadShipment};
