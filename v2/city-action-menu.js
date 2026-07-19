@@ -123,9 +123,50 @@
     return (day - 1) * 1440 + Math.max(0, Math.trunc(Number(hour) || 0)) * 60 + Math.max(0, Math.trunc(Number(minute) || 0));
   }
 
+  function addOutputGoodIds(targetSet, outputs) {
+    if (!outputs) return;
+    if (Array.isArray(outputs)) {
+      outputs.forEach(output => {
+        if (typeof output === 'string') targetSet.add(output);
+        else if (output?.goodId) targetSet.add(String(output.goodId));
+        else if (output?.id) targetSet.add(String(output.id));
+      });
+      return;
+    }
+    for (const [goodId, kg] of Object.entries(outputs || {})) {
+      if (Math.max(0, Number(kg) || 0) > 0) targetSet.add(String(goodId));
+    }
+  }
+
+  function factoryById(factoryId) {
+    const id = String(factoryId || '').trim();
+    if (!id) return null;
+    return (window.HFV2FactoryCatalog || []).find(factory => factory?.id === id) || null;
+  }
+
+  function producedGoodIdsInUnlockedNetwork() {
+    const producedGoodIds = new Set();
+    const cityFactories = window.HFV2Factories?.getState?.().cityFactories || {};
+    for (const [cityId, factoryIds] of Object.entries(cityFactories)) {
+      if (!isCityUnlocked({id: cityId}) || !Array.isArray(factoryIds)) continue;
+      for (const factoryId of factoryIds) {
+        const factory = factoryById(factoryId);
+        if (!factory) continue;
+        addOutputGoodIds(producedGoodIds, factory.outputs);
+        addOutputGoodIds(producedGoodIds, factory.output);
+        for (const recipe of Array.isArray(factory.recipes) ? factory.recipes : []) {
+          addOutputGoodIds(producedGoodIds, recipe?.outputs);
+          addOutputGoodIds(producedGoodIds, recipe?.output);
+        }
+      }
+    }
+    return producedGoodIds;
+  }
+
   function demandOptions(targetId) {
+    const producedGoodIds = producedGoodIdsInUnlockedNetwork();
     return Object.entries(window.HFV2Goods?.getCityDailyDemandMap?.(targetId) || {})
-      .filter(([, kg]) => Math.max(0, Number(kg) || 0) > 0)
+      .filter(([goodId, kg]) => producedGoodIds.has(String(goodId)) && Math.max(0, Number(kg) || 0) > 0)
       .sort((a, b) => goodById(a[0]).name.localeCompare(goodById(b[0]).name, 'de-CH'));
   }
 
@@ -153,12 +194,14 @@
     const demands = demandOptions(targetCity.id);
     const sourceId = sources[0]?.id || '';
     const vehicles = vehicleOptions(sourceId);
+    const demandHint = demands.length ? '' : '<p class="hf-v2-network-empty">Keine bestellbaren Waren: Baue zuerst eine passende Produktionsstätte.</p>';
     return `
       <form class="hf-v2-network-menu" id="hfV2OrderForm" data-target-id="${escapeHtml(targetCity.id)}">
         <p class="hf-v2-network-hint">Zielstadt: <strong>${escapeHtml(targetCity.name)}</strong></p>
         <p class="hf-v2-network-hint">Produktion startet beim nächsten Tageswechsel / Produktionszyklus.</p>
         <label>Quellstadt<select name="fromCityId">${sources.map(city => option(city.id, city.name)).join('')}</select></label>
         <label>Ware<select name="goodId">${demands.map(([goodId, kg]) => option(goodId, `${goodById(goodId).name} · Tagesbedarf ${formatWeightKg(kg)}`)).join('')}</select></label>
+        ${demandHint}
         <label>Frequenz<select name="frequency">${option('daily', 'daily = Tagesbedarf', true)}${option('weekly', 'weekly = 7x Tagesbedarf')}</select></label>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;"><label>Stunde<input name="departureHour" type="number" min="0" max="23" step="1" value="8"></label><label>Minute<input name="departureMinute" type="number" min="0" max="59" step="1" list="hfV2OrderMinutes" value="0"><datalist id="hfV2OrderMinutes"><option value="0"><option value="15"><option value="30"><option value="45"></datalist></label></div>
         <label>Fahrzeugtyp<select name="vehicleType">${vehicles.map(item => option(item.type, `${item.spec.icon || '🚚'} ${item.spec.name || item.type} · ${item.count} verfügbar · ${formatWeightKg(window.HFV2Logistics?.vehicleCapacityKg?.(item.type) || 0)}`)).join('')}</select></label>
