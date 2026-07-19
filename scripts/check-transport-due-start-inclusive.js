@@ -66,4 +66,29 @@ assert.equal(inventory.bern.cheese, 1000, 'destination inventory should not rece
 assert.ok(dispatches >= 1, 'processing should dispatch at least one update');
 assert.equal(cashChanges, -62, 'transport cost should be booked only once');
 
+
+orders.orders = [{
+  id: 'order-created-at-day1-0800',
+  status: 'active',
+  frequency: 'once',
+  deliveryDay: 1,
+  destinationCityId: 'bern',
+  sourceCityId: 'zurich',
+  goodId: 'cheese',
+  quantityKg: 1000,
+}];
+orders.deliveries = [];
+orders.nextDeliveryId = 1;
+inventory.zurich.cheese = 1000;
+inventory.bern.cheese = 0;
+
+const directCreated = window.HFV2Transport.generatePlannedDeliveries();
+assert.equal(directCreated, 1, 'order created at the current minute should create one delivery');
+assert.equal(orders.deliveries[0].scheduledDay, 1, 'one-off current-minute delivery should stay on day 1');
+assert.equal(orders.deliveries[0].scheduledMinute, 481, 'one-off current-minute delivery should move to the next processable minute');
+
+const directRun = window.HFV2Transport.processDueDeliveries(before, after);
+assert.equal(directRun.processed, 1, 'directly generated current-minute delivery should be processed in the next tick window');
+assert.equal(orders.deliveries[0].status, window.HFV2Transport.STATUS.COMPLETED, 'directly generated delivery should not remain permanently planned');
+
 console.log('transport due-start inclusive regression passed');
