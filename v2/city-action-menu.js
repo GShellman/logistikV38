@@ -23,6 +23,7 @@
     'no-vehicle': 'Kein passendes Fahrzeug.',
     'stock-limited': 'Quelle hat nicht genug Ware.',
     'route-overloaded': 'Straße zur gewünschten Zeit voll.',
+    'unknown-frequency': 'Unbekannte Frequenz.',
   });
 
   function stopLeafletPropagation(element) {
@@ -191,7 +192,12 @@
     if (!form.elements.vehicleType?.value && vehicles[0]) form.elements.vehicleType.value = vehicles[0].type;
     data.vehicleType = form.elements.vehicleType?.value || '';
     const demand = Math.max(0, Number(window.HFV2Goods?.getCityDailyDemandMap?.(data.toCityId)?.[data.goodId]) || 0);
-    const amountKg = data.frequency === 'weekly' ? demand * 7 : demand;
+    let amountKg = 0;
+    try {
+      amountKg = Math.max(0, Number(window.HFV2Logistics?.plannedOrderAmountKg?.(data.toCityId, data.goodId, data.frequency)) || 0);
+    } catch (error) {
+      amountKg = 0;
+    }
     const path = window.HFNetwork?.findPath?.(data.fromCityId, data.toCityId, {mode: 'road'});
     const capacity = window.HFV2Logistics?.vehicleCapacityKg?.(data.vehicleType) || 0;
     const trips = capacity > 0 ? Math.ceil(amountKg / capacity) : 0;
@@ -234,7 +240,8 @@
         const errorElement = form.querySelector('#hfV2OrderError');
         if (errorElement) {
           errorElement.hidden = false;
-          errorElement.textContent = error?.message || 'Bestellung konnte nicht erstellt werden.';
+          const code = error?.reason || error?.message;
+          errorElement.textContent = ERROR_TEXTS[code] || error?.message || 'Bestellung konnte nicht erstellt werden.';
         }
       }
     });

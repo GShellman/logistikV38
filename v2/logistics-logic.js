@@ -145,9 +145,13 @@
     return loads;
   }
 
-  function demandAmountKg(toCityId, goodId, frequency) {
-    const daily = Math.max(0, Number(window.HFV2Goods?.getCityDailyDemandMap?.(toCityId)?.[goodId]) || 0);
-    return frequency === 'weekly' ? daily * 7 : daily;
+  function plannedOrderAmountKg(toCityId, goodId, frequency) {
+    const dailyDemand = window.HFV2Goods?.getCityDailyDemandMap?.(toCityId)?.[goodId] || 0;
+    if (frequency === 'daily') return dailyDemand;
+    if (frequency === 'weekly') return dailyDemand * 7;
+    const error = new Error('unknown-frequency');
+    error.reason = 'unknown-frequency';
+    throw error;
   }
 
   function validateRoute(fromCityId, toCityId, options = {}) {
@@ -233,12 +237,16 @@
     const departureHour = normalizeHour(options.departureHour);
     const departureMinute = normalizeMinute(options.departureMinute);
     const vehicleType = normalizeId(options.vehicleType) || null;
-    if (!fromCityId || !toCityId || !goodId || !FREQUENCIES.has(frequency) || departureHour === null || departureMinute === null) throw new Error('Missing or invalid order fields');
+    if (!fromCityId || !toCityId || !goodId || departureHour === null || departureMinute === null) throw new Error('Missing or invalid order fields');
     if (fromCityId === toCityId) throw new Error('Source and target city must be different');
     if (citiesById[fromCityId] === undefined && window.HFV2CitiesById?.[fromCityId] === undefined) throw new Error('Unknown source city');
     if (citiesById[toCityId] === undefined && window.HFV2CitiesById?.[toCityId] === undefined) throw new Error('Unknown target city');
-    const amountKg = demandAmountKg(toCityId, goodId, frequency);
-    if (amountKg <= 0) throw new Error('Target city demand must be greater than zero');
+    const amountKg = plannedOrderAmountKg(toCityId, goodId, frequency);
+    if (amountKg <= 0) {
+      const error = new Error('no-demand');
+      error.reason = 'no-demand';
+      throw error;
+    }
     validateRoute(fromCityId, toCityId);
     assertFleetVehicle(fromCityId, vehicleType);
     const order = {id: state.nextOrderId++, fromCityId, toCityId, goodId, frequency, departureHour, departureMinute, vehicleType, amountKg, enabled: true, lastDispatchedDay: null};
@@ -368,5 +376,5 @@
     return delivered;
   }
 
-  window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, absoluteMinute, orderDueToday, vehicleCapacityKg, splitIntoVehicleLoads, validateRoadShipment};
+  window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, absoluteMinute, orderDueToday, vehicleCapacityKg, splitIntoVehicleLoads, plannedOrderAmountKg, validateRoadShipment};
 })();
