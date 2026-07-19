@@ -283,7 +283,7 @@
     return {day: Math.floor(nextAbs / 1440) + 1, minute: nextAbs % 1440};
   }
 
-  function retryBlockedDeliveries(currentTime) {
+  function retryBlockedDeliveries(currentTime, options = {}) {
     const state = ordersState();
     state.deliveries = Array.isArray(state.deliveries) ? state.deliveries : [];
     const activeOrders = new Map((state.orders || []).filter(order => order?.status === 'active').map(order => [order.id, order]));
@@ -300,7 +300,13 @@
       const availableKg = Math.max(0, Number(sourceInventory[order.goodId]) || 0);
       if (availableKg <= 0) { markUnresolved(delivery, 'Keine Ware in der Quelle verfügbar.', requestedQuantityKg); statusMessage(delivery, 'Weiterhin blockiert: Keine Ware in der Quelle verfügbar.'); continue; }
       const quantityKg = Math.min(requestedQuantityKg, availableKg);
-      const scheduledAbs = Math.max(currentAbs, absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute));
+      const originalScheduledAbs = absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute);
+      const windowStartAbs = Number.isFinite(Number(options?.windowStartAbs)) ? Number(options.windowStartAbs) : null;
+      const windowEndAbs = Number.isFinite(Number(options?.windowEndAbs)) ? Number(options.windowEndAbs) : null;
+      const redispatchLowerBound = windowStartAbs !== null && windowEndAbs !== null && originalScheduledAbs <= windowEndAbs
+        ? windowStartAbs
+        : currentAbs;
+      const scheduledAbs = Math.max(redispatchLowerBound, originalScheduledAbs);
       const slot = minuteToDayMinute(scheduledAbs);
       const chosen = chooseVehicle(sourceCityId, order.destinationCityId, quantityKg, slot.day, slot.minute);
       if (!chosen) { markUnresolved(delivery, 'Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.', quantityKg); statusMessage(delivery, 'Weiterhin blockiert: Keine freie Fahrzeugkapazität oder kompatible Netzwerkroute gefunden.'); continue; }
@@ -333,6 +339,7 @@
       delete delivery.departedKg;
       delete delivery.openQuantityBumpedKg;
       clearUnresolvedForDelivery(delivery);
+      if (typeof options?.onRedispatched === 'function') options.onRedispatched(delivery);
       statusMessage(delivery, quantityKg + 0.001 < requestedQuantityKg ? `Redispatch als Teillieferung geplant: ${Math.round(quantityKg)} von ${Math.round(requestedQuantityKg)} kg.` : 'Redispatch geplant.');
       redispatched += 1;
     }
@@ -427,35 +434,55 @@
   }
 
   function isDueInWindow(dueAbs, beforeAbs, afterAbs, includeBefore) {
-    return dueAbs <= afterAbs && dueAbs >= beforeAbs && (includeBefore || dueAbs !== beforeAbs);
+    return dueAbs <= afterAbs && (includeBefore ? dueAbs >= beforeAbs : dueAbs > beforeAbs);
+  }
+
+  function deliveryDepartureAbs(delivery) {
+    return absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute);
+  }
+
+  function deliveryArrivalAbs(delivery) {
+    return delivery.arrivalDay
+      ? absoluteMinute(delivery.arrivalDay, delivery.arrivalMinute)
+      : deliveryDepartureAbs(delivery) + Math.max(1, normalizeInteger(delivery.routeMinutes, Math.ceil(normalizeInteger(delivery.roundTripMinutes, 2, 1) / 2), 1));
   }
 
   function processDueDeliveries(timeBefore, timeAfter) {
     const state = ordersState();
-    const existingDeliveryIds = new Set((state.deliveries || []).map(delivery => delivery?.id).filter(Boolean));
-    generatePlannedDeliveries(timeBefore, timeAfter, {includeBoundaryMinute: true, skipBlockedRetry: true});
-    retryBlockedDeliveries(timeAfter);
+    state.deliveries = Array.isArray(state.deliveries) ? state.deliveries : [];
     const beforeAbs = timeAbsoluteMinute(timeBefore);
     const afterAbs = timeAbsoluteMinute(timeAfter);
+    const existingDeliveryIds = new Set(state.deliveries.map(delivery => delivery?.id).filter(Boolean));
+    const redispatchedDeliveryIds = new Set();
+    generatePlannedDeliveries(timeBefore, timeAfter, {includeBoundaryMinute: true, skipBlockedRetry: true});
+    retryBlockedDeliveries(timeAfter, {
+      windowStartAbs: beforeAbs,
+      windowEndAbs: afterAbs,
+      onRedispatched: delivery => { if (delivery?.id) redispatchedDeliveryIds.add(delivery.id); },
+    });
+    let deliveries = state.deliveries || [];
     let processed = 0;
-    for (const delivery of state.deliveries || []) {
-      if (delivery.status !== STATUS.PLANNED) continue;
-      const departureAbs = absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute);
-      // Tick window semantics: deliveries generated during this tick use [beforeAbs, afterAbs],
-      // while deliveries that already existed before generation use (beforeAbs, afterAbs].
-      const wasGeneratedThisTick = delivery.id && !existingDeliveryIds.has(delivery.id);
-      if (!isDueInWindow(departureAbs, beforeAbs, afterAbs, wasGeneratedThisTick)) continue;
-      departDelivery(delivery);
+    while (true) {
+      const event = deliveries.map(delivery => {
+        if (!delivery) return null;
+        if (delivery.status === STATUS.RUNNING) {
+          const dueAbs = deliveryArrivalAbs(delivery);
+          return isDueInWindow(dueAbs, beforeAbs, afterAbs, false) ? {delivery, dueAbs, type: 'arrival'} : null;
+        }
+        if (delivery.status === STATUS.PLANNED) {
+          const dueAbs = deliveryDepartureAbs(delivery);
+          // Tick window semantics: deliveries generated or redispatched during this tick use
+          // [beforeAbs, afterAbs], while deliveries that already existed use (beforeAbs, afterAbs].
+          const includeBefore = (delivery.id && !existingDeliveryIds.has(delivery.id)) || redispatchedDeliveryIds.has(delivery.id);
+          return isDueInWindow(dueAbs, beforeAbs, afterAbs, includeBefore) ? {delivery, dueAbs, type: 'departure'} : null;
+        }
+        return null;
+      }).filter(Boolean).sort((a, b) => a.dueAbs - b.dueAbs || (a.type === b.type ? 0 : (a.type === 'arrival' ? -1 : 1)) || String(a.delivery.id || '').localeCompare(String(b.delivery.id || '')))[0];
+      if (!event) break;
+      if (event.type === 'arrival') completeDelivery(event.delivery);
+      else departDelivery(event.delivery);
       processed += 1;
-    }
-    for (const delivery of state.deliveries || []) {
-      if (delivery.status !== STATUS.RUNNING) continue;
-      const arrivalAbs = delivery.arrivalDay
-        ? absoluteMinute(delivery.arrivalDay, delivery.arrivalMinute)
-        : absoluteMinute(delivery.scheduledDay ?? delivery.deliveryDay, delivery.scheduledMinute ?? delivery.deliveryMinute) + Math.max(1, normalizeInteger(delivery.routeMinutes, Math.ceil(normalizeInteger(delivery.roundTripMinutes, 2, 1) / 2), 1));
-      if (!isDueInWindow(arrivalAbs, beforeAbs, afterAbs, false)) continue;
-      completeDelivery(delivery);
-      processed += 1;
+      deliveries = state.deliveries || [];
     }
     if (processed) dispatch('transport-processed');
     return {processed, deliveries: state.deliveries};
