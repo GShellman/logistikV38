@@ -156,6 +156,7 @@
     return `
       <form class="hf-v2-network-menu" id="hfV2OrderForm" data-target-id="${escapeHtml(targetCity.id)}">
         <p class="hf-v2-network-hint">Zielstadt: <strong>${escapeHtml(targetCity.name)}</strong></p>
+        <p class="hf-v2-network-hint">Produktion startet beim nächsten Tageswechsel / Produktionszyklus.</p>
         <label>Quellstadt<select name="fromCityId">${sources.map(city => option(city.id, city.name)).join('')}</select></label>
         <label>Ware<select name="goodId">${demands.map(([goodId, kg]) => option(goodId, `${goodById(goodId).name} · Tagesbedarf ${formatWeightKg(kg)}`)).join('')}</select></label>
         <label>Frequenz<select name="frequency">${option('daily', 'daily = Tagesbedarf', true)}${option('weekly', 'weekly = 7x Tagesbedarf')}</select></label>
