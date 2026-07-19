@@ -170,6 +170,23 @@
     return entries.map(([goodId, kg]) => `${escapeHtml(goodById(goodId).name)} ${formatDailyKg(kg)}`).join(' · ');
   }
 
+
+  function factoryMaxLevel(factory) {
+    const maxLevel = Number(factory?.maxLevel ?? factory?.maxUpgradeLevel ?? factory?.levels);
+    return Number.isFinite(maxLevel) && maxLevel >= 1 ? Math.trunc(maxLevel) : Infinity;
+  }
+
+  function factoryUpgradeButtonState(cityId, factoryRef, factory, level, upgradeCost) {
+    const factoryApi = window.HFV2Factories;
+    const maxLevel = factoryMaxLevel(factory);
+    if (!factoryApi?.upgradeFactory || !factoryApi?.canUpgradeFactory) return {disabled: true, title: 'Factory-API nicht verfügbar.'};
+    if (level >= maxLevel) return {disabled: true, title: 'Maximallevel erreicht.'};
+    const check = factoryApi.canUpgradeFactory(cityId, factoryRef);
+    if (!check?.ok && check?.reason === 'not-enough-cash') return {disabled: true, title: `Nicht genug Geld: benötigt ${formatCurrency(upgradeCost)}.`};
+    if (!check?.ok) return {disabled: true, title: 'Upgrade derzeit nicht möglich.'};
+    return {disabled: false, title: `Für ${formatCurrency(upgradeCost)} auf Stufe ${level + 1} ausbauen.`};
+  }
+
   function factoryOperatingDailyCost() {
     const factoryApi = window.HFV2Factories;
     const catalog = window.HFV2FactoryCatalog || [];
@@ -209,13 +226,22 @@
     if (!builtFactories.length) return '<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div></div><p class="hf-v2-muted">Keine Fabriken gebaut.</p></section>' + productionDebugMarkup(city);
     const rows = builtFactories.map(factoryInstance => {
       const factory = factoryById(factoryInstance.id) || {id: factoryInstance.id, name: factoryInstance.id, icon: '🏭'};
+      const factoryRef = factoryInstance.key ?? factoryInstance.index ?? factoryInstance.id;
       const estimate = window.HFV2Goods?.estimateCityFactoryProduction?.(city.id, factoryInstance);
-      const capacityKg = Math.max(0, Number(estimate?.upgradeAdjustedCapacityKg) || factoryDailyCapacityKg(factory));
-      const outputMultiplier = Math.max(1, Number(estimate?.outputMultiplier) || 1);
+      const level = Math.max(1, Math.trunc(Number(estimate?.level ?? factoryInstance.level ?? window.HFV2Factories?.getFactoryLevel?.(city.id, factoryRef)) || 1));
+      const outputMultiplier = Math.max(1, Number(estimate?.outputMultiplier ?? window.HFV2Factories?.outputMultiplierForLevel?.(level)) || level);
+      const nextOutputMultiplier = Math.max(1, Number(window.HFV2Factories?.outputMultiplierForLevel?.(level + 1)) || (level + 1));
+      const baseCapacityKg = Math.max(0, Number(estimate?.capacityKg) || factoryDailyCapacityKg(factory));
+      const capacityKg = Math.max(0, Number(estimate?.upgradeAdjustedCapacityKg) || baseCapacityKg * outputMultiplier);
+      const nextCapacityKg = baseCapacityKg * nextOutputMultiplier;
+      const currentOperatingCost = Number(window.HFV2Factories?.operatingCostForFactory?.(factory, level));
+      const nextOperatingCost = Number(window.HFV2Factories?.operatingCostForFactory?.(factory, level + 1));
+      const upgradeCost = Number(window.HFV2Factories?.upgradeCostForFactory?.(factory, level)) || 0;
+      const buttonState = factoryUpgradeButtonState(city.id, factoryRef, factory, level, upgradeCost);
       const actualKg = Math.max(0, Number(estimate?.madeKg) || 0);
       const fill = capacityKg > 0 ? Math.min(100, actualKg / capacityKg * 100) : 0;
       const status = estimate?.reason === 'demand-limited' ? 'Nachfrage gedeckt' : estimate?.reason === 'capacity-limited' ? 'Lager voll' : estimate?.reason === 'input-limited' ? 'Inputs fehlen' : estimate?.reason === 'no-output' ? 'Kein Output' : 'Potenzial heute';
-      return `<article class="hf-v2-factory-production-item"><div class="hf-v2-factory-production-head"><span>${escapeHtml(factory.icon || '🏭')}</span><div><b>${escapeHtml(factory.name || factory.id)}</b><small>${factoryOutputsText(factory, outputMultiplier)}</small></div></div><div class="hf-v2-factory-production-bar"><span><i style="width:${fill}%"></i></span><small>${formatDailyKg(actualKg)} von ${formatDailyKg(capacityKg)} · ${status}</small></div></article>`;
+      return `<article class="hf-v2-factory-production-item"><div class="hf-v2-factory-production-head"><span>${escapeHtml(factory.icon || '🏭')}</span><div><b>${escapeHtml(factory.name || factory.id)}</b><small>Stufe ${level.toLocaleString('de-CH')} · ${factoryOutputsText(factory, outputMultiplier)}</small></div></div><div class="hf-v2-factory-production-bar"><span><i style="width:${fill}%"></i></span><small>${formatDailyKg(actualKg)} von ${formatDailyKg(capacityKg)} · ${status}</small></div><dl class="hf-v2-factory-production-stats"><div><dt>Kapazität aktuell</dt><dd>${formatDailyKg(capacityKg)}</dd></div><div><dt>Nach Ausbau</dt><dd>${formatDailyKg(nextCapacityKg)}</dd></div><div><dt>Betriebskosten</dt><dd>${formatCurrency(currentOperatingCost)}/Tag</dd></div><div><dt>Betriebskosten nach Ausbau</dt><dd>${formatCurrency(nextOperatingCost)}/Tag</dd></div><div><dt>Upgrade-Kosten</dt><dd>${formatCurrency(upgradeCost)}</dd></div></dl><button type="button" data-hf-v2-factory-upgrade data-city-id="${escapeHtml(city.id)}" data-factory-ref="${escapeHtml(factoryRef)}" title="${escapeHtml(buttonState.title)}"${buttonState.disabled ? ' disabled' : ''}>Fabrik ausbauen</button></article>`;
     }).join('');
     return `<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div><strong>${builtFactories.length.toLocaleString('de-CH')}</strong></div>${rows}</section>${productionDebugMarkup(city)}`;
   }
@@ -720,6 +746,15 @@
 
   function bindLogisticsPanelActions() {
     document.addEventListener('click', event => {
+      const upgradeButton = event.target?.closest?.('[data-hf-v2-factory-upgrade]');
+      if (upgradeButton) {
+        const cityId = upgradeButton.dataset.cityId;
+        const factoryRef = upgradeButton.dataset.factoryRef;
+        window.HFV2Factories?.upgradeFactory?.(cityId, factoryRef);
+        refreshNetworkView();
+        refreshSelectedCity();
+        return;
+      }
       const toggleButton = event.target?.closest?.('[data-hf-v2-order-toggle]');
       const deleteButton = event.target?.closest?.('[data-hf-v2-order-delete]');
       if (!toggleButton && !deleteButton) return;
