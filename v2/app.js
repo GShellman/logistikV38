@@ -219,6 +219,67 @@
     return `<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div><strong>${builtFactories.length.toLocaleString('de-CH')}</strong></div>${rows}</section>${productionDebugMarkup(city)}`;
   }
 
+
+  function cityName(cityId) {
+    const id = String(cityId || '').trim();
+    return citiesById[id]?.name || id || 'Unbekannte Stadt';
+  }
+
+  function vehicleLabel(vehicleType) {
+    const type = String(vehicleType || '').trim();
+    const spec = window.HFFleet?.VEHICLES?.[type] || window.HFVehicleCatalog?.VEHICLE_CATALOG?.[type] || null;
+    return spec ? `${spec.icon || '🚚'} ${spec.name || type}` : (type || 'Fahrzeug');
+  }
+
+  function formatClockTime(hour, minute) {
+    const h = Math.max(0, Math.min(23, Math.trunc(Number(hour) || 0)));
+    const m = Math.max(0, Math.min(59, Math.trunc(Number(minute) || 0)));
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  }
+
+  function formatAbsMinute(absMinute) {
+    const total = Math.max(0, Math.trunc(Number(absMinute) || 0));
+    const day = Math.floor(total / 1440) + 1;
+    const minuteOfDay = total % 1440;
+    return `Tag ${day.toLocaleString('de-CH')} · ${formatClockTime(Math.floor(minuteOfDay / 60), minuteOfDay % 60)}`;
+  }
+
+  function shipmentProgressPercent(shipment) {
+    const start = Number(shipment?.departureAbsMinute);
+    const end = Number(shipment?.arrivalAbsMinute);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return shipment?.status === 'active' ? 0 : 100;
+    const now = window.HFV2Logistics?.absoluteMinute?.(currentTimeState()) || 0;
+    return Math.max(0, Math.min(100, ((now - start) / (end - start)) * 100));
+  }
+
+  function orderCardMarkup(order) {
+    const good = goodById(order.goodId);
+    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row"><b>${escapeHtml(cityName(order.fromCityId))} → ${escapeHtml(cityName(order.toCityId))}</b><span><small>Ware</small>${escapeHtml(good.name || order.goodId)}</span><span><small>Menge</small>${formatGoodAmount(order.goodId, order.amountKg)} · ${formatWeightKg(order.amountKg)}</span><span><small>Frequenz</small>${order.frequency === 'weekly' ? 'wöchentlich' : 'täglich'}</span><span><small>Uhrzeit</small>${formatClockTime(order.departureHour, order.departureMinute)}</span><span><small>Fahrzeugtyp</small>${escapeHtml(vehicleLabel(order.vehicleType))}</span><span><small>Status</small>${order.enabled === false ? 'Inaktiv' : 'Aktiv'}</span><span><small>Aktion</small><button type="button" data-hf-v2-order-toggle="${order.id}">${order.enabled === false ? 'Aktivieren' : 'Deaktivieren'}</button> <button type="button" data-hf-v2-order-delete="${order.id}">Löschen</button></span></article>`;
+  }
+
+  function shipmentCardMarkup(shipment) {
+    const good = goodById(shipment.goodId);
+    const progress = shipmentProgressPercent(shipment);
+    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row"><b>${escapeHtml(good.name || shipment.goodId)}</b><span><small>Menge</small>${formatGoodAmount(shipment.goodId, shipment.amountKg)} · ${formatWeightKg(shipment.amountKg)}</span><span><small>Fahrzeuge</small>${(Number(shipment.vehicleCount) || 0).toLocaleString('de-CH')} × ${escapeHtml(vehicleLabel(shipment.vehicleType))}</span><span><small>Fortschritt</small>${progress.toLocaleString('de-CH', {maximumFractionDigits: 0})}%</span><span><small>Ankunft</small>${formatAbsMinute(shipment.arrivalAbsMinute)}</span><span><small>Status</small>${escapeHtml(shipment.status || 'active')}</span></article>`;
+  }
+
+  function logisticsListMarkup(items, emptyText, rowMarkup) {
+    return items.length ? `<div class="hf-v2-production-debug-grid">${items.map(rowMarkup).join('')}</div>` : `<p class="hf-v2-muted">${emptyText}</p>`;
+  }
+
+  function cityLogisticsSectionMarkup(city) {
+    const logistics = window.HFV2Logistics?.getState?.() || {orders: [], shipments: []};
+    const orders = Array.isArray(logistics.orders) ? logistics.orders : [];
+    const shipments = Array.isArray(logistics.shipments) ? logistics.shipments : [];
+    const incomingOrders = orders.filter(order => order.toCityId === city.id);
+    const outgoingOrders = orders.filter(order => order.fromCityId === city.id);
+    const incomingActiveShipments = shipments.filter(shipment => shipment.toCityId === city.id && shipment.status === 'active');
+    const outgoingActiveShipments = shipments.filter(shipment => shipment.fromCityId === city.id && shipment.status === 'active');
+    const activeShipments = [...incomingActiveShipments, ...outgoingActiveShipments].sort((a, b) => (Number(a.arrivalAbsMinute) || 0) - (Number(b.arrivalAbsMinute) || 0));
+    const total = incomingOrders.length + outgoingOrders.length + activeShipments.length;
+    return `<section class="hf-v2-demand-card hf-v2-city-logistics" aria-labelledby="hfV2LogisticsTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Warenlogistik</p><h3 id="hfV2LogisticsTitle">Warenlogistik</h3></div><strong>${total.toLocaleString('de-CH')}</strong></div><h4>Eingehende Bestellungen</h4>${logisticsListMarkup(incomingOrders, 'Keine eingehenden Bestellungen.', orderCardMarkup)}<h4>Ausgehende Bestellungen</h4>${logisticsListMarkup(outgoingOrders, 'Keine ausgehenden Bestellungen.', orderCardMarkup)}<h4>Aktive Transporte</h4>${logisticsListMarkup(activeShipments, 'Keine aktiven Transporte.', shipmentCardMarkup)}</section>`;
+  }
+
   function isCityUnlocked(cityId) {
     const id = String(cityId || '').trim();
     return id === 'zurich' || networkState?.cities?.[id]?.unlocked === true;
@@ -294,6 +355,7 @@
       `<div class="hf-v2-city-kpi-grid">${fact('Kategorie', tierLabel(city.tier))}${fact('Bauplätze', city.slots.toLocaleString('de-CH'))}</div>`,
       factoryProductionMarkup(city),
       inventorySectionMarkup(city),
+      cityLogisticsSectionMarkup(city),
       demandPanel(city),
     ].join('');
   }
@@ -513,6 +575,25 @@
     setTimeStatus('Live läuft: 1 Spielminute pro Sekunde.');
   }
 
+
+  function bindLogisticsPanelActions() {
+    document.addEventListener('click', event => {
+      const toggleButton = event.target?.closest?.('[data-hf-v2-order-toggle]');
+      const deleteButton = event.target?.closest?.('[data-hf-v2-order-delete]');
+      if (!toggleButton && !deleteButton) return;
+      const id = Number(toggleButton?.dataset.hfV2OrderToggle || deleteButton?.dataset.hfV2OrderDelete || 0);
+      if (!id) return;
+      if (toggleButton) {
+        const order = (window.HFV2Logistics?.getState?.().orders || []).find(entry => entry.id === id);
+        window.HFV2Logistics?.setOrderEnabled?.(id, order?.enabled === false);
+      } else {
+        window.HFV2Logistics?.cancelOrder?.(id);
+      }
+      refreshNetworkView();
+      refreshSelectedCity();
+    });
+  }
+
   function bindTimeControls() {
     const liveButton = document.getElementById('hfV2LiveButton');
     const nextHourButton = document.getElementById('hfV2NextHourButton');
@@ -589,6 +670,7 @@
     document.getElementById('hfV2CityCount').textContent = `${cities.length.toLocaleString('de-CH')} Orte`;
     bindSaveControls();
     bindTimeControls();
+    bindLogisticsPanelActions();
     renderClock();
     renderLiveButton();
     window.addEventListener('hf:network:confirmed', refreshNetworkView);
