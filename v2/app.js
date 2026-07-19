@@ -125,54 +125,18 @@
     return hour * 60 + minute;
   }
 
-  function deliveryArrivalDay(delivery) {
-    return Math.max(1, Math.trunc(Number(delivery?.scheduledDay ?? delivery?.deliveryDay) || 1));
-  }
-
-  function deliveryArrivalMinute(delivery) {
-    const minute = Number(delivery?.scheduledMinute ?? delivery?.deliveryMinute ?? delivery?.arrivalMinute ?? delivery?.etaMinute);
-    if (Number.isFinite(minute)) return Math.min(1439, Math.max(0, Math.trunc(minute)));
-    const hour = Math.min(23, Math.max(0, Math.trunc(Number(delivery?.arrivalHour ?? delivery?.hour) || 0)));
-    const fallbackMinute = Math.min(59, Math.max(0, Math.trunc(Number(delivery?.minute) || 0)));
-    return hour * 60 + fallbackMinute;
-  }
-
-  function isOpenDeliveryForProjection(delivery) {
-    const status = String(delivery?.status || delivery?.state || '').toLowerCase();
-    if (!['planned', 'running'].includes(status) || delivery?.waitingForProduction === true) return false;
-    if (delivery?.blocked === true || delivery?.cancelled === true || delivery?.canceled === true || delivery?.completed === true || delivery?.processed === true || delivery?.processedAt || delivery?.processedAtMinute) return false;
-    return true;
-  }
-
-  function sameDayIncomingDeliveryKg(cityId, goodId, time) {
-    const currentDay = timeDay(time);
-    const currentMinute = timeMinuteOfDay(time);
-    return (window.HFV2Orders?.getState?.().deliveries || []).reduce((sum, delivery) => {
-      if (!isOpenDeliveryForProjection(delivery)) return sum;
-      if (String(delivery.destinationCityId || delivery.cityId || '').trim() !== String(cityId)) return sum;
-      if (String(delivery.goodId || '').trim() !== String(goodId)) return sum;
-      if (deliveryArrivalDay(delivery) !== currentDay) return sum;
-      const arrivalMinute = deliveryArrivalMinute(delivery);
-      if (arrivalMinute <= currentMinute || arrivalMinute > 1439) return sum;
-      const quantityKg = Math.max(0, Number(delivery.remainingKg ?? delivery.openKg ?? delivery.quantityKg) || 0);
-      const deliveredKg = Math.max(0, Number(delivery.deliveredKg ?? delivery.fulfilledKg) || 0);
-      return sum + Math.max(0, quantityKg - deliveredKg);
-    }, 0);
-  }
-
   function projectedEndOfDayStockKg(cityId, goodId, currentInventoryKg, dailyDemandKg) {
     const time = currentTimeState();
     const remainingMinutes = Math.max(0, 1440 - timeMinuteOfDay(time));
     const remainingDemandKg = Math.max(0, Number(dailyDemandKg) || 0) * (remainingMinutes / 1440);
-    const incomingKg = sameDayIncomingDeliveryKg(cityId, goodId, time);
-    return Math.max(0, Math.max(0, Number(currentInventoryKg) || 0) + incomingKg - remainingDemandKg);
+    return Math.max(0, Math.max(0, Number(currentInventoryKg) || 0) - remainingDemandKg);
   }
 
   function demandPanel(city) {
     const rows = v2DemandRows(city);
     const total = rows.reduce((sum, row) => sum + row.dailyKg, 0);
     const inventory = window.HFV2Goods?.getCityInventory?.(city.id) || {};
-    return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">Alle Waren</h3></div><strong>${formatDailyKg(total)}</strong></div>${rows.length ? `<div class="hf-v2-demand-compact-grid">${rows.map(row => { const inventoryKg = Math.max(0, Number(inventory[row.good.id]) || 0); const projectedKg = projectedEndOfDayStockKg(city.id, row.good.id, inventoryKg, row.dailyKg); const coverage = row.dailyKg > 0 ? Math.min(100, projectedKg / row.dailyKg * 100) : 100; const salePrice = window.HFV2Goods?.salePriceForCity?.(city, row.good.id) ?? (Number(row.good.price) || 0); const orderLabel = `Ware ${row.good.name} für Stadt ${city.name} bestellen`; return `<button class="hf-v2-demand-tile hf-v2-demand-tile--button" type="button" data-action="open-good-order" data-city-id="${escapeHtml(city.id)}" data-good-id="${escapeHtml(row.good.id)}" aria-label="${escapeHtml(orderLabel)}"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-tile__body"><b>${escapeHtml(row.good.name)}</b><strong>${formatDailyKg(row.dailyKg)}</strong><div class="hf-v2-demand-price"><small>Verkaufspreis</small><b>${formatCurrency(salePrice)}/kg</b></div><span class="hf-v2-demand-tile__bar"><i style="width:${coverage}%"></i></span><small class="hf-v2-muted">Prognose Tagesende: ${formatGoodAmount(row.good.id, projectedKg)}</small></div></button>`; }).join('')}</div>` : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
+    return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">Alle Waren</h3></div><strong>${formatDailyKg(total)}</strong></div>${rows.length ? `<div class="hf-v2-demand-compact-grid">${rows.map(row => { const inventoryKg = Math.max(0, Number(inventory[row.good.id]) || 0); const projectedKg = projectedEndOfDayStockKg(city.id, row.good.id, inventoryKg, row.dailyKg); const coverage = row.dailyKg > 0 ? Math.min(100, projectedKg / row.dailyKg * 100) : 100; const salePrice = window.HFV2Goods?.salePriceForCity?.(city, row.good.id) ?? (Number(row.good.price) || 0); return `<article class="hf-v2-demand-tile"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-tile__body"><b>${escapeHtml(row.good.name)}</b><strong>${formatDailyKg(row.dailyKg)}</strong><div class="hf-v2-demand-price"><small>Verkaufspreis</small><b>${formatCurrency(salePrice)}/kg</b></div><span class="hf-v2-demand-tile__bar"><i style="width:${coverage}%"></i></span><small class="hf-v2-muted">Prognose Tagesende: ${formatGoodAmount(row.good.id, projectedKg)}</small></div></article>`; }).join('')}</div>` : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
   }
 
   function factoryById(factoryId) {
@@ -229,21 +193,20 @@
   }
 
 
-  function productionCommitmentDebugMarkup(city) {
+  function productionDebugMarkup(city) {
     if (!window.HFV2_DEBUG_PRODUCTION) return '';
     const rows = window.HFV2Goods?.productionDebugRows?.(city.id) || [];
     if (!rows.length) return '';
-    return `<section class="hf-v2-production-debug" aria-label="Produktionsplanung externe Commitments"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Debug</p><h3>Produktionsplanung · Commitments</h3></div><strong>${rows.length.toLocaleString('de-CH')}</strong></div><div class="hf-v2-production-debug-grid">${rows.map(row => {
+    return `<section class="hf-v2-production-debug" aria-label="Lokale Produktionsplanung"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Debug</p><h3>Produktionsplanung · Eigenbedarf</h3></div><strong>${rows.length.toLocaleString('de-CH')}</strong></div><div class="hf-v2-production-debug-grid">${rows.map(row => {
       const good = goodById(row.goodId);
       const blockers = row.blockers?.length ? `<em>Blocker: ${row.blockers.map(escapeHtml).join(', ')}</em>` : '<small>Keine Blocker erkannt</small>';
-      const commitments = row.commitments?.length ? `<small class="hf-v2-production-debug-commitments">${row.commitments.map(item => `${escapeHtml(item.type === 'delivery' ? 'Lieferung' : 'Auftrag')} → ${escapeHtml(citiesById[item.destinationCityId]?.name || item.destinationCityId || 'Ziel')}: ${formatGoodAmount(row.goodId, item.amountKg)}`).join(' · ')}</small>` : '';
-      return `<article class="hf-v2-production-debug-row"><b>${escapeHtml(good.name || row.goodId)}</b><span><small>lokaler Bedarf</small>${formatGoodAmount(row.goodId, row.localDemandKg)}</span><span><small>externe Commitments</small>${formatGoodAmount(row.goodId, row.externalCommitmentKg)}</span><span><small>Bestand</small>${formatGoodAmount(row.goodId, row.stockKg)}</span><span><small>Produktionsplan</small>${formatGoodAmount(row.goodId, row.plannedProductionKg)}</span>${commitments}${blockers}</article>`;
+      return `<article class="hf-v2-production-debug-row"><b>${escapeHtml(good.name || row.goodId)}</b><span><small>lokaler Bedarf</small>${formatGoodAmount(row.goodId, row.localDemandKg)}</span><span><small>Bestand</small>${formatGoodAmount(row.goodId, row.stockKg)}</span><span><small>Produktionsplan</small>${formatGoodAmount(row.goodId, row.plannedProductionKg)}</span>${blockers}</article>`;
     }).join('')}</div></section>`;
   }
 
   function factoryProductionMarkup(city) {
     const builtFactories = window.HFV2Factories?.getCityFactories?.(city.id) || [];
-    if (!builtFactories.length) return '<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div></div><p class="hf-v2-muted">Keine Fabriken gebaut.</p></section>' + productionCommitmentDebugMarkup(city);
+    if (!builtFactories.length) return '<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div></div><p class="hf-v2-muted">Keine Fabriken gebaut.</p></section>' + productionDebugMarkup(city);
     const rows = builtFactories.map(factoryId => {
       const factory = factoryById(factoryId) || {id: factoryId, name: factoryId, icon: '🏭'};
       const capacityKg = factoryDailyCapacityKg(factory);
@@ -253,7 +216,7 @@
       const status = estimate?.reason === 'demand-limited' ? 'Nachfrage gedeckt' : estimate?.reason === 'capacity-limited' ? 'Lager voll' : estimate?.reason === 'input-limited' ? 'Inputs fehlen' : estimate?.reason === 'no-output' ? 'Kein Output' : 'Potenzial heute';
       return `<article class="hf-v2-factory-production-item"><div class="hf-v2-factory-production-head"><span>${escapeHtml(factory.icon || '🏭')}</span><div><b>${escapeHtml(factory.name || factory.id)}</b><small>${factoryOutputsText(factory)}</small></div></div><div class="hf-v2-factory-production-bar"><span><i style="width:${fill}%"></i></span><small>${formatDailyKg(actualKg)} von ${formatDailyKg(capacityKg)} · ${status}</small></div></article>`;
     }).join('');
-    return `<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div><strong>${builtFactories.length.toLocaleString('de-CH')}</strong></div>${rows}</section>${productionCommitmentDebugMarkup(city)}`;
+    return `<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div><strong>${builtFactories.length.toLocaleString('de-CH')}</strong></div>${rows}</section>${productionDebugMarkup(city)}`;
   }
 
   function isCityUnlocked(cityId) {
@@ -261,12 +224,6 @@
     return id === 'zurich' || networkState?.cities?.[id]?.unlocked === true;
   }
 
-
-  function autoExportControlMarkup(city) {
-    if (!isCityUnlocked(city.id)) return '';
-    const checked = window.HFV2Transport?.isAutoExportEnabled?.(city.id) === true ? ' checked' : '';
-    return `<section class="hf-v2-demand-card hf-v2-auto-export-card" aria-labelledby="hfV2AutoExportTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Disposition</p><h3 id="hfV2AutoExportTitle">Auto-Export</h3></div><label class="hf-v2-auto-export-switch"><input type="checkbox" data-action="toggle-auto-export" data-city-id="${escapeHtml(city.id)}"${checked}><span>Automatisch exportieren</span></label></div><p class="hf-v2-muted">Überschüsse dieser Stadt werden automatisch an erreichbare freigeschaltete Städte mit echtem Tagesbedarf geliefert.</p></section>`;
-  }
 
   function selectedClass(city) {
     return selectedId === city.id ? ' selected' : '';
@@ -335,7 +292,6 @@
     document.getElementById('hfV2Facts').innerHTML = [
       financeSummaryMarkup(),
       `<div class="hf-v2-city-kpi-grid">${fact('Kategorie', tierLabel(city.tier))}${fact('Bauplätze', city.slots.toLocaleString('de-CH'))}</div>`,
-      autoExportControlMarkup(city),
       factoryProductionMarkup(city),
       inventorySectionMarkup(city),
       demandPanel(city),
@@ -424,7 +380,6 @@
     window.HFV2IsCityUnlocked = isCityUnlocked;
     renderMarkers(cities);
     window.HFNetwork?.initNetworkLayer?.(map);
-    window.HFV2TransportMap?.init?.(map);
     if (networkState) {
       window.HFNetwork?.renderNetworkLines?.(networkState.connections, citiesById);
     }
@@ -557,27 +512,6 @@
     });
   }
 
-  function transportPlanningDependencies() {
-    const missing = [];
-    if (typeof window.HFV2Transport?.generatePlannedDeliveries !== 'function') missing.push('Transportplanung');
-    if (typeof window.HFNetwork?.findPath !== 'function') missing.push('Netzwerk-Routenfinder');
-    if (typeof window.HFFleet?.getCityFleet !== 'function') missing.push('Flottenverwaltung');
-    const catalog = window.HFVehicleCatalog?.VEHICLE_CATALOG;
-    if (!catalog || !Object.keys(catalog).length) missing.push('Fahrzeugkatalog');
-    if (typeof window.HFV2Goods?.getCityInventory !== 'function') missing.push('Güterverwaltung');
-    return {ready: missing.length === 0, missing};
-  }
-
-  function generatePlannedDeliveriesWhenReady(reason) {
-    const dependencies = transportPlanningDependencies();
-    if (!dependencies.ready) {
-      setSaveStatus(`Transportplanung übersprungen (${reason}): ${dependencies.missing.join(', ')} noch nicht verfügbar.`);
-      return false;
-    }
-    window.HFV2Transport?.generatePlannedDeliveries?.();
-    return true;
-  }
-
   function configureGameSystems(cities) {
     window.HFV2Save?.configureState?.(savePackage);
     window.HFV2Time?.configure?.({state: savePackage.state.time});
@@ -585,9 +519,6 @@
     window.HFFleet?.configure?.({state: savePackage.state.fleet});
     window.HFV2Factories?.configure?.({state: savePackage.state.factories});
     window.HFV2Goods?.configure?.({state: savePackage.state.goods, cities});
-    window.HFV2Orders?.configure?.({state: savePackage.state.orders});
-    window.HFV2Transport?.configure?.({state: savePackage.state.transport});
-    generatePlannedDeliveriesWhenReady('Initialisierung');
   }
 
   function applySavePackage(nextPackage) {
@@ -597,27 +528,6 @@
     renderClock();
     refreshSelectedCity();
     return savePackage;
-  }
-
-
-  function bindDemandControls() {
-    document.addEventListener('click', event => {
-      const orderButton = event.target.closest?.('[data-action="open-good-order"]');
-      const autoExportToggle = event.target.closest?.('[data-action="toggle-auto-export"]');
-      if (autoExportToggle) {
-        const enabled = autoExportToggle.checked === true;
-        window.HFV2Transport?.setAutoExportEnabled?.(autoExportToggle.dataset.cityId, enabled);
-        if (enabled) window.HFV2Transport?.generateAutoExportDeliveries?.();
-        refreshSelectedCity();
-        return;
-      }
-      if (orderButton) {
-        event.preventDefault();
-        const {cityId, goodId} = orderButton.dataset;
-        window.HFV2OrderMenu?.openOrderModal?.(cityId, goodId);
-        return;
-      }
-    });
   }
 
   function bindSaveControls() {
@@ -653,19 +563,16 @@
   function boot() {
     const cities = loadCities();
     citiesById = Object.fromEntries(cities.map(city => [city.id, city]));
-    savePackage = window.HFV2Save?.createDefaultState?.() || {state: {network: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}), fleet: window.HFFleet?.createFleetState?.(), factories: window.HFV2Factories?.createFactoryState?.(), goods: window.HFV2Goods?.createGoodsState?.(), orders: window.HFV2Orders?.createOrderState?.(), transport: window.HFV2Transport?.createTransportState?.(), time: window.HFV2Save?.defaultTimeState?.() || {day: 1, hour: 8, minute: 0}}};
+    savePackage = window.HFV2Save?.createDefaultState?.() || {state: {network: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}), fleet: window.HFFleet?.createFleetState?.(), factories: window.HFV2Factories?.createFactoryState?.(), goods: window.HFV2Goods?.createGoodsState?.(), time: window.HFV2Save?.defaultTimeState?.() || {day: 1, hour: 8, minute: 0}}};
     configureGameSystems(cities);
     document.getElementById('hfV2CityCount').textContent = `${cities.length.toLocaleString('de-CH')} Orte`;
     bindSaveControls();
     bindTimeControls();
-    bindDemandControls();
     renderClock();
     renderLiveButton();
     window.addEventListener('hf:network:confirmed', refreshNetworkView);
     window.addEventListener('hf:v2:state-changed', refreshNetworkView);
     window.addEventListener('hf:v2:state-changed', renderClock);
-    window.addEventListener('hf:v2:state-changed', () => window.HFV2TransportMap?.refresh?.());
-    window.addEventListener('hf:v2:order-created', refreshSelectedCity);
     if (!bootMap(cities)) return;
     const zurich = cities.find(city => city.id === 'zurich');
     if (zurich) selectCity(zurich, cities);
