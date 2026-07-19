@@ -5,6 +5,7 @@
   const SCHEDULE_HORIZON_DAYS = 14;
   const DEFAULT_DEPARTURE_MINUTE = 8 * 60;
   const STATUS = Object.freeze({PLANNED: 'planned', RUNNING: 'running', COMPLETED: 'completed', PARTIAL: 'partial', BLOCKED: 'blocked', FAILED: 'failed'});
+  const DISPATCH_MODEL = Object.freeze({SEQUENTIAL_SHUTTLE: 'sequential-shuttle'});
 
   let transportState = null;
 
@@ -129,6 +130,8 @@
   }
 
   function roundTripMinutes(path, vehicle) {
+    // A dispatch uses one concrete vehicle slot that is busy from departure until
+    // it has returned to the source and can start the next shuttle trip.
     return routeMinutes(path, vehicle) * 2;
   }
 
@@ -164,6 +167,9 @@
   }
 
   function vehicleBusyCount(vehicleType, scheduledAbsMinute, durationMinutes) {
+    // Counts concrete vehicle-slot overlaps. In the sequential shuttle model a
+    // multi-trip delivery contributes one busy slot per segment, not N parallel
+    // vehicles for the whole aggregate delivery.
     const state = ordersState();
     const start = scheduledAbsMinute;
     const end = start + Math.max(1, normalizeInteger(durationMinutes, 1, 1));
@@ -186,8 +192,10 @@
       const duration = roundTripMinutes(path, vehicle);
       const startAbs = absoluteMinute(scheduledDay, scheduledMinute);
       const segmentStarts = Array.from({length: trips}, (_, index) => startAbs + (index * duration));
+      // Interpretation: tripCount means sequential shuttle trips by one vehicle.
+      // Each trip reserves exactly one vehicle slot for one full round trip.
       const available = segmentStarts.every(segmentStart => vehicleBusyCount(vehicleType, segmentStart, duration) < owned) ? 1 : 0;
-      return {vehicleType, vehicle, owned, capacityKg, path, trips, duration, available};
+      return {vehicleType, vehicle, owned, capacityKg, path, trips, duration, totalDuration: trips * duration, dispatchModel: DISPATCH_MODEL.SEQUENTIAL_SHUTTLE, vehicleSlots: 1, available};
     }).filter(Boolean).filter(candidate => candidate.available > 0);
     candidates.sort((a, b) => a.trips - b.trips || b.capacityKg - a.capacityKg || transportCost(a.path, a.vehicle, quantityKg) - transportCost(b.path, b.vehicle, quantityKg));
     return candidates[0] || null;
@@ -279,6 +287,8 @@
       vehicleType: chosen.vehicleType,
       vehicleCapacityKg: chosen.capacityKg,
       tripCount: tripSegments.length,
+      dispatchModel: chosen.dispatchModel,
+      vehicleSlots: chosen.vehicleSlots,
       tripSegments,
       routeMinutes: routeDuration,
       roundTripMinutes: chosen.duration,
@@ -287,8 +297,8 @@
       status: STATUS.PLANNED,
     });
     applyAggregateTiming(delivery);
-    if (quantityKg + 0.001 < requestedQuantityKg) return statusMessage(delivery, chosen.trips > 1 ? `Teillieferung wegen Exporteur-Lagerbestand geplant: ${Math.round(quantityKg)} von ${Math.round(requestedQuantityKg)} kg in ${chosen.trips} Fahrten.` : `Teillieferung wegen Exporteur-Lagerbestand geplant: ${Math.round(quantityKg)} von ${Math.round(requestedQuantityKg)} kg.`);
-    return statusMessage(delivery, chosen.trips > 1 ? `In ${chosen.trips} Fahrten geplant.` : 'Lieferung geplant.');
+    if (quantityKg + 0.001 < requestedQuantityKg) return statusMessage(delivery, chosen.trips > 1 ? `Teillieferung wegen Exporteur-Lagerbestand geplant: ${Math.round(quantityKg)} von ${Math.round(requestedQuantityKg)} kg in ${chosen.trips} Pendelfahrten mit 1 Fahrzeug.` : `Teillieferung wegen Exporteur-Lagerbestand geplant: ${Math.round(quantityKg)} von ${Math.round(requestedQuantityKg)} kg.`);
+    return statusMessage(delivery, chosen.trips > 1 ? `${chosen.trips} Pendelfahrten mit 1 Fahrzeug geplant.` : 'Lieferung geplant.');
   }
 
 
@@ -398,6 +408,8 @@
         vehicleType: chosen.vehicleType,
         vehicleCapacityKg: chosen.capacityKg,
         tripCount: chosen.trips,
+        dispatchModel: chosen.dispatchModel,
+        vehicleSlots: chosen.vehicleSlots,
         routeMinutes: Math.max(1, Math.ceil(chosen.duration / 2)),
         roundTripMinutes: chosen.duration,
         distanceKm: chosen.path.distance,
@@ -410,7 +422,7 @@
       delete delivery.openQuantityBumpedKg;
       clearUnresolvedForDelivery(delivery);
       if (typeof options?.onRedispatched === 'function') options.onRedispatched(delivery);
-      statusMessage(delivery, quantityKg + 0.001 < requestedQuantityKg ? `Redispatch als Teillieferung geplant: ${Math.round(quantityKg)} von ${Math.round(requestedQuantityKg)} kg.` : 'Redispatch geplant.');
+      statusMessage(delivery, quantityKg + 0.001 < requestedQuantityKg ? `Redispatch als Teillieferung geplant: ${Math.round(quantityKg)} von ${Math.round(requestedQuantityKg)} kg${chosen.trips > 1 ? ` in ${chosen.trips} Pendelfahrten mit 1 Fahrzeug` : ''}.` : (chosen.trips > 1 ? `Redispatch geplant: ${chosen.trips} Pendelfahrten mit 1 Fahrzeug.` : 'Redispatch geplant.'));
       redispatched += 1;
     }
     return redispatched;
@@ -436,7 +448,7 @@
         created += 1;
       }
     }
-    getState().weekPlan = (state.deliveries || []).filter(delivery => delivery.status === STATUS.PLANNED && normalizeInteger(delivery.scheduledDay ?? delivery.deliveryDay, 0) >= fromDay && normalizeInteger(delivery.scheduledDay ?? delivery.deliveryDay, 0) <= toDay).map(delivery => ({id: delivery.id, orderId: delivery.orderId, sourceCityId: delivery.sourceCityId, destinationCityId: delivery.destinationCityId, goodId: delivery.goodId, quantityKg: delivery.quantityKg, day: delivery.scheduledDay ?? delivery.deliveryDay, minute: delivery.scheduledMinute ?? delivery.deliveryMinute, vehicleType: delivery.vehicleType, tripCount: delivery.tripCount || 1, tripSegments: delivery.tripSegments, status: delivery.status}));
+    getState().weekPlan = (state.deliveries || []).filter(delivery => delivery.status === STATUS.PLANNED && normalizeInteger(delivery.scheduledDay ?? delivery.deliveryDay, 0) >= fromDay && normalizeInteger(delivery.scheduledDay ?? delivery.deliveryDay, 0) <= toDay).map(delivery => ({id: delivery.id, orderId: delivery.orderId, sourceCityId: delivery.sourceCityId, destinationCityId: delivery.destinationCityId, goodId: delivery.goodId, quantityKg: delivery.quantityKg, day: delivery.scheduledDay ?? delivery.deliveryDay, minute: delivery.scheduledMinute ?? delivery.deliveryMinute, vehicleType: delivery.vehicleType, tripCount: delivery.tripCount || 1, dispatchModel: delivery.dispatchModel, vehicleSlots: delivery.vehicleSlots, tripSegments: delivery.tripSegments, status: delivery.status}));
     if (created || redispatched) dispatch(created ? 'transport-scheduled' : 'transport-redispatched');
     return created + redispatched;
   }
@@ -444,11 +456,42 @@
   function setDeliveryTiming(delivery, departureAbs) {
     const routeDuration = Math.max(1, normalizeInteger(delivery.routeMinutes, Math.ceil(normalizeInteger(delivery.roundTripMinutes, 2, 1) / 2), 1));
     const roundTripDuration = Math.max(routeDuration, normalizeInteger(delivery.roundTripMinutes, routeDuration * 2, routeDuration));
+    const segments = Array.isArray(delivery.tripSegments) ? delivery.tripSegments : [];
+    if (segments.length) {
+      segments.forEach((segment, index) => {
+        const segmentDepartureAbs = departureAbs + (index * roundTripDuration);
+        const segmentDeparture = minuteToDayMinute(segmentDepartureAbs);
+        const segmentArrival = minuteToDayMinute(segmentDepartureAbs + routeDuration);
+        const segmentVehicleFree = minuteToDayMinute(segmentDepartureAbs + roundTripDuration);
+        Object.assign(segment, {
+          tripIndex: index + 1,
+          tripCount: segments.length,
+          departureAbsMinute: segmentDepartureAbs,
+          departureDay: segmentDeparture.day,
+          departureMinute: segmentDeparture.minute,
+          arrivalDay: segmentArrival.day,
+          arrivalMinute: segmentArrival.minute,
+          vehicleFreeDay: segmentVehicleFree.day,
+          vehicleFreeMinute: segmentVehicleFree.minute,
+          vehicleFreeAtMinute: segmentDepartureAbs + roundTripDuration,
+        });
+      });
+      Object.assign(delivery, {
+        routeMinutes: routeDuration,
+        roundTripMinutes: roundTripDuration,
+        dispatchModel: delivery.dispatchModel || DISPATCH_MODEL.SEQUENTIAL_SHUTTLE,
+        vehicleSlots: Math.max(1, normalizeInteger(delivery.vehicleSlots, 1, 1)),
+      });
+      applyAggregateTiming(delivery);
+      return;
+    }
     const arrival = minuteToDayMinute(departureAbs + routeDuration);
     const vehicleFree = minuteToDayMinute(departureAbs + roundTripDuration);
     Object.assign(delivery, {
       routeMinutes: routeDuration,
       roundTripMinutes: roundTripDuration,
+      dispatchModel: delivery.dispatchModel || DISPATCH_MODEL.SEQUENTIAL_SHUTTLE,
+      vehicleSlots: Math.max(1, normalizeInteger(delivery.vehicleSlots, 1, 1)),
       departureDay: Math.floor(departureAbs / 1440) + 1,
       departureMinute: departureAbs % 1440,
       arrivalDay: arrival.day,
