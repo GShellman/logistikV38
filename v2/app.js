@@ -158,11 +158,11 @@
     return factoryRecipeOptions(factory).reduce((sum, recipe) => sum + Object.values(recipe.outputs || {}).reduce((recipeSum, kg) => recipeSum + Math.max(0, Number(kg) || 0), 0), 0);
   }
 
-  function factoryOutputsText(factory) {
+  function factoryOutputsText(factory, outputMultiplier = 1) {
     const totals = {};
     for (const recipe of factoryRecipeOptions(factory)) {
       for (const [goodId, kg] of Object.entries(recipe.outputs || {})) {
-        totals[goodId] = (Number(totals[goodId]) || 0) + Math.max(0, Number(kg) || 0);
+        totals[goodId] = (Number(totals[goodId]) || 0) + Math.max(0, Number(kg) || 0) * Math.max(1, Number(outputMultiplier) || 1);
       }
     }
     const entries = Object.entries(totals).filter(([, kg]) => kg > 0);
@@ -205,16 +205,17 @@
   }
 
   function factoryProductionMarkup(city) {
-    const builtFactories = window.HFV2Factories?.getCityFactories?.(city.id) || [];
+    const builtFactories = window.HFV2Factories?.getCityFactoryInstances?.(city.id) || (window.HFV2Factories?.getCityFactories?.(city.id) || []).map((factoryId, index) => ({id: factoryId, index}));
     if (!builtFactories.length) return '<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div></div><p class="hf-v2-muted">Keine Fabriken gebaut.</p></section>' + productionDebugMarkup(city);
-    const rows = builtFactories.map(factoryId => {
-      const factory = factoryById(factoryId) || {id: factoryId, name: factoryId, icon: '🏭'};
-      const capacityKg = factoryDailyCapacityKg(factory);
-      const estimate = window.HFV2Goods?.estimateCityFactoryProduction?.(city.id, factory.id);
+    const rows = builtFactories.map(factoryInstance => {
+      const factory = factoryById(factoryInstance.id) || {id: factoryInstance.id, name: factoryInstance.id, icon: '🏭'};
+      const estimate = window.HFV2Goods?.estimateCityFactoryProduction?.(city.id, factoryInstance);
+      const capacityKg = Math.max(0, Number(estimate?.upgradeAdjustedCapacityKg) || factoryDailyCapacityKg(factory));
+      const outputMultiplier = Math.max(1, Number(estimate?.outputMultiplier) || 1);
       const actualKg = Math.max(0, Number(estimate?.madeKg) || 0);
       const fill = capacityKg > 0 ? Math.min(100, actualKg / capacityKg * 100) : 0;
       const status = estimate?.reason === 'demand-limited' ? 'Nachfrage gedeckt' : estimate?.reason === 'capacity-limited' ? 'Lager voll' : estimate?.reason === 'input-limited' ? 'Inputs fehlen' : estimate?.reason === 'no-output' ? 'Kein Output' : 'Potenzial heute';
-      return `<article class="hf-v2-factory-production-item"><div class="hf-v2-factory-production-head"><span>${escapeHtml(factory.icon || '🏭')}</span><div><b>${escapeHtml(factory.name || factory.id)}</b><small>${factoryOutputsText(factory)}</small></div></div><div class="hf-v2-factory-production-bar"><span><i style="width:${fill}%"></i></span><small>${formatDailyKg(actualKg)} von ${formatDailyKg(capacityKg)} · ${status}</small></div></article>`;
+      return `<article class="hf-v2-factory-production-item"><div class="hf-v2-factory-production-head"><span>${escapeHtml(factory.icon || '🏭')}</span><div><b>${escapeHtml(factory.name || factory.id)}</b><small>${factoryOutputsText(factory, outputMultiplier)}</small></div></div><div class="hf-v2-factory-production-bar"><span><i style="width:${fill}%"></i></span><small>${formatDailyKg(actualKg)} von ${formatDailyKg(capacityKg)} · ${status}</small></div></article>`;
     }).join('');
     return `<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div><strong>${builtFactories.length.toLocaleString('de-CH')}</strong></div>${rows}</section>${productionDebugMarkup(city)}`;
   }
