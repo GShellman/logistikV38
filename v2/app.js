@@ -12,7 +12,6 @@
   let liveTimer = null;
   let citiesById = {};
   const markerById = new Map();
-  let shipmentLayer = null;
 
   function normaliseCity(raw) {
     const coordinates = raw.coordinates || {};
@@ -381,9 +380,11 @@
     window.HFV2IsCityUnlocked = isCityUnlocked;
     renderMarkers(cities);
     window.HFNetwork?.initNetworkLayer?.(map);
+    window.HFV2LogisticsLayer?.initLogisticsLayer?.(map);
     if (networkState) {
       window.HFNetwork?.renderNetworkLines?.(networkState.connections, citiesById);
     }
+    renderActiveShipments();
     map.fitBounds(bounds, {padding: [16, 16], animate: false});
     return true;
   }
@@ -394,29 +395,8 @@
   }
 
   function renderActiveShipments() {
-    if (!map || !window.L) return;
-    if (!shipmentLayer) shipmentLayer = L.layerGroup().addTo(map);
-    shipmentLayer.clearLayers();
     const shipments = window.HFV2Logistics?.getState?.().shipments || [];
-    const activeShipments = shipments.filter(shipment => shipment?.status === 'active');
-    for (const shipment of activeShipments) {
-      const fromCity = citiesById[shipment.fromCityId];
-      const toCity = citiesById[shipment.toCityId];
-      if (!fromCity || !toCity) continue;
-      const good = goodById(shipment.goodId);
-      const line = L.polyline([[fromCity.lat, fromCity.lng], [toCity.lat, toCity.lng]], {
-        color: '#f59e0b',
-        weight: 3,
-        opacity: 0.85,
-        dashArray: '6 8',
-        interactive: true,
-      }).addTo(shipmentLayer);
-      line.bindTooltip(`${escapeHtml(good.name)} · ${formatGoodAmount(shipment.goodId, shipment.amountKg)} unterwegs`, {
-        direction: 'top',
-        sticky: true,
-        className: 'city-label',
-      });
-    }
+    window.HFV2LogisticsLayer?.renderActiveShipments?.(shipments, citiesById);
   }
 
   function refreshNetworkView() {
@@ -527,6 +507,7 @@
       stopLiveTime(`Live pausiert: ${window.HFV2Time?.formatClock?.() || ''}.`);
       return;
     }
+    liveTick();
     liveTimer = window.setInterval(liveTick, 1000);
     renderLiveButton();
     setTimeStatus('Live läuft: 1 Spielminute pro Sekunde.');

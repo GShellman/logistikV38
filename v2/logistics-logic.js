@@ -3,6 +3,7 @@
 
   const FREQUENCIES = new Set(['daily', 'weekly']);
   const DEFAULT_VEHICLE_TYPE = 'van';
+
   const MINUTES_PER_DAY = 1440;
 
   let state = null;
@@ -150,6 +151,35 @@
     return path;
   }
 
+  function coordinatesEqual(a, b) {
+    return Array.isArray(a) && Array.isArray(b) && Math.abs(Number(a[0]) - Number(b[0])) < 0.000001 && Math.abs(Number(a[1]) - Number(b[1])) < 0.000001;
+  }
+
+  function edgeRouteGeometry(edge, fromNodeId, toNodeId) {
+    const from = citiesById[fromNodeId] || window.HFV2CitiesById?.[fromNodeId] || window.HFNetwork?.nodeInfo?.(fromNodeId);
+    const to = citiesById[toNodeId] || window.HFV2CitiesById?.[toNodeId] || window.HFNetwork?.nodeInfo?.(toNodeId);
+    const fallback = [[Number(from?.lat), Number(from?.lng)], [Number(to?.lat), Number(to?.lng)]].filter(point => Number.isFinite(point[0]) && Number.isFinite(point[1]));
+    const geometry = Array.isArray(edge?.geometry) && edge.geometry.length > 1 ? edge.geometry : fallback;
+    if (edge?.a === fromNodeId && edge?.b === toNodeId) return geometry;
+    if (edge?.b === fromNodeId && edge?.a === toNodeId) return [...geometry].reverse();
+    return geometry;
+  }
+
+  function pathRouteGeometry(path) {
+    const nodes = Array.isArray(path?.nodes) ? path.nodes : [];
+    const edges = Array.isArray(path?.edges) ? path.edges : [];
+    const coords = [];
+    for (let index = 0; index < edges.length; index += 1) {
+      for (const point of edgeRouteGeometry(edges[index], nodes[index], nodes[index + 1])) {
+        if (!Array.isArray(point) || point.length < 2) continue;
+        const normalized = [Number(point[0]), Number(point[1])];
+        if (!Number.isFinite(normalized[0]) || !Number.isFinite(normalized[1])) continue;
+        if (!coords.length || !coordinatesEqual(coords[coords.length - 1], normalized)) coords.push(normalized);
+      }
+    }
+    return coords;
+  }
+
   function assertFleetVehicle(cityId, vehicleType) {
     if (!vehicleType) return;
     const fleet = window.HFFleet?.getCityFleet?.(cityId) || {};
@@ -231,7 +261,7 @@
         continue;
       }
       for (const loadKg of dispatchLoads) {
-        const shipment = {id: state.nextShipmentId++, orderId: order.id, fromCityId: order.fromCityId, toCityId: order.toCityId, goodId: order.goodId, vehicleType, amountKg: loadKg, departureAbsMinute: nowAbsMinute, arrivalAbsMinute, status: 'active', reservationId: reservation?.reservationId || null};
+        const shipment = {id: state.nextShipmentId++, orderId: order.id, fromCityId: order.fromCityId, toCityId: order.toCityId, goodId: order.goodId, vehicleType, amountKg: loadKg, departureAbsMinute: nowAbsMinute, arrivalAbsMinute, status: 'active', routeGeometry: pathRouteGeometry(path), reservationId: reservation?.reservationId || null};
         state.shipments.push(shipment);
         created.push(shipment);
       }
