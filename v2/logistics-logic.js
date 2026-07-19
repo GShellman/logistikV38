@@ -90,12 +90,24 @@
     const returnDepartureAbsMinute = Number.isFinite(Number(shipment.returnDepartureAbsMinute)) ? Number(shipment.returnDepartureAbsMinute) : null;
     const returnArrivalAbsMinute = Number.isFinite(Number(shipment.returnArrivalAbsMinute)) ? Number(shipment.returnArrivalAbsMinute) : null;
     const returnGeometry = Array.isArray(shipment.returnGeometry) ? shipment.returnGeometry : [...geometry].reverse();
-    const stops = Array.isArray(shipment.stops) ? shipment.stops.map(stop => ({
-      toCityId: normalizeId(stop?.toCityId),
-      goodId: normalizeId(stop?.goodId),
-      amountKg: Math.max(0, Number(stop?.amountKg) || 0),
-      orderId: positiveInteger(stop?.orderId, null),
-    })).filter(stop => stop.toCityId && stop.goodId && stop.amountKg > 0 && stop.orderId) : null;
+    const stops = Array.isArray(shipment.stops) ? shipment.stops.map(stop => {
+      const amountKg = Math.max(0, Number(stop?.amountKg) || 0);
+      const deliveredKg = Math.max(0, Math.min(amountKg, Number(stop?.deliveredKg) || 0));
+      const undeliveredKg = Number.isFinite(Number(stop?.undeliveredKg)) ? Math.max(0, Number(stop.undeliveredKg)) : Math.max(0, amountKg - deliveredKg);
+      const status = ['pending', 'delivered', 'failed', 'partial'].includes(stop?.status) ? stop.status : (deliveredKg > 0 ? (deliveredKg >= amountKg ? 'delivered' : 'partial') : 'pending');
+      const stopArrivalAbsMinute = Number(stop?.arrivalAbsMinute);
+      return {
+        ...stop,
+        toCityId: normalizeId(stop?.toCityId),
+        goodId: normalizeId(stop?.goodId),
+        amountKg,
+        orderId: positiveInteger(stop?.orderId, null),
+        arrivalAbsMinute: Number.isFinite(stopArrivalAbsMinute) ? stopArrivalAbsMinute : null,
+        status,
+        deliveredKg,
+        undeliveredKg,
+      };
+    }).filter(stop => stop.toCityId && stop.goodId && stop.amountKg > 0 && stop.orderId) : null;
     return {...shipment, id, orderId, fromCityId, toCityId, goodId, amountKg, vehicleCount, pathNodeIds, pathEdgeIds, geometry, routeGeometry: geometry, returnGeometry, departureAbsMinute, arrivalAbsMinute, returnDepartureAbsMinute, returnArrivalAbsMinute, status, createdAtAbsMinute, ...(stops ? {stops} : {})};
   }
 
@@ -419,6 +431,7 @@
 
     let currentCityId = startCityId;
     const orderedStops = [];
+    let cursorAbsMinute = Number.isFinite(departureAbsMinute) ? departureAbsMinute : null;
     while (pendingStops.length) {
       let bestIndex = -1;
       let bestPath = null;
@@ -436,9 +449,17 @@
       if (bestIndex < 0 || !bestPath) return null;
       const [stop] = pendingStops.splice(bestIndex, 1);
       const durationMinutes = shipmentDurationMinutes(bestPath, vehicleType);
-      routeDetails.segments.push({fromCityId: currentCityId, toCityId: stop.toCityId, stop, path: bestPath, distance: bestDistance, durationMinutes});
+      if (Number.isFinite(cursorAbsMinute)) cursorAbsMinute += durationMinutes;
+      const routeStop = {
+        ...stop,
+        arrivalAbsMinute: Number.isFinite(cursorAbsMinute) ? cursorAbsMinute : null,
+        status: ['pending', 'delivered', 'failed', 'partial'].includes(stop.status) ? stop.status : 'pending',
+        deliveredKg: Math.max(0, Math.min(Math.max(0, Number(stop.amountKg) || 0), Number(stop.deliveredKg) || 0)),
+        undeliveredKg: Number.isFinite(Number(stop.undeliveredKg)) ? Math.max(0, Number(stop.undeliveredKg)) : Math.max(0, Math.max(0, Number(stop.amountKg) || 0) - (Number(stop.deliveredKg) || 0)),
+      };
+      routeDetails.segments.push({fromCityId: currentCityId, toCityId: stop.toCityId, stop: routeStop, path: bestPath, distance: bestDistance, durationMinutes});
       appendPathDetails(routeDetails, bestPath);
-      orderedStops.push(stop);
+      orderedStops.push(routeStop);
       currentCityId = stop.toCityId;
     }
 
@@ -684,27 +705,64 @@
     shipment.status = 'returning';
   }
 
+  function markStopDelivered(stop, nowAbsMinute) {
+    const amountKg = Math.max(0, Number(stop.amountKg) || 0);
+    const result = window.HFV2Goods?.addToInventory?.(stop.toCityId, stop.goodId, amountKg);
+    const deliveredKg = Math.max(0, Math.min(amountKg, Number(result?.addedKg) || 0));
+    stop.deliveredKg = Math.round(deliveredKg * 1000) / 1000;
+    stop.undeliveredKg = Math.max(0, Math.round((amountKg - stop.deliveredKg) * 1000) / 1000);
+    stop.deliveredAbsMinute = nowAbsMinute;
+    stop.status = stop.deliveredKg >= amountKg ? 'delivered' : (stop.deliveredKg > 0 ? 'partial' : 'failed');
+    return stop.deliveredKg;
+  }
+
+  function refreshShipmentDeliveryTotals(shipment) {
+    const stops = Array.isArray(shipment.stops) && shipment.stops.length ? shipment.stops : [];
+    const deliveredKg = stops.reduce((total, stop) => total + Math.max(0, Number(stop.deliveredKg) || 0), 0);
+    shipment.deliveredKg = Math.round(deliveredKg * 1000) / 1000;
+    shipment.undeliveredKg = Math.max(0, Math.round((Number(shipment.amountKg) - shipment.deliveredKg) * 1000) / 1000);
+  }
+
   function advanceShipments() {
     configure();
     const nowAbsMinute = absoluteMinute(currentTime());
     const completed = [];
     for (const shipment of state.shipments) {
-      if (shipment.status === 'active' && shipment.arrivalAbsMinute <= nowAbsMinute) {
-        const stops = Array.isArray(shipment.stops) && shipment.stops.length ? shipment.stops : [{toCityId: shipment.toCityId, goodId: shipment.goodId, amountKg: shipment.amountKg, orderId: shipment.orderId}];
-        let deliveredKg = 0;
-        for (const stop of stops) {
-          const result = window.HFV2Goods?.addToInventory?.(stop.toCityId, stop.goodId, stop.amountKg);
-          const stopDeliveredKg = Math.max(0, Number(result?.addedKg) || 0);
-          stop.deliveredKg = stopDeliveredKg;
-          stop.undeliveredKg = Math.max(0, Number(stop.amountKg) - stopDeliveredKg);
-          deliveredKg += stopDeliveredKg;
+      if (shipment.status === 'active') {
+        if (Array.isArray(shipment.stops) && shipment.stops.length) {
+          let processedStop = false;
+          for (const stop of shipment.stops) {
+            const stopStatus = ['delivered', 'failed', 'partial'].includes(stop.status) ? stop.status : 'pending';
+            const arrivalAbsMinute = Number.isFinite(Number(stop.arrivalAbsMinute)) ? Number(stop.arrivalAbsMinute) : Number(shipment.arrivalAbsMinute);
+            if (stopStatus === 'pending' && Number.isFinite(arrivalAbsMinute) && arrivalAbsMinute <= nowAbsMinute) {
+              markStopDelivered(stop, nowAbsMinute);
+              processedStop = true;
+            }
+          }
+          if (processedStop) refreshShipmentDeliveryTotals(shipment);
+          const finalStop = shipment.stops[shipment.stops.length - 1];
+          const finalArrivalAbsMinute = Number.isFinite(Number(finalStop?.arrivalAbsMinute)) ? Number(finalStop.arrivalAbsMinute) : Number(shipment.arrivalAbsMinute);
+          const allStopsProcessed = shipment.stops.every(stop => ['delivered', 'failed', 'partial'].includes(stop.status));
+          if (allStopsProcessed && Number.isFinite(finalArrivalAbsMinute) && finalArrivalAbsMinute <= nowAbsMinute) {
+            shipment.deliveredAbsMinute = nowAbsMinute;
+            beginReturnTrip(shipment, nowAbsMinute);
+            completed.push(shipment);
+          } else if (processedStop) {
+            completed.push(shipment);
+          }
+          continue;
         }
-        shipment.deliveredKg = Math.round(deliveredKg * 1000) / 1000;
-        shipment.undeliveredKg = Math.max(0, Math.round((shipment.amountKg - shipment.deliveredKg) * 1000) / 1000);
-        shipment.deliveredAbsMinute = nowAbsMinute;
-        beginReturnTrip(shipment, nowAbsMinute);
-        completed.push(shipment);
-        continue;
+
+        if (shipment.arrivalAbsMinute <= nowAbsMinute) {
+          const stop = {toCityId: shipment.toCityId, goodId: shipment.goodId, amountKg: shipment.amountKg, orderId: shipment.orderId};
+          markStopDelivered(stop, nowAbsMinute);
+          shipment.deliveredKg = stop.deliveredKg;
+          shipment.undeliveredKg = stop.undeliveredKg;
+          shipment.deliveredAbsMinute = nowAbsMinute;
+          beginReturnTrip(shipment, nowAbsMinute);
+          completed.push(shipment);
+          continue;
+        }
       }
 
       const returnArrivalAbsMinute = Number(shipment.returnArrivalAbsMinute);
