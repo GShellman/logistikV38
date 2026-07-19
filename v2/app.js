@@ -313,13 +313,35 @@
     }[shipment?.status] || shipment?.status || 'Unterwegs';
   }
 
+  function shipmentStops(shipment) {
+    return Array.isArray(shipment?.stops) ? shipment.stops.filter(stop => stop?.toCityId && stop?.goodId && Number(stop.amountKg) > 0) : [];
+  }
+
+  function shipmentRouteLabel(shipment) {
+    const stops = shipmentStops(shipment);
+    const cityIds = [shipment.fromCityId, ...(stops.length ? stops.map(stop => stop.toCityId) : [shipment.toCityId])];
+    return cityIds.map(cityName).join(' → ');
+  }
+
+  function stopAmountsMarkup(stops, separator = '<br>') {
+    return stops.map(stop => {
+      const good = goodById(stop.goodId);
+      return `${escapeHtml(cityName(stop.toCityId))}: ${escapeHtml(good.name || stop.goodId)} · ${formatGoodAmount(stop.goodId, stop.amountKg)}`;
+    }).join(separator);
+  }
+
   function shipmentCardMarkup(shipment) {
+    const stops = shipmentStops(shipment);
+    const isBundled = stops.length > 0;
     const good = goodById(shipment.goodId);
     const progress = shipmentProgressPercent(shipment);
     const isReturnTrip = shipment.status === 'returning';
     const arrivalAbsMinute = isReturnTrip ? shipment.returnArrivalAbsMinute : shipment.arrivalAbsMinute;
     const arrivalLabel = isReturnTrip ? 'Rückkehr' : 'Ankunft';
-    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row"><b>${escapeHtml(good.name || shipment.goodId)}</b><span><small>Menge</small>${formatGoodAmount(shipment.goodId, shipment.amountKg)} · ${formatWeightKg(shipment.amountKg)}</span><span><small>Fahrzeuge</small>${(Number(shipment.vehicleCount) || 0).toLocaleString('de-CH')} × ${escapeHtml(vehicleLabel(shipment.vehicleType))}</span><span><small>Fortschritt</small>${progress.toLocaleString('de-CH', {maximumFractionDigits: 0})}%</span><span><small>${arrivalLabel}</small>${formatAbsMinute(arrivalAbsMinute)}</span><span><small>Status</small>${escapeHtml(shipmentStatusLabel(shipment))}</span></article>`;
+    const title = isBundled ? 'Sammellieferung' : escapeHtml(good.name || shipment.goodId);
+    const amountMarkup = isBundled ? stopAmountsMarkup(stops) : `${formatGoodAmount(shipment.goodId, shipment.amountKg)} · ${formatWeightKg(shipment.amountKg)}`;
+    const routeMarkup = isBundled ? `<span><small>Route</small>${escapeHtml(shipmentRouteLabel(shipment))}</span>` : '';
+    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row"><b>${title}</b>${routeMarkup}<span><small>${isBundled ? 'Stopps' : 'Menge'}</small>${amountMarkup}</span><span><small>Fahrzeuge</small>${(Number(shipment.vehicleCount) || 0).toLocaleString('de-CH')} × ${escapeHtml(vehicleLabel(shipment.vehicleType))}</span><span><small>Fortschritt</small>${progress.toLocaleString('de-CH', {maximumFractionDigits: 0})}%</span><span><small>${arrivalLabel}</small>${formatAbsMinute(arrivalAbsMinute)}</span><span><small>Status</small>${escapeHtml(shipmentStatusLabel(shipment))}</span></article>`;
   }
 
 
@@ -382,6 +404,7 @@
           returnDepartureAbsMinute: Number(shipment.returnDepartureAbsMinute),
           returnArrivalAbsMinute: Number(shipment.returnArrivalAbsMinute),
           status: shipmentStatusLabel(shipment),
+          stops: shipmentStops(shipment),
         };
       })
       .filter(row => Number.isFinite(row.sortAbsMinute));
@@ -425,11 +448,16 @@
     }
 
     return `<div class="hf-v2-transport-calendar">${Array.from(groups.entries()).map(([dayKey, dayRows]) => `<section class="hf-v2-transport-calendar__day"><h4 class="hf-v2-transport-calendar__day-title">${escapeHtml(dayKey)}</h4>${dayRows.map(row => {
+      const stops = Array.isArray(row.stops) ? row.stops : [];
+      const isBundled = stops.length > 0;
       const good = goodById(row.goodId);
       const eventClass = `hf-v2-transport-calendar__event hf-v2-transport-calendar__event--${row.kind}`;
       const arrivalLabel = row.status === 'Rückfahrt' && Number.isFinite(Number(row.returnArrivalAbsMinute)) ? `Rückkehr ${shipmentCalendarTimeLabel(row.returnArrivalAbsMinute)}` : (Number.isFinite(Number(row.arrivalAbsMinute)) ? shipmentCalendarTimeLabel(row.arrivalAbsMinute) : 'wartet');
       const vehicleText = row.vehicleCount ? `${Number(row.vehicleCount).toLocaleString('de-CH')} × ${vehicleLabel(row.vehicleType)}` : vehicleLabel(row.vehicleType);
-      return `<article class="hf-v2-transport-calendar__slot"><time class="hf-v2-transport-calendar__time" datetime="${escapeHtml(String(row.sortAbsMinute))}"><strong>${escapeHtml(shipmentCalendarTimeLabel(row.departureAbsMinute))}</strong><span>bis ${escapeHtml(arrivalLabel)}</span></time><div class="${eventClass}"><div><b>${escapeHtml(cityName(row.fromCityId))} → ${escapeHtml(cityName(row.toCityId))}</b><span>${escapeHtml(good.name || row.goodId)}</span></div><dl><div><dt>Ware</dt><dd>${escapeHtml(good.name || row.goodId)}</dd></div><div><dt>Menge</dt><dd>${formatGoodAmount(row.goodId, row.amountKg)} · ${formatWeightKg(row.amountKg)}</dd></div><div><dt>Fahrzeuge</dt><dd>${escapeHtml(vehicleText)}</dd></div><div><dt>Status</dt><dd>${escapeHtml(row.status)}</dd></div></dl></div></article>`;
+      const routeText = isBundled ? [row.fromCityId, ...stops.map(stop => stop.toCityId)].map(cityName).join(' → ') : `${cityName(row.fromCityId)} → ${cityName(row.toCityId)}`;
+      const summaryText = isBundled ? 'Sammellieferung' : escapeHtml(good.name || row.goodId);
+      const amountText = isBundled ? stopAmountsMarkup(stops, '<br>') : `${formatGoodAmount(row.goodId, row.amountKg)} · ${formatWeightKg(row.amountKg)}`;
+      return `<article class="hf-v2-transport-calendar__slot"><time class="hf-v2-transport-calendar__time" datetime="${escapeHtml(String(row.sortAbsMinute))}"><strong>${escapeHtml(shipmentCalendarTimeLabel(row.departureAbsMinute))}</strong><span>bis ${escapeHtml(arrivalLabel)}</span></time><div class="${eventClass}"><div><b>${escapeHtml(routeText)}</b><span>${summaryText}</span>${isBundled ? `<small>${amountText}</small>` : ''}</div><dl><div><dt>Ware</dt><dd>${summaryText}</dd></div><div><dt>${isBundled ? 'Stop-Mengen' : 'Menge'}</dt><dd>${amountText}</dd></div><div><dt>Fahrzeuge</dt><dd>${escapeHtml(vehicleText)}</dd></div><div><dt>Status</dt><dd>${escapeHtml(row.status)}</dd></div></dl></div></article>`;
     }).join('')}</section>`).join('')}</div>`;
   }
 

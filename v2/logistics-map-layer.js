@@ -199,15 +199,30 @@
     marker._hfV2DirectionRight = direction;
   }
 
+  function shipmentStops(shipment) {
+    return Array.isArray(shipment?.stops) ? shipment.stops.filter(stop => stop?.toCityId && stop?.goodId && Number(stop.amountKg) > 0) : [];
+  }
+
+  function stopCityName(stop) {
+    return citiesById?.[stop.toCityId]?.name || stop.toCityName || stop.toCityId;
+  }
+
   function shipmentTooltip(shipment, fromCity, toCity) {
+    const stops = shipmentStops(shipment);
+    const isBundled = stops.length > 0;
     const good = goodById(shipment.goodId);
     const isReturnTrip = shipment.status === 'returning';
     const departureAbsMinute = isReturnTrip ? shipment.returnDepartureAbsMinute : shipment.departureAbsMinute;
     const arrivalAbsMinute = isReturnTrip ? shipment.returnArrivalAbsMinute : shipment.arrivalAbsMinute;
+    const stopList = isBundled ? `<ul class="hf-v2-shipment-tooltip__stops">${stops.map(stop => {
+      const stopGood = goodById(stop.goodId);
+      const arrival = Number.isFinite(Number(stop.arrivalAbsMinute)) ? ` · ${formatAbsMinute(stop.arrivalAbsMinute)}` : '';
+      return `<li><strong>${escapeHtml(stopCityName(stop))}</strong>: ${escapeHtml(stopGood.name || stop.goodId)} · ${escapeHtml(formatGoodAmount(stop.goodId, stop.amountKg))}${escapeHtml(arrival)}</li>`;
+    }).join('')}</ul>` : '';
     return [
       `<strong>${escapeHtml(fromCity?.name || shipment.fromCityId)} → ${escapeHtml(toCity?.name || shipment.toCityId)}</strong>`,
-      `Ware: ${escapeHtml(good.name || shipment.goodId)}`,
-      `Menge: ${escapeHtml(formatGoodAmount(shipment.goodId, shipment.amountKg))}`,
+      isBundled ? 'Transport: Sammellieferung' : `Ware: ${escapeHtml(good.name || shipment.goodId)}`,
+      isBundled ? `Stopps:${stopList}` : `Menge: ${escapeHtml(formatGoodAmount(shipment.goodId, shipment.amountKg))}`,
       `Abfahrt: ${escapeHtml(formatAbsMinute(departureAbsMinute))}`,
       `Ankunft: ${escapeHtml(formatAbsMinute(arrivalAbsMinute))}`,
       `Status: ${escapeHtml(isReturnTrip ? 'Rückfahrt' : shipment.status)}`,
