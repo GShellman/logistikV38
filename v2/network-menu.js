@@ -167,6 +167,32 @@
     window.HFV2Modal?.setModalBody?.(html);
   }
 
+  function showNetworkBody(originId, html) {
+    const origin = cityById(originId);
+    window.HFV2Modal?.openModal?.({
+      className: 'hf-v2-network-modal',
+      title: 'Netzwerkplanung',
+      subtitle: origin?.name || originId || '',
+      bodyHtml: html,
+    });
+    if (!window.HFV2Modal?.openModal) setBody(html);
+  }
+
+  function renderBuildSuccess(project, edge) {
+    const origin = cityById(project.a);
+    const target = cityById(project.b);
+    const typeLabel = DISPLAY_NAMES[project.type] || network()?.TRANSPORT_TYPES?.[project.type]?.name || project.type;
+    const builtDistance = edge?.distance || project.distance;
+    return `
+      <div class="hf-v2-network-menu">
+        <p class="hf-v2-network-eyebrow">Verbindung gebaut</p>
+        <h3>${escapeHtml(origin?.name || project.a)} → ${escapeHtml(target?.name || project.b)}</h3>
+        ${renderCashBadge()}
+        <p class="hf-v2-network-hint">${escapeHtml(typeLabel)} · ${formatKm(builtDistance)} · Baukosten ${formatMoney(project.cost)} · Unterhalt ${formatMoney(project.maintenance)}/Tag</p>
+      </div>
+      ${renderTargetPicker(project.a)}`;
+  }
+
   async function handleBuild(type, originId = activeOriginId, targetId = activeTargetId) {
     activeOriginId = originId;
     activeTargetId = targetId;
@@ -180,20 +206,22 @@
           ${renderCashBadge()}
           <p class="hf-v2-network-hint">Benötigt ${formatMoney(project.cost)}, verfügbar ${formatMoney(project.cash)}.</p>
           <button class="hf-v2-network-back" type="button" data-action="back-to-build-options">Weitere Option wählen</button>
+      </div>`);
+      return;
+    }
+    const edge = window.HF_V2?.confirmProject?.();
+    if (!edge) {
+      setBody(`
+        <div class="hf-v2-network-menu">
+          <p class="hf-v2-network-eyebrow">Projekt nicht gebaut</p>
+          <h3>Verbindung konnte nicht gebaut werden</h3>
+          ${renderCashBadge()}
+          <p class="hf-v2-network-hint">Bitte prüfe Budget und Zielstatus und wähle die Option erneut.</p>
+          <button class="hf-v2-network-back" type="button" data-action="back-to-build-options">Weitere Option wählen</button>
         </div>`);
       return;
     }
-    const origin = cityById(project.a);
-    const target = cityById(project.b);
-    setBody(`
-      <div class="hf-v2-network-menu">
-        <p class="hf-v2-network-eyebrow">Projekt geplant</p>
-        <h3>${escapeHtml(origin?.name || project.a)} → ${escapeHtml(target?.name || project.b)}</h3>
-        ${renderCashBadge()}
-        <p class="hf-v2-network-hint">${escapeHtml(DISPLAY_NAMES[project.type] || network()?.TRANSPORT_TYPES?.[project.type]?.name || project.type)} · ${formatKm(project.distance)} · Baukosten ${formatMoney(project.cost)} · Unterhalt ${formatMoney(project.maintenance)}/Tag</p>
-        <button class="hf-v2-network-back" type="button" data-action="confirm-project">Bauen</button>
-        <button class="hf-v2-network-back" type="button" data-action="back-to-build-options">Weitere Option wählen</button>
-      </div>`);
+    showNetworkBody(project.a, renderBuildSuccess(project, edge));
   }
 
   function bindNetworkMenuEvents() {
@@ -221,11 +249,6 @@
 
       if (action === 'show-target-picker') {
         setBody(renderTargetPicker(activeOriginId));
-        return;
-      }
-
-      if (action === 'confirm-project') {
-        window.HF_V2?.confirmProject?.();
         return;
       }
 
