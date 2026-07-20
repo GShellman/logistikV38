@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Helvetic Freight V2 Mobile</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link crossorigin="" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="mobile.css">
+</head>
+<body>
+  <main class="hf-v2-shell" aria-label="Helvetic Freight V2 Mobile">
+    <section class="hf-v2-map-card" aria-labelledby="hfV2Title">
+      <header class="hf-v2-header">
+        <div>
+          <p class="hf-v2-kicker">Helvetic Freight V2.0</p>
+          <h1 id="hfV2Title">Schweiz-Karte</h1>
+          <p class="hf-v2-subtitle">Alle Orte aus dem bestehenden Katalog, mit einfachem In-Memory-Kapital, ohne Browser-Speicherung.</p>
+        </div>
+        <span class="hf-v2-badge" id="hfV2CityCount">0 Orte</span>
+      </header>
+
+      <div class="hf-v2-map-wrap">
+        <div id="hfV2Map" class="hf-v2-map" role="application" aria-label="Echte Schweiz-Karte mit klickbaren Orten"></div>
+        <p id="hfV2MapError" class="hf-v2-map-error" hidden>Die Kartenbibliothek konnte nicht geladen werden. Bitte die V2 mit Internetverbindung öffnen.</p>
+      </div>
+    </section>
+
+    <aside class="hf-v2-panel" aria-live="polite">
+      <section class="hf-v2-panel-card hf-v2-time-card" aria-labelledby="hfV2TimeTitle">
+        <div class="hf-v2-time-card__head">
+          <div>
+            <p class="hf-v2-kicker">Zeitsteuerung</p>
+            <h2 id="hfV2TimeTitle">Uhr & Tempo</h2>
+          </div>
+          <b id="hfV2Clock" class="hf-v2-time-clock">Mo · Tag 1 · 08:00</b>
+        </div>
+        <div class="hf-v2-time-actions" aria-label="Zeitsteuerung-Aktionen">
+          <button id="hfV2LiveButton" class="hf-v2-save-button hf-v2-time-live-button" type="button" aria-pressed="false">▶ Live</button>
+          <button id="hfV2NextHourButton" class="hf-v2-save-button" type="button">+1 Std.</button>
+          <button id="hfV2NextDayButton" class="hf-v2-save-button hf-v2-save-button--ghost" type="button">Tag beenden</button>
+        </div>
+        <p id="hfV2TimeStatus" class="hf-v2-time-status" role="status" aria-live="polite">Bereit für die nächste Produktionsstunde.</p>
+      </section>
+
+      <section class="hf-v2-panel-card">
+        <p class="hf-v2-kicker">V2.1 Detailpanel</p>
+        <h2 id="hfV2SelectedName">Ort auswählen</h2>
+        <p id="hfV2SelectedIntro" class="hf-v2-muted">Klicke einen Marker auf der Karte an. Es werden Basisdaten angezeigt – mit einfachem V2-Kapital für Fahrzeugkäufe, aber noch ohne Wirtschaftssimulation, Waren und Speicherung.</p>
+        <dl class="hf-v2-facts" id="hfV2Facts"></dl>
+      </section>
+
+      <section class="hf-v2-panel-card hf-v2-storage-note">
+        <h2>Manueller Spielstand</h2>
+        <p>Diese V2 nutzt eine zentrale JSON-Save-Schicht ohne <code>localStorage</code>, <code>sessionStorage</code>, IndexedDB oder Cache APIs. Exportiere den Spielstand als Datei, damit er nicht an Browserdaten hängt.</p>
+        <div class="hf-v2-save-actions" aria-label="Spielstand-Aktionen">
+          <button id="hfV2SaveButton" class="hf-v2-save-button" type="button">Speichern</button>
+          <button id="hfV2ExportButton" class="hf-v2-save-button" type="button">Exportieren</button>
+          <button id="hfV2ImportButton" class="hf-v2-save-button hf-v2-save-button--ghost" type="button">Importieren</button>
+          <input id="hfV2ImportInput" type="file" accept="application/json,.json" hidden>
+        </div>
+        <p id="hfV2SaveStatus" class="hf-v2-save-status" role="status" aria-live="polite">Noch kein manueller Export in dieser Sitzung.</p>
+      </section>
+    </aside>
+  </main>
+
+  <div id="hfV2ModalBack" class="hf-v2-modal-back" hidden>
+    <section id="hfV2Modal" class="hf-v2-modal" role="dialog" aria-modal="true" aria-labelledby="hfV2ModalTitle" aria-describedby="hfV2ModalSubtitle">
+      <div class="hf-v2-modal-header">
+        <div>
+          <p id="hfV2ModalSubtitle" class="hf-v2-modal__subtitle" hidden></p>
+          <h2 id="hfV2ModalTitle" class="hf-v2-modal__title"></h2>
+        </div>
+        <button id="hfV2ModalClose" class="hf-v2-modal__close" type="button" aria-label="Modal schließen">×</button>
+      </div>
+      <div id="hfV2ModalBody" class="hf-v2-modal-scroll"></div>
+    </section>
+  </div>
+
+  <script src="../scripts/hf-city-catalog.js"></script>
+  <script src="city-catalog.js"></script>
+  <script src="../scripts/hf-goods-database.js"></script>
+  <script src="../scripts/hf-demand-database.js"></script>
+  <script src="../scripts/hf-game-mechanics.js"></script>
+  <script crossorigin="" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="goods-logic.js"></script>
+  <script src="save-logic.js"></script>
+  <script src="network-logic.js"></script>
+  <script src="network-map-layer.js"></script>
+  <script src="network-menu.js"></script>
+  <script src="vehicle-catalog.js"></script>
+  <script src="assets/vehicles/van.js"></script>
+  <script src="assets/vehicles/large_van.js"></script>
+  <script src="assets/vehicles/light_truck.js"></script>
+  <script src="assets/vehicles/heavy_truck.js"></script>
+  <script src="assets/vehicles/artic.js"></script>
+  <script src="assets/vehicles/reefer.js"></script>
+  <script src="assets/vehicles/tipper.js"></script>
+  <script src="assets/vehicles/freight_train.js"></script>
+  <script src="vehicle-assets.js"></script>
+  <script src="assets/facilities/farm.js"></script>
+  <script src="assets/facilities/pigfarm.js"></script>
+  <script src="assets/facilities/tomatofarm.js"></script>
+  <script src="assets/facilities/zucchinifarm.js"></script>
+  <script src="assets/facilities/potatofarm.js"></script>
+  <script src="assets/facilities/cornfarm.js"></script>
+  <script src="assets/facilities/peafarm.js"></script>
+  <script src="assets/facilities/appleorchard.js"></script>
+  <script src="assets/facilities/pearorchard.js"></script>
+  <script src="assets/facilities/cherryorchard.js"></script>
+  <script src="assets/facilities/forestry.js"></script>
+  <script src="assets/facilities/fishery.js"></script>
+  <script src="assets/facilities/mine.js"></script>
+  <script src="assets/facilities/aluminum_mine.js"></script>
+  <script src="assets/facilities/slaughterhouse.js"></script>
+  <script src="assets/facilities/cannery.js"></script>
+  <script src="assets/facilities/canfactory.js"></script>
+  <script src="assets/facilities/ravioli_meat_factory.js"></script>
+  <script src="assets/facilities/ravioli_veg_factory.js"></script>
+  <script src="assets/facilities/foodplant.js"></script>
+  <script src="assets/facilities/aluminumworks.js"></script>
+  <script src="assets/facilities/furniture.js"></script>
+  <script src="assets/facilities/toolworks.js"></script>
+  <script src="assets/facilities/textile.js"></script>
+  <script src="assets/facilities/chemical.js"></script>
+  <script src="assets/facilities/electronics.js"></script>
+  <script src="assets/facilities/pharma.js"></script>
+  <script src="factory-catalog.js"></script>
+  <script src="assets/goods/aluminum.js"></script>
+  <script src="assets/goods/apples.js"></script>
+  <script src="assets/goods/canned_corn.js"></script>
+  <script src="assets/goods/canned_peas.js"></script>
+  <script src="assets/goods/cans.js"></script>
+  <script src="assets/goods/chemicals.js"></script>
+  <script src="assets/goods/cherries.js"></script>
+  <script src="assets/goods/clothing.js"></script>
+  <script src="assets/goods/corn.js"></script>
+  <script src="assets/goods/electronics.js"></script>
+  <script src="assets/goods/fish.js"></script>
+  <script src="assets/goods/food.js"></script>
+  <script src="assets/goods/furniture.js"></script>
+  <script src="assets/goods/grain.js"></script>
+  <script src="assets/goods/medicine.js"></script>
+  <script src="assets/goods/ore.js"></script>
+  <script src="assets/goods/pears.js"></script>
+  <script src="assets/goods/peas.js"></script>
+  <script src="assets/goods/pigs.js"></script>
+  <script src="assets/goods/pork.js"></script>
+  <script src="assets/goods/potatoes.js"></script>
+  <script src="assets/goods/ravioli_meat.js"></script>
+  <script src="assets/goods/ravioli_veg.js"></script>
+  <script src="assets/goods/tomato_cans.js"></script>
+  <script src="assets/goods/tomatoes.js"></script>
+  <script src="assets/goods/tools.js"></script>
+  <script src="assets/goods/wood.js"></script>
+  <script src="assets/goods/zucchini.js"></script>
+  <script src="goods-assets.js"></script>
+  <script src="goods-catalog.js"></script>
+  <script src="factory-logic.js"></script>
+  <script src="factory-menu.js"></script>
+  <script src="fleet-logic.js"></script>
+  <script src="logistics-logic.js"></script>
+  <script src="logistics-map-layer.js"></script>
+  <script src="fleet-menu.js"></script>
+  <script src="city-action-assets.js"></script>
+  <script src="city-action-menu.js"></script>
+  <script src="modal.js"></script>
+  <script src="hf-v2-api.js"></script>
+  <script src="day-cycle-logic.js"></script>
+  <script src="time-logic.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
