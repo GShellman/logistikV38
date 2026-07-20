@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Helvetic Freight Maskable Icon</title>
+  <desc id="desc">A safe-zone friendly Swiss freight app icon.</desc>
+  <rect width="512" height="512" fill="#102f52"/>
+  <circle cx="256" cy="256" r="224" fill="#14375f"/>
+  <path d="M116 288 214 170l64 78 36-44 82 84" fill="none" stroke="#ffffff" stroke-width="30" stroke-linecap="round" stroke-linejoin="round" opacity=".92"/>
+  <path d="M124 336h216c24 0 44 20 44 44v14H124z" fill="#f2b84b"/>
+  <path d="M340 354h46l34 40h-80z" fill="#f2b84b"/>
+  <circle cx="196" cy="400" r="24" fill="#ffffff"/>
+  <circle cx="356" cy="400" r="24" fill="#ffffff"/>
+  <path d="M244 320v-48h-48v-36h48v-48h36v48h48v36h-48v48z" fill="#ffffff"/>
+</svg>

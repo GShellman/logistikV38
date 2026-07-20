@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Helvetic Freight Icon</title>
+  <desc id="desc">A stylized Swiss freight route with mountains and a delivery truck.</desc>
+  <rect width="512" height="512" rx="96" fill="#102f52"/>
+  <path d="M96 294 206 160l74 90 42-50 94 94" fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" opacity=".92"/>
+  <path d="M88 342h250c27 0 49 22 49 49v15H88z" fill="#f2b84b"/>
+  <path d="M338 362h54l38 44h-92z" fill="#f2b84b"/>
+  <circle cx="170" cy="414" r="28" fill="#ffffff"/>
+  <circle cx="362" cy="414" r="28" fill="#ffffff"/>
+  <path d="M250 330v-54h-54v-42h54v-54h42v54h54v42h-54v54z" fill="#ffffff"/>
+</svg>
