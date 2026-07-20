@@ -1,0 +1,137 @@
+/* Mobile-specific layout overrides for v2/mobile.html.
+   The gameplay logic remains in the shared V2 JavaScript files. */
+
+html,
+body {
+  min-height: 100%;
+  overflow: auto;
+}
+
+body {
+  background: linear-gradient(180deg, #f7f9fc 0%, var(--hf-bg) 52%, #d7e0ea 100%);
+}
+
+.hf-v2-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: auto;
+  min-height: 100dvh;
+  overflow: visible;
+  padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+}
+
+.hf-v2-map-card,
+.hf-v2-panel-card {
+  border-radius: 16px;
+}
+
+.hf-v2-header {
+  display: grid;
+  gap: 10px;
+  padding: 16px 14px 8px;
+}
+
+.hf-v2-kicker {
+  font-size: 10px;
+  letter-spacing: .1em;
+}
+
+h1 {
+  font-size: clamp(26px, 9vw, 38px);
+}
+
+h2 {
+  font-size: 21px;
+}
+
+.hf-v2-subtitle {
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+.hf-v2-badge {
+  justify-self: start;
+  padding: 8px 11px;
+}
+
+.hf-v2-map-wrap {
+  min-height: min(62dvh, 520px);
+  padding: 4px 8px 12px;
+}
+
+.hf-v2-map {
+  min-height: min(62dvh, 520px);
+}
+
+.hf-v2-panel {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
+}
+
+.hf-v2-panel-card {
+  padding: 16px;
+}
+
+.hf-v2-time-card__head,
+.hf-v2-demand-head {
+  gap: 10px;
+}
+
+.hf-v2-time-clock {
+  font-size: 14px;
+}
+
+.hf-v2-time-actions,
+.hf-v2-save-actions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr;
+}
+
+.hf-v2-save-button {
+  min-height: 44px;
+  width: 100%;
+}
+
+.hf-v2-facts {
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.hf-v2-network-grid,
+.hf-v2-fleet-grid,
+.hf-v2-factory-grid,
+.hf-v2-demand-compact-grid {
+  grid-template-columns: 1fr;
+  max-height: none;
+}
+
+.hf-v2-modal-back {
+  align-items: end;
+  padding: 10px;
+}
+
+.hf-v2-modal {
+  border-radius: 18px 18px 12px 12px;
+  max-height: calc(100dvh - 20px);
+}
+
+.hf-v2-modal-header {
+  padding: 18px 16px 12px;
+}
+
+.hf-v2-modal-scroll {
+  padding: 14px 16px 18px;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .hf-v2-map-wrap,
+  .hf-v2-map {
+    min-height: 420px;
+  }
+}
