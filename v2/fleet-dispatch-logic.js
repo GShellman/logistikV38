@@ -131,12 +131,13 @@
       const type = order.vehicleType || DEFAULT_VEHICLE_TYPE;
       const stockKey = `${order.fromCityId}|${order.goodId}`;
       if (!plannedStock.has(stockKey)) plannedStock.set(stockKey, Math.max(0, Number(window.HFV2Goods?.getCityInventory?.(order.fromCityId)?.[order.goodId]) || 0));
-      if (plannedStock.get(stockKey) < Number(order.amountKg)) {
+      const amountKg = Math.min(Math.max(0, Number(order.amountKg) || 0), plannedStock.get(stockKey));
+      if (amountKg <= 0) {
         unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: 'stock-limited'});
         continue;
       }
       const loadedPath = route(order.fromCityId, order.toCityId);
-      const count = Math.ceil(Number(order.amountKg) / capacityKg(type));
+      const count = Math.ceil(amountKg / capacityKg(type));
       if (!loadedPath?.reachable || !Number.isFinite(count) || count <= 0) {
         unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: loadedPath?.reachable ? 'capacity-invalid' : 'no-route'});
         continue;
@@ -193,10 +194,11 @@
       legs.push({
         id: `planned-shipment-${order.id}-${occurrence.day}`, type: 'shipment', status: 'planned', orderId: order.id,
         fromCityId: order.fromCityId, toCityId: order.toCityId, vehicleType: type, vehicleIds,
+        amountKg,
         departureAbsMinute: occurrence.departureAbsMinute, arrivalAbsMinute: loadedEnd,
         capacityReservationIds: [loadedReservation], priority: occurrence.priority,
       });
-      plannedStock.set(stockKey, plannedStock.get(stockKey) - Number(order.amountKg));
+      plannedStock.set(stockKey, Math.max(0, plannedStock.get(stockKey) - amountKg));
       for (const candidate of selected) timelines.set(candidate.vehicle.id, {cityId: order.toCityId, availableAbsMinute: loadedEnd});
     }
 
