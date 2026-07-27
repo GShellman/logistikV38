@@ -3,15 +3,12 @@ const {readFileSync} = require('node:fs');
 const test = require('node:test');
 const vm = require('node:vm');
 
-const source = readFileSync('v2/app.js', 'utf8');
+const source = readFileSync('v2/shipment-calendar.js', 'utf8');
 
 function calendarHelpers() {
-  const start = source.indexOf('  function shipmentCalendarPosition(');
-  const end = source.indexOf('  function shipmentCalendarRows(', start);
-  assert.ok(start >= 0 && end > start, 'Kalender-Hilfsfunktionen müssen separat testbar sein');
-  const context = {};
-  vm.runInNewContext(`${source.slice(start, end)}; result = {position: shipmentCalendarPosition, layout: shipmentCalendarLayout};`, context);
-  return context.result;
+  const window = {};
+  vm.runInNewContext(source, {window});
+  return window.HFV2ShipmentCalendar;
 }
 
 test('Tageswechsel schneidet einen Block proportional an beiden Tagen', () => {
@@ -45,9 +42,24 @@ test('Überschneidungen erhalten parallele Spuren', () => {
 });
 
 test('Rückfahrten und Dispatch-Reservierungen werden als eigene Kalenderblöcke erzeugt', () => {
-  const rowsSource = source.slice(source.indexOf('  function shipmentCalendarRows('), source.indexOf('  function shipmentCalendarMarkup('));
-  assert.match(rowsSource, /shipment\.returnDepartureAbsMinute/);
-  assert.match(rowsSource, /kind: shipment\.status === 'returned' \? 'completed' : 'return'/);
-  assert.match(rowsSource, /dispatchPlan\?\.legs/);
-  assert.match(rowsSource, /repositioning \? 'reposition' : 'planned'/);
+  const {rows} = calendarHelpers();
+  const result = rows({id: 'b'}, [], [{id: 1, goodId: 'food'}], {legs: [
+    {id: 'out', type: 'shipment', orderId: 1, fromCityId: 'a', toCityId: 'b', departureAbsMinute: 60, arrivalAbsMinute: 120, vehicleIds: [1]},
+    {id: 'back', type: 'return', orderId: 1, fromCityId: 'b', toCityId: 'a', departureAbsMinute: 120, arrivalAbsMinute: 180, vehicleIds: [1]},
+  ]});
+  assert.deepEqual(Array.from(result, row => row.kind), ['planned', 'return']);
+  assert.equal(result[1].status, 'Rückfahrt');
+});
+
+test('Tageszyklus baut den Kalender nach Verkauf und Produktion sofort neu auf', () => {
+  const calls = [];
+  const state = {time: {day: 2}, finance: {journal: [], nextEntryId: 1, lastClosedDay: 0}, network: {connections: []}, factories: {cityFactories: {}}, fleet: {vehicles: []}};
+  const window = {
+    HFV2Save: {getState: () => state, getCash: () => 0},
+    HFV2Goods: {runDailySales: () => { calls.push('sales'); return {}; }, runDailyProduction: () => { calls.push('production'); return {}; }},
+    HFV2FleetDispatch: {invalidate: () => calls.push('invalidate'), buildPlan: () => calls.push('plan')},
+  };
+  vm.runInNewContext(readFileSync('v2/day-cycle-logic.js', 'utf8'), {window});
+  window.HFV2DayCycle.runDailyCycle({day: 1});
+  assert.deepEqual(calls, ['sales', 'production', 'invalidate', 'plan']);
 });

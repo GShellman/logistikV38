@@ -258,6 +258,19 @@
     const warnings = [];
     if (demand <= 0) warnings.push('no-demand');
     if (!schedule?.ok && !warnings.includes(schedule?.reason)) warnings.push(schedule?.reason || 'no-feasible-slot');
+    const previewOrderRecord = schedule?.ok ? {
+      ...data, id: 'order-preview', amountKg, enabled: true, lastDispatchedDay: null,
+      plannedDepartureAbsMinute: schedule.departureAbsMinute,
+      departureHour: Math.floor((schedule.departureAbsMinute % 1440) / 60),
+      departureMinute: schedule.departureAbsMinute % 60,
+    } : null;
+    const previewPlan = previewOrderRecord ? window.HFV2FleetDispatch?.previewOrder?.(previewOrderRecord, {
+      fromAbsMinute: Math.max(0, schedule.departureAbsMinute - 1), horizonDays: data.frequency === 'weekly' ? 14 : 7,
+    }) : null;
+    const previewLegs = (previewPlan?.legs || []).filter(leg => String(leg.orderId) === 'order-preview');
+    const calendar = previewOrderRecord ? window.HFV2ShipmentCalendar?.markup?.({id: data.toCityId}, {
+      state: window.HFV2Logistics?.getState?.(), extraLegs: previewLegs,
+    }) : '';
     if (preview) preview.innerHTML = `
       <span><em>Menge</em><strong>${formatWeightKg(amountKg)}</strong></span>
       <span><em>Fahrzeuge</em><strong>${trips || '–'}</strong></span>
@@ -265,7 +278,8 @@
       <span><em>Abfahrt</em><strong>${schedule?.ok ? formatAbsMinute(schedule.departureAbsMinute) : '–'}</strong></span>
       <span><em>Ankunft</em><strong>${schedule?.ok ? formatAbsMinute(schedule.arrivalAbsMinute) : '–'}</strong></span>
       <span><em>Bündelung</em><strong>${schedule?.bundle ? `Mit Bestellung #${schedule.bundle.orderId} · Score ${schedule.bundle.score}` : 'Keine kompatible Bündelung'}</strong></span>
-      ${warnings.length ? `<span><em>Warnungen</em><strong>${warnings.map(code => ERROR_TEXTS[code]).join(' ')}</strong></span>` : ''}`;
+      ${warnings.length ? `<span><em>Warnungen</em><strong>${warnings.map(code => ERROR_TEXTS[code]).join(' ')}</strong></span>` : ''}
+      ${calendar ? `<div class="hf-v2-order-preview-calendar"><h4>Vorschau Transportkalender</h4>${calendar}</div>` : ''}`;
     if (error) {
       error.hidden = !warnings.length;
       error.textContent = warnings.length ? warnings.map(code => `${code}: ${ERROR_TEXTS[code]}`).join(' ') : '';
