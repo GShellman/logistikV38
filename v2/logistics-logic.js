@@ -14,9 +14,12 @@
     return {
       orders: [],
       shipments: [],
+      assignments: [],
       nextOrderId: 1,
       nextShipmentId: 1,
-      schemaVersion: 1,
+      nextAssignmentId: 1,
+      schemaVersion: 2,
+      shipmentSemantics: 'destination-fleet-v2',
       bundleWindowMinutes: 60,
       ...overrides,
     };
@@ -109,16 +112,32 @@
         undeliveredKg,
       };
     }).filter(stop => stop.toCityId && stop.goodId && stop.amountKg > 0 && stop.orderId) : null;
-    return {...shipment, id, orderId, fromCityId, toCityId, goodId, amountKg, vehicleIds, vehicleCount, pathNodeIds, pathEdgeIds, geometry, routeGeometry: geometry, returnGeometry, departureAbsMinute, arrivalAbsMinute, returnDepartureAbsMinute, returnArrivalAbsMinute, status, createdAtAbsMinute, ...(stops ? {stops} : {})};
+    const shipmentSemantics = normalizeId(shipment.shipmentSemantics) || 'legacy-return-v1';
+    return {...shipment, id, orderId, fromCityId, toCityId, goodId, amountKg, vehicleIds, vehicleCount, pathNodeIds, pathEdgeIds, geometry, routeGeometry: geometry, returnGeometry, departureAbsMinute, arrivalAbsMinute, returnDepartureAbsMinute, returnArrivalAbsMinute, status, createdAtAbsMinute, shipmentSemantics, ...(stops ? {stops} : {})};
+  }
+
+  function normalizeAssignment(assignment) {
+    if (!assignment || typeof assignment !== 'object' || assignment.type !== 'repositioning') return null;
+    const id = normalizeId(assignment.id);
+    const fromCityId = normalizeId(assignment.fromCityId);
+    const toCityId = normalizeId(assignment.toCityId);
+    const departureAbsMinute = Number(assignment.departureAbsMinute);
+    const arrivalAbsMinute = Number(assignment.arrivalAbsMinute);
+    const vehicleIds = Array.isArray(assignment.vehicleIds) ? [...new Set(assignment.vehicleIds.map(Number).filter(Number.isFinite))] : [];
+    if (!id || !fromCityId || !toCityId || !vehicleIds.length || !Number.isFinite(departureAbsMinute) || !Number.isFinite(arrivalAbsMinute)) return null;
+    return {...assignment, id, type: 'repositioning', fromCityId, toCityId, vehicleIds, departureAbsMinute, arrivalAbsMinute, route: assignment.route && typeof assignment.route === 'object' ? assignment.route : {}, capacityReservationIds: Array.isArray(assignment.capacityReservationIds) ? assignment.capacityReservationIds.map(normalizeId).filter(Boolean) : [], costs: assignment.costs && typeof assignment.costs === 'object' ? assignment.costs : {total: Math.max(0, Number(assignment.cost) || 0)}, status: ['planned', 'active', 'completed', 'cancelled'].includes(assignment.status) ? assignment.status : 'active'};
   }
 
   function configure(options = {}) {
     state = options.state || state || createLogisticsState();
     state.orders = Array.isArray(state.orders) ? state.orders.map(normalizeOrder).filter(Boolean) : [];
     state.shipments = Array.isArray(state.shipments) ? state.shipments.map(normalizeShipment).filter(Boolean) : [];
+    state.assignments = Array.isArray(state.assignments) ? state.assignments.map(normalizeAssignment).filter(Boolean) : [];
     state.nextOrderId = Math.max(positiveInteger(state.nextOrderId), ...state.orders.map(order => order.id + 1), 1);
     state.nextShipmentId = Math.max(positiveInteger(state.nextShipmentId), ...state.shipments.map(shipment => shipment.id + 1), 1);
-    state.schemaVersion = positiveInteger(state.schemaVersion, 1);
+    state.nextAssignmentId = Math.max(positiveInteger(state.nextAssignmentId), ...state.assignments.map(assignment => Number(String(assignment.id).match(/\d+$/)?.[0] || 0) + 1), 1);
+    state.schemaVersion = 2;
+    state.shipmentSemantics = 'destination-fleet-v2';
     state.bundleWindowMinutes = Math.max(0, Math.trunc(Number(state.bundleWindowMinutes) || 60));
     cities = Array.isArray(options.cities) ? options.cities : cities;
     citiesById = options.citiesById && typeof options.citiesById === 'object' ? options.citiesById : Object.fromEntries(cities.map(city => [String(city.id), city]));
@@ -564,8 +583,7 @@
 
     const {path, vehicleCount, arrivalAbsMinute} = validation;
     const reservationId = `shipment-${state.nextShipmentId}`;
-    const returnArrivalAbsMinute = arrivalAbsMinute + Math.max(1, arrivalAbsMinute - departureAbsMinute);
-    const assigned = reserveShipmentVehicles({shipmentId: state.nextShipmentId, cityId: order.fromCityId, vehicleType, count: vehicleCount, departureAbsMinute, finalAvailableAbsMinute: returnArrivalAbsMinute, toCityId: order.toCityId});
+    const assigned = reserveShipmentVehicles({shipmentId: state.nextShipmentId, cityId: order.fromCityId, vehicleType, count: vehicleCount, departureAbsMinute, finalAvailableAbsMinute: arrivalAbsMinute, toCityId: order.toCityId});
     if (assigned.length !== vehicleCount) {
       markOrderDispatchResult(order, 'not-enough-vehicles');
       return null;
@@ -620,6 +638,7 @@
       arrivalAbsMinute,
       reservationId: reservation?.reservationId || reservationId,
       status: 'active',
+      shipmentSemantics: 'destination-fleet-v2',
       createdAtAbsMinute: nowAbsMinute,
     };
     state.shipments.push(shipment);
@@ -650,8 +669,7 @@
     if (!route) return false;
     const routeStops = route.stops;
     const reservationId = `shipment-${state.nextShipmentId}`;
-    const expectedReturnAbsMinute = nowAbsMinute + route.durationMinutes * 2;
-    const assigned = reserveShipmentVehicles({shipmentId: state.nextShipmentId, cityId: orders[0].fromCityId, vehicleType, count: 1, departureAbsMinute: nowAbsMinute, finalAvailableAbsMinute: expectedReturnAbsMinute, toCityId: routeStops[routeStops.length - 1].toCityId});
+    const assigned = reserveShipmentVehicles({shipmentId: state.nextShipmentId, cityId: orders[0].fromCityId, vehicleType, count: 1, departureAbsMinute: nowAbsMinute, finalAvailableAbsMinute: route.arrivalAbsMinute, toCityId: routeStops[routeStops.length - 1].toCityId});
     if (assigned.length !== 1) return false;
     let reservation;
     try {
@@ -706,6 +724,7 @@
       arrivalAbsMinute: reservation.arrivalAbsMinute,
       reservationIds: reservation.reservationIds,
       status: 'active',
+      shipmentSemantics: 'destination-fleet-v2',
       createdAtAbsMinute: nowAbsMinute,
     };
     state.shipments.push(shipment);
@@ -770,19 +789,57 @@
     return created;
   }
 
-  function beginReturnTrip(shipment, nowAbsMinute) {
-    const outboundDuration = Math.max(1, Math.ceil(Number(shipment.arrivalAbsMinute) - Number(shipment.departureAbsMinute)));
-    const scheduledDeparture = Number(shipment.arrivalAbsMinute) || Number(nowAbsMinute) || 0;
-    shipment.returnDepartureAbsMinute = scheduledDeparture;
-    shipment.returnArrivalAbsMinute = scheduledDeparture + outboundDuration;
-    shipment.returnGeometry = Array.isArray(shipment.routeGeometry) ? [...shipment.routeGeometry].reverse() : [];
-    shipment.status = 'returning';
-    window.HFFleet?.updateAssignment?.(shipment.id, {
-      status: 'returning',
-      currentCityId: shipment.toCityId,
-      availableAbsMinute: shipment.returnArrivalAbsMinute,
-      routeSegment: {fromCityId: shipment.toCityId, toCityId: shipment.fromCityId},
-    });
+  function createRepositioningAssignment(options = {}) {
+    configure();
+    const fromCityId = normalizeId(options.fromCityId);
+    const toCityId = normalizeId(options.toCityId);
+    const departureAbsMinute = Number.isFinite(Number(options.departureAbsMinute)) ? Number(options.departureAbsMinute) : absoluteMinute(currentTime());
+    const requestedIds = Array.isArray(options.vehicleIds) ? [...new Set(options.vehicleIds.map(Number).filter(Number.isFinite))] : [];
+    if (!fromCityId || !toCityId || fromCityId === toCityId || !requestedIds.length) return {ok: false, reason: 'invalid-repositioning'};
+    const available = window.HFFleet?.getAvailableVehicles?.({cityId: fromCityId, atAbsMinute: departureAbsMinute}) || [];
+    const selected = requestedIds.map(id => available.find(vehicle => vehicle.id === id)).filter(Boolean);
+    if (selected.length !== requestedIds.length) return {ok: false, reason: 'vehicle-not-available'};
+    const vehicleType = normalizeId(options.vehicleType) || selected[0]?.vehicleType;
+    if (!vehicleType || selected.some(vehicle => vehicle.vehicleType !== vehicleType)) return {ok: false, reason: 'mixed-vehicle-types'};
+    const path = window.HFNetwork?.findPath?.(fromCityId, toCityId, {mode: 'road'});
+    if (!path?.reachable) return {ok: false, reason: 'no-route'};
+    const durationMinutes = shipmentDurationMinutes(path, vehicleType);
+    const arrivalAbsMinute = departureAbsMinute + durationMinutes;
+    const id = `repositioning-${state.nextAssignmentId}`;
+    const reservation = window.HFNetwork?.reservePathCapacity?.(path, {startAbsMinute: departureAbsMinute, endAbsMinute: arrivalAbsMinute, units: selected.length, reservationId: id});
+    if (reservation?.ok === false) return {ok: false, reason: reservation.reason || 'route-overloaded'};
+    const assigned = window.HFFleet?.assignVehicles?.({cityId: fromCityId, vehicleType, vehicleIds: requestedIds, count: selected.length, assignmentId: id, departureAbsMinute, availableAbsMinute: arrivalAbsMinute, routeSegment: {fromCityId, toCityId}}) || [];
+    if (assigned.length !== selected.length) {
+      window.HFFleet?.releaseAssignment?.(id, fromCityId, departureAbsMinute);
+      window.HFNetwork?.releaseCapacityReservation?.(reservation?.reservationId || id);
+      return {ok: false, reason: 'vehicle-not-available'};
+    }
+    const spec = vehicleSpec(vehicleType) || {};
+    const distanceKm = Math.max(0, Number(path.distance) || 0);
+    const total = Math.round(distanceKm * Math.max(0, Number(spec.kmCost) || 0) * selected.length * 100) / 100;
+    const assignment = {id, type: 'repositioning', reason: normalizeId(options.reason) || 'future-demand', fromCityId, toCityId, vehicleType, vehicleIds: assigned.map(vehicle => vehicle.id), departureAbsMinute, arrivalAbsMinute, route: {pathNodeIds: Array.isArray(path.nodes) ? path.nodes.map(normalizeId).filter(Boolean) : [], pathEdgeIds: Array.isArray(path.edges) ? path.edges.map(pathEdgeId).filter(Boolean) : [], geometry: pathRouteGeometry(path), distance: distanceKm, durationMinutes}, capacityReservationIds: [reservation?.reservationId || id], costs: {distanceKm, perVehicleKm: Math.max(0, Number(spec.kmCost) || 0), vehicleCount: selected.length, total}, status: 'active', createdAtAbsMinute: absoluteMinute(currentTime())};
+    state.nextAssignmentId += 1;
+    state.assignments.push(assignment);
+    if (total > 0) window.HFV2Save?.changeCash?.(-total, 'logistics-repositioning-cost');
+    window.HFV2Save?.dispatchStateChanged?.('logistics-repositioning-created');
+    return {ok: true, assignment};
+  }
+
+  function advanceAssignments(nowAbsMinute) {
+    const completed = [];
+    for (const assignment of state.assignments) {
+      if (assignment.type !== 'repositioning' || assignment.status !== 'active' || assignment.arrivalAbsMinute > nowAbsMinute) continue;
+      assignment.status = 'completed';
+      assignment.completedAbsMinute = assignment.arrivalAbsMinute;
+      window.HFFleet?.releaseAssignment?.(assignment.id, assignment.toCityId, assignment.arrivalAbsMinute);
+      completed.push(assignment);
+    }
+    return completed;
+  }
+
+  function completeShipmentAtDestination(shipment, destinationCityId, arrivalAbsMinute) {
+    shipment.status = shipment.undeliveredKg > 0 ? (shipment.deliveredKg > 0 ? 'partial' : 'failed') : 'delivered';
+    window.HFFleet?.releaseAssignment?.(shipment.id, destinationCityId, arrivalAbsMinute);
   }
 
   function syncAssignedVehicles(shipment, nowAbsMinute) {
@@ -845,7 +902,7 @@
   function advanceShipments() {
     configure();
     const nowAbsMinute = absoluteMinute(currentTime());
-    const completed = [];
+    const completed = advanceAssignments(nowAbsMinute);
     for (const shipment of state.shipments) {
       syncAssignedVehicles(shipment, nowAbsMinute);
       if (shipment.status === 'active') {
@@ -865,8 +922,7 @@
           const allStopsProcessed = shipment.stops.every(stop => ['delivered', 'failed', 'partial'].includes(stop.status));
           if (allStopsProcessed && Number.isFinite(finalArrivalAbsMinute) && finalArrivalAbsMinute <= nowAbsMinute) {
             shipment.deliveredAbsMinute = nowAbsMinute;
-            beginReturnTrip(shipment, nowAbsMinute);
-            finishReturnIfDue(shipment, nowAbsMinute);
+            completeShipmentAtDestination(shipment, finalStop.toCityId, finalArrivalAbsMinute);
             completed.push(shipment);
           } else if (processedStop) {
             completed.push(shipment);
@@ -880,8 +936,7 @@
           shipment.deliveredKg = stop.deliveredKg;
           shipment.undeliveredKg = stop.undeliveredKg;
           shipment.deliveredAbsMinute = nowAbsMinute;
-          beginReturnTrip(shipment, nowAbsMinute);
-          finishReturnIfDue(shipment, nowAbsMinute);
+          completeShipmentAtDestination(shipment, shipment.toCityId, Number(shipment.arrivalAbsMinute));
           completed.push(shipment);
           continue;
         }
@@ -895,5 +950,5 @@
     return completed;
   }
 
-  window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, absoluteMinute, orderDueToday, nextOrderDueAbsMinute, getOutgoingProductionDemandMap, vehicleCapacityKg, splitIntoVehicleLoads, plannedOrderAmountKg, validateRoadShipment, buildMultiStopRoute};
+  window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, createRepositioningAssignment, absoluteMinute, orderDueToday, nextOrderDueAbsMinute, getOutgoingProductionDemandMap, vehicleCapacityKg, splitIntoVehicleLoads, plannedOrderAmountKg, validateRoadShipment, buildMultiStopRoute};
 })();

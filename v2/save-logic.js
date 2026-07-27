@@ -64,7 +64,7 @@
 
   function defaultLogisticsState() {
     if (window.HFV2Logistics?.createLogisticsState) return window.HFV2Logistics.createLogisticsState();
-    return {orders: [], shipments: [], nextOrderId: 1, nextShipmentId: 1, schemaVersion: 1};
+    return {orders: [], shipments: [], assignments: [], nextOrderId: 1, nextShipmentId: 1, nextAssignmentId: 1, schemaVersion: 2, shipmentSemantics: 'destination-fleet-v2'};
   }
 
   function normalizeTimeUnit(value, fallback, min, max) {
@@ -183,8 +183,12 @@
     goods.schemaVersion = Number.isFinite(Number(goods.schemaVersion)) ? Number(goods.schemaVersion) : 1;
     logistics.orders = Array.isArray(logistics.orders) ? logistics.orders : [];
     logistics.shipments = Array.isArray(logistics.shipments) ? logistics.shipments : [];
+    logistics.assignments = Array.isArray(logistics.assignments) ? logistics.assignments : [];
     logistics.nextOrderId = Math.max(1, Math.trunc(Number(logistics.nextOrderId) || 1));
     logistics.nextShipmentId = Math.max(1, Math.trunc(Number(logistics.nextShipmentId) || 1));
+    logistics.nextAssignmentId = Math.max(1, Math.trunc(Number(logistics.nextAssignmentId) || 1));
+    logistics.schemaVersion = 2;
+    logistics.shipmentSemantics = 'destination-fleet-v2';
     delete network.cash;
     delete fleet.cash;
     delete factories.cash;

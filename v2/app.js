@@ -344,6 +344,16 @@
     return `<article class="hf-v2-production-debug-row hf-v2-logistics-row"><b>${title}</b>${routeMarkup}<span><small>${isBundled ? 'Stopps' : 'Menge'}</small>${amountMarkup}</span><span><small>Fahrzeuge</small>${(Number(shipment.vehicleCount) || 0).toLocaleString('de-CH')} × ${escapeHtml(vehicleLabel(shipment.vehicleType))}</span><span><small>Fortschritt</small>${progress.toLocaleString('de-CH', {maximumFractionDigits: 0})}%</span><span><small>${arrivalLabel}</small>${formatAbsMinute(arrivalAbsMinute)}</span><span><small>Status</small>${escapeHtml(shipmentStatusLabel(shipment))}</span></article>`;
   }
 
+  function repositioningCardMarkup(assignment) {
+    const progress = shipmentProgressPercent(assignment);
+    const cost = Math.max(0, Number(assignment.costs?.total) || 0);
+    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row"><b>Leerfahrt</b><span><small>Route</small>${escapeHtml(cityName(assignment.fromCityId))} → ${escapeHtml(cityName(assignment.toCityId))}</span><span><small>Fahrzeuge</small>${assignment.vehicleIds.length.toLocaleString('de-CH')} × ${escapeHtml(vehicleLabel(assignment.vehicleType))}</span><span><small>Fortschritt</small>${progress.toLocaleString('de-CH', {maximumFractionDigits: 0})}%</span><span><small>Ankunft</small>${formatAbsMinute(assignment.arrivalAbsMinute)}</span><span><small>Kosten</small>CHF ${cost.toLocaleString('de-CH', {maximumFractionDigits: 2})}</span><span><small>Status</small>${assignment.status === 'active' ? 'Repositionierung' : 'Abgeschlossen'}</span></article>`;
+  }
+
+  function waitingVehicleCardMarkup(vehicle) {
+    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row"><b>Wartendes Fahrzeug</b><span><small>Standort</small>${escapeHtml(cityName(vehicle.currentCityId))}</span><span><small>Fahrzeug</small>${escapeHtml(vehicleLabel(vehicle.vehicleType))}</span><span><small>ID</small>#${Number(vehicle.id).toLocaleString('de-CH')}</span><span><small>Status</small>Verfügbar</span></article>`;
+  }
+
 
   function shipmentCalendarDayKey(absMinute) {
     const total = Math.max(0, Math.trunc(Number(absMinute) || 0));
@@ -469,11 +479,13 @@
     const logistics = window.HFV2Logistics?.getState?.() || {orders: [], shipments: []};
     const orders = Array.isArray(logistics.orders) ? logistics.orders : [];
     const shipments = Array.isArray(logistics.shipments) ? logistics.shipments : [];
+    const assignments = (Array.isArray(logistics.assignments) ? logistics.assignments : []).filter(assignment => assignment?.fromCityId === city.id || assignment?.toCityId === city.id);
+    const waitingVehicles = (window.HFFleet?.getState?.().vehicles || []).filter(vehicle => vehicle?.status === 'available' && vehicle?.currentCityId === city.id);
     const incomingOrders = orders.filter(order => order.toCityId === city.id);
     const outgoingOrders = orders.filter(order => order.fromCityId === city.id);
     const calendarRows = shipmentCalendarRows(city, shipments, orders);
-    const total = incomingOrders.length + outgoingOrders.length + calendarRows.length;
-    return `<section class="hf-v2-demand-card hf-v2-city-logistics" aria-labelledby="hfV2LogisticsTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Warenlogistik</p><h3 id="hfV2LogisticsTitle">Warenlogistik</h3></div><strong>${total.toLocaleString('de-CH')}</strong></div><h4>Eingehende Bestellungen</h4>${logisticsListMarkup(incomingOrders, 'Keine eingehenden Bestellungen.', orderCardMarkup)}<h4>Ausgehende Bestellungen</h4>${logisticsListMarkup(outgoingOrders, 'Keine ausgehenden Bestellungen.', orderCardMarkup)}<h4>Transportkalender</h4>${shipmentCalendarMarkup(city)}</section>`;
+    const total = incomingOrders.length + outgoingOrders.length + calendarRows.length + assignments.length + waitingVehicles.length;
+    return `<section class="hf-v2-demand-card hf-v2-city-logistics" aria-labelledby="hfV2LogisticsTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Warenlogistik</p><h3 id="hfV2LogisticsTitle">Warenlogistik</h3></div><strong>${total.toLocaleString('de-CH')}</strong></div><h4>Eingehende Bestellungen</h4>${logisticsListMarkup(incomingOrders, 'Keine eingehenden Bestellungen.', orderCardMarkup)}<h4>Ausgehende Bestellungen</h4>${logisticsListMarkup(outgoingOrders, 'Keine ausgehenden Bestellungen.', orderCardMarkup)}<h4>Leerfahrten / Repositionierungen</h4>${logisticsListMarkup(assignments, 'Keine disponierten Leerfahrten.', repositioningCardMarkup)}<h4>Wartende Fahrzeuge</h4>${logisticsListMarkup(waitingVehicles, 'Keine verfügbaren Fahrzeuge an diesem Standort.', waitingVehicleCardMarkup)}<h4>Transportkalender</h4>${shipmentCalendarMarkup(city)}</section>`;
   }
 
   function isCityUnlocked(cityId) {
@@ -653,8 +665,9 @@
   }
 
   function renderActiveShipments() {
-    const shipments = window.HFV2Logistics?.getState?.().shipments || [];
-    window.HFV2LogisticsLayer?.renderActiveShipments?.(shipments, citiesById);
+    const logistics = window.HFV2Logistics?.getState?.() || {};
+    const vehicles = window.HFFleet?.getState?.().vehicles || [];
+    window.HFV2LogisticsLayer?.renderActiveShipments?.(logistics.shipments || [], citiesById, logistics.assignments || [], vehicles);
   }
 
   function refreshNetworkView() {
