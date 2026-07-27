@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const SCHEMA_VERSION = 3;
+  const SCHEMA_VERSION = 4;
   const SAVE_FILE_PREFIX = 'helvetic-freight-v2';
   const STARTING_CASH = 500000;
 
@@ -45,7 +45,7 @@
 
   function defaultFleetState() {
     if (window.HFFleet?.createFleetState) return window.HFFleet.createFleetState();
-    return {cityFleets: {}};
+    return {vehicles: [], nextVehicleId: 1, depotCityId: 'zurich'};
   }
 
   function defaultFactoryState() {
@@ -97,7 +97,44 @@
     network.cities = network.cities && typeof network.cities === 'object' ? network.cities : {};
     network.cities.zurich = {...(network.cities.zurich || {}), unlocked: true};
     network.usedCapacity = network.usedCapacity && typeof network.usedCapacity === 'object' ? network.usedCapacity : {};
-    fleet.cityFleets = fleet.cityFleets && typeof fleet.cityFleets === 'object' ? fleet.cityFleets : {};
+    const normalizedVehicles = [];
+    const usedVehicleIds = new Set();
+    let nextGeneratedVehicleId = 1;
+    const addVehicle = (rawVehicle, fallbackCityId = null, fallbackType = null) => {
+      if (!rawVehicle || typeof rawVehicle !== 'object') rawVehicle = {};
+      let id = Math.max(1, Math.trunc(Number(rawVehicle.id) || nextGeneratedVehicleId));
+      while (usedVehicleIds.has(id)) id += 1;
+      usedVehicleIds.add(id);
+      nextGeneratedVehicleId = Math.max(nextGeneratedVehicleId, id + 1);
+      const vehicleType = String(rawVehicle.vehicleType || fallbackType || '').trim();
+      if (!vehicleType) return;
+      const activeAssignmentId = rawVehicle.activeAssignmentId == null ? null : String(rawVehicle.activeAssignmentId).trim() || null;
+      const currentCityId = String(rawVehicle.currentCityId || fallbackCityId || '').trim() || null;
+      const normalized = {
+        id,
+        vehicleType,
+        status: activeAssignmentId ? (rawVehicle.status === 'returning' ? 'returning' : 'assigned') : 'available',
+        currentCityId,
+        availableAbsMinute: Math.max(0, Number(rawVehicle.availableAbsMinute) || 0),
+        activeAssignmentId,
+      };
+      if (Array.isArray(rawVehicle.position) && rawVehicle.position.length >= 2) normalized.position = [Number(rawVehicle.position[0]), Number(rawVehicle.position[1])];
+      if (rawVehicle.routeSegment && typeof rawVehicle.routeSegment === 'object') normalized.routeSegment = {...rawVehicle.routeSegment};
+      normalizedVehicles.push(normalized);
+    };
+    if (Array.isArray(fleet.vehicles)) fleet.vehicles.forEach(vehicle => addVehicle(vehicle));
+    const legacyCityFleets = fleet.cityFleets && typeof fleet.cityFleets === 'object' && !Array.isArray(fleet.cityFleets) ? fleet.cityFleets : {};
+    for (const [cityId, counts] of Object.entries(legacyCityFleets)) {
+      if (!counts || typeof counts !== 'object') continue;
+      for (const [vehicleType, rawCount] of Object.entries(counts)) {
+        const count = Math.max(0, Math.trunc(Number(rawCount) || 0));
+        for (let index = 0; index < count; index += 1) addVehicle({}, cityId, vehicleType);
+      }
+    }
+    fleet.vehicles = normalizedVehicles;
+    fleet.nextVehicleId = Math.max(1, Math.trunc(Number(fleet.nextVehicleId) || 1), nextGeneratedVehicleId);
+    fleet.depotCityId = String(fleet.depotCityId || 'zurich').trim() || 'zurich';
+    delete fleet.cityFleets;
     factories.cityFactories = factories.cityFactories && typeof factories.cityFactories === 'object' && !Array.isArray(factories.cityFactories) ? factories.cityFactories : {};
     factories.factoryUpgrades = factories.factoryUpgrades && typeof factories.factoryUpgrades === 'object' && !Array.isArray(factories.factoryUpgrades) ? factories.factoryUpgrades : {};
     for (const [cityId, rawList] of Object.entries(factories.cityFactories)) {

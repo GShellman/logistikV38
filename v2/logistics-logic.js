@@ -283,18 +283,18 @@
 
   function assertFleetVehicle(cityId, vehicleType) {
     if (!vehicleType) return;
-    const fleet = window.HFFleet?.getCityFleet?.(cityId) || {};
+    const available = window.HFFleet?.getAvailableVehicles?.({cityId, vehicleType}) || [];
     const vehicle = window.HFVehicleCatalog?.VEHICLE_CATALOG?.[vehicleType] || null;
-    if (!vehicle || vehicle.mode !== 'road' || (Number(fleet[vehicleType]) || 0) <= 0) throw new Error('Selected road vehicle type is not available in the source city fleet');
+    if (!vehicle || vehicle.mode !== 'road' || available.length <= 0) throw new Error('Selected road vehicle type is not available in the source city fleet');
   }
 
   function validateRoadShipment({fromCityId, toCityId, vehicleType, amountKg, departureAbsMinute}) {
     const path = window.HFNetwork?.findPath?.(fromCityId, toCityId, {mode: 'road'});
     if (!path?.reachable) return {ok: false, reason: 'no-route'};
 
-    const fleet = window.HFFleet?.getCityFleet?.(fromCityId) || {};
     const vehicle = window.HFVehicleCatalog?.VEHICLE_CATALOG?.[vehicleType] || null;
-    if (!vehicle || vehicle.mode !== 'road' || (Number(fleet[vehicleType]) || 0) <= 0) return {ok: false, reason: 'no-vehicle'};
+    const availableVehicles = window.HFFleet?.getAvailableVehicles?.({cityId: fromCityId, vehicleType, atAbsMinute: departureAbsMinute}) || [];
+    if (!vehicle || vehicle.mode !== 'road' || availableVehicles.length <= 0) return {ok: false, reason: 'no-vehicle'};
 
     const load = Number(vehicle.load);
     const capacityKg = Number.isFinite(load) && load > 0 ? (load >= 100 ? load : load * 1000) : 0;
@@ -302,7 +302,7 @@
 
     const vehicleCount = Math.ceil(Math.max(0, Number(amountKg) || 0) / capacityKg);
     if (vehicleCount <= 0) return {ok: false, reason: 'capacity-invalid'};
-    if (vehicleCount > (Number(fleet[vehicleType]) || 0)) return {ok: false, reason: 'not-enough-vehicles', path, capacityKg, vehicleCount};
+    if (vehicleCount > availableVehicles.length) return {ok: false, reason: 'not-enough-vehicles', path, capacityKg, vehicleCount};
 
     const startAbsMinute = Number(departureAbsMinute);
     const endAbsMinute = startAbsMinute + Math.ceil((Number(path.duration) || 0) * 60);
@@ -573,6 +573,8 @@
       createdAtAbsMinute: nowAbsMinute,
     };
     state.shipments.push(shipment);
+    const assigned = window.HFFleet?.assignVehicles?.({cityId: order.fromCityId, vehicleType, count: vehicleCount, assignmentId: shipment.id, departureAbsMinute, availableAbsMinute: arrivalAbsMinute, routeSegment: {fromCityId: order.fromCityId, toCityId: order.toCityId}}) || [];
+    shipment.vehicleIds = assigned.map(vehicle => vehicle.id);
     created.push(shipment);
     order.lastDispatchedDay = Math.max(1, Math.trunc(Number(time.day) || 1));
     markOrderDispatchResult(order, 'created');
@@ -585,9 +587,9 @@
     const capacityKg = vehicleCapacityKg(vehicleType);
     const amountKg = Math.round(orders.reduce((total, order) => total + order.amountKg, 0) * 1000) / 1000;
     if (capacityKg <= 0 || amountKg > capacityKg) return false;
-    const fleet = window.HFFleet?.getCityFleet?.(orders[0].fromCityId) || {};
     const vehicle = window.HFVehicleCatalog?.VEHICLE_CATALOG?.[vehicleType] || null;
-    if (!vehicle || vehicle.mode !== 'road' || (Number(fleet[vehicleType]) || 0) <= 0) return false;
+    const availableVehicles = window.HFFleet?.getAvailableVehicles?.({cityId: orders[0].fromCityId, vehicleType, atAbsMinute: nowAbsMinute}) || [];
+    if (!vehicle || vehicle.mode !== 'road' || availableVehicles.length <= 0) return false;
 
     const requiredByGood = {};
     for (const order of orders) requiredByGood[order.goodId] = (requiredByGood[order.goodId] || 0) + order.amountKg;
@@ -636,6 +638,8 @@
       createdAtAbsMinute: nowAbsMinute,
     };
     state.shipments.push(shipment);
+    const assigned = window.HFFleet?.assignVehicles?.({cityId: orders[0].fromCityId, vehicleType, count: 1, assignmentId: shipment.id, departureAbsMinute: nowAbsMinute, availableAbsMinute: reservation.arrivalAbsMinute, routeSegment: {fromCityId: orders[0].fromCityId, toCityId: shipment.toCityId}}) || [];
+    shipment.vehicleIds = assigned.map(vehicle => vehicle.id);
     created.push(shipment);
     for (const order of orders) {
       order.lastDispatchedDay = Math.max(1, Math.trunc(Number(time.day) || 1));
@@ -769,6 +773,7 @@
       if (shipment.status === 'returning' && Number.isFinite(returnArrivalAbsMinute) && returnArrivalAbsMinute <= nowAbsMinute) {
         shipment.status = 'returned';
         shipment.returnedAbsMinute = nowAbsMinute;
+        window.HFFleet?.releaseAssignment?.(shipment.id, shipment.fromCityId, nowAbsMinute);
         completed.push(shipment);
       }
     }
