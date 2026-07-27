@@ -1746,9 +1746,15 @@ code {
 .hf-v2-transport-progress i { background: #155d99; display: block; height: 100%; }
 .hf-v2-transport-marker--empty { filter: grayscale(.65); opacity: .88; }
 .hf-v2-transport-marker--waiting { transform: scale(.76); opacity: .82; }
-.hf-v2-transport-marker__badge { position: absolute; right: -2px; bottom: 1px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 3px; border: 2px solid #fff; border-radius: 999px; background: #17324d; color: #fff; font: 700 11px/1 sans-serif; box-shadow: 0 1px 4px #0005; }
-.hf-v2-transport-marker--empty .hf-v2-transport-marker__badge { background: #7a5c28; }
-.hf-v2-transport-marker--waiting .hf-v2-transport-marker__badge { background: #26734d; }
+.hf-v2-transport-marker__badge { position: absolute; right: -4px; bottom: 0; display: flex; align-items: center; justify-content: center; min-width: 22px; min-height: 22px; padding: 2px; border: 2px solid #fff; border-radius: 999px; background: #f8fafc; color: #172b3f; font: 800 10px/1 sans-serif; box-shadow: 0 1px 4px #0005; box-sizing: border-box; }
+.hf-v2-transport-marker__badge--multiple { right: -14px; gap: 1px; }
+.hf-v2-transport-marker__good-icon { display: block; width: 18px; height: 18px; border-radius: 50%; object-fit: contain; }
+.hf-v2-transport-marker__good-icon[hidden] { display: none; }
+.hf-v2-transport-marker__good-icon--fallback { font-size: 15px; line-height: 18px; text-align: center; }
+.hf-v2-transport-marker__overflow { display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 2px; border-radius: 9px; background: #e4e9ee; white-space: nowrap; }
+.hf-v2-transport-marker__badge--status { min-width: 20px; min-height: 20px; padding: 0 3px; color: #fff; }
+.hf-v2-transport-marker--empty .hf-v2-transport-marker__badge--status { background: #7a5c28; }
+.hf-v2-transport-marker--waiting .hf-v2-transport-marker__badge--status { background: #26734d; }
 .hf-v2-transport-marker--group { filter: none; opacity: 1; }
 .hf-v2-transport-marker--group::before {
   background: rgba(255, 255, 255, .78);
@@ -1760,12 +1766,20 @@ code {
   position: absolute;
   z-index: -1;
 }
-.hf-v2-transport-marker__badge--count {
+.hf-v2-transport-marker__group-count {
+  position: absolute;
+  right: -2px;
   background: var(--color-dispatch-blue);
   bottom: -3px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  box-shadow: 0 1px 4px #0005;
+  color: #fff;
+  font: 700 12px/1 sans-serif;
   font-size: 12px;
   min-width: 31px;
-  padding-inline: 6px;
+  padding: 3px 6px;
+  text-align: center;
   white-space: nowrap;
 }
 .hf-v2-shipment-tooltip__group {
