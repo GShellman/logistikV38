@@ -51,6 +51,51 @@ test('Rückfahrten und Dispatch-Reservierungen werden als eigene Kalenderblöcke
   assert.equal(result[1].status, 'Rückfahrt');
 });
 
+test('gestartete Planfahrt wird neben dem zugehörigen Shipment nicht doppelt angezeigt', () => {
+  const {rows} = calendarHelpers();
+  const shipment = {id: 41, orderId: 7, status: 'active', fromCityId: 'a', toCityId: 'b', departureAbsMinute: 480, arrivalAbsMinute: 600, vehicleIds: [3]};
+  const plan = {legs: [
+    {id: 'out', type: 'shipment', status: 'started', orderId: 7, fromCityId: 'a', toCityId: 'b', departureAbsMinute: 480, arrivalAbsMinute: 600, vehicleIds: [3]},
+  ]};
+
+  const result = rows({id: 'a'}, [shipment], [], plan);
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0].id, 'shipment-41');
+  assert.equal(result[0].kind, 'active');
+});
+
+test('gleichzeitige Fahrten derselben Bestellung werden anhand der Fahrzeuge unterschieden', () => {
+  const {rows} = calendarHelpers();
+  const shipment = {id: 42, orderId: 7, status: 'active', fromCityId: 'a', toCityId: 'b', departureAbsMinute: 480, arrivalAbsMinute: 600, vehicleIds: [3]};
+  const plan = {legs: [
+    {id: 'taken', type: 'shipment', status: 'started', orderId: 7, fromCityId: 'a', toCityId: 'b', departureAbsMinute: 480, arrivalAbsMinute: 600, vehicleIds: [3]},
+    {id: 'other', type: 'shipment', status: 'planned', orderId: 7, fromCityId: 'a', toCityId: 'b', departureAbsMinute: 480, arrivalAbsMinute: 600, vehicleIds: [4]},
+  ]};
+
+  const result = rows({id: 'a'}, [shipment], [], plan);
+
+  assert.deepEqual(Array.from(result, row => row.id), ['plan-other', 'shipment-42']);
+});
+
+test('aktive Rückfahrt ersetzt den passenden geplanten Rückfahrtblock', () => {
+  const {rows} = calendarHelpers();
+  const shipment = {
+    id: 43, orderId: 7, status: 'returning', fromCityId: 'a', toCityId: 'b',
+    departureAbsMinute: 480, arrivalAbsMinute: 600, returnDepartureAbsMinute: 600,
+    returnArrivalAbsMinute: 720, vehicleIds: [3],
+  };
+  const plan = {legs: [
+    {id: 'out', type: 'shipment', status: 'started', orderId: 7, fromCityId: 'a', toCityId: 'b', departureAbsMinute: 480, arrivalAbsMinute: 600, vehicleIds: [3]},
+    {id: 'back', type: 'return', status: 'planned', orderId: 7, fromCityId: 'b', toCityId: 'a', departureAbsMinute: 600, arrivalAbsMinute: 720, vehicleIds: [3]},
+  ]};
+
+  const result = rows({id: 'b'}, [shipment], [], plan);
+
+  assert.deepEqual(Array.from(result, row => row.id), ['shipment-43', 'shipment-43-return']);
+  assert.equal(result.filter(row => row.kind === 'return').length, 1);
+});
+
 test('Tageszyklus baut den Kalender nach Verkauf und Produktion sofort neu auf', () => {
   const calls = [];
   const state = {time: {day: 2}, finance: {journal: [], nextEntryId: 1, lastClosedDay: 0}, network: {connections: []}, factories: {cityFactories: {}}, fleet: {vehicles: []}};
