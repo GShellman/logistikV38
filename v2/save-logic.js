@@ -64,7 +64,7 @@
 
   function defaultLogisticsState() {
     if (window.HFV2Logistics?.createLogisticsState) return window.HFV2Logistics.createLogisticsState();
-    return {orders: [], shipments: [], assignments: [], nextOrderId: 1, nextShipmentId: 1, nextAssignmentId: 1, schemaVersion: 2, shipmentSemantics: 'destination-fleet-v2'};
+    return {orders: [], shipments: [], assignments: [], dispatchPlan: null, nextOrderId: 1, nextShipmentId: 1, nextAssignmentId: 1, schemaVersion: 2, shipmentSemantics: 'destination-fleet-v2'};
   }
 
   function normalizeTimeUnit(value, fallback, min, max) {
@@ -184,6 +184,7 @@
     logistics.orders = Array.isArray(logistics.orders) ? logistics.orders : [];
     logistics.shipments = Array.isArray(logistics.shipments) ? logistics.shipments : [];
     logistics.assignments = Array.isArray(logistics.assignments) ? logistics.assignments : [];
+    logistics.dispatchPlan = logistics.dispatchPlan && typeof logistics.dispatchPlan === 'object' && !Array.isArray(logistics.dispatchPlan) ? logistics.dispatchPlan : null;
     logistics.nextOrderId = Math.max(1, Math.trunc(Number(logistics.nextOrderId) || 1));
     logistics.nextShipmentId = Math.max(1, Math.trunc(Number(logistics.nextShipmentId) || 1));
     logistics.nextAssignmentId = Math.max(1, Math.trunc(Number(logistics.nextAssignmentId) || 1));

@@ -892,6 +892,7 @@
     renderClock();
     renderLiveButton();
     window.addEventListener('hf:network:confirmed', refreshNetworkView);
+    window.addEventListener('hf:network:confirmed', () => window.HFV2FleetDispatch?.invalidate?.('network-changed'));
     window.addEventListener('hf:v2:state-changed', refreshChangedStateView);
     window.addEventListener('hf:v2:state-changed', renderClock);
     if (!bootMap(cities)) return;
