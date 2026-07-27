@@ -838,6 +838,9 @@
     window.HFV2Factories?.configure?.({state: savePackage.state.factories});
     window.HFV2Goods?.configure?.({state: savePackage.state.goods, cities});
     window.HFV2Logistics?.configure?.({state: savePackage.state.logistics, cities, citiesById});
+    // Complete overdue persisted events only after fleet, network, goods and
+    // logistics all point at the hydrated state. The transitions are idempotent.
+    window.HFV2Time?.reconcileCurrentTime?.();
   }
 
   function applySavePackage(nextPackage) {
