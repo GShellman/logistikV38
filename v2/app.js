@@ -715,6 +715,48 @@
     return `Tagesabschluss: ${rows.join(' · ')}.`;
   }
 
+  function receiptAmount(value) {
+    const amount = Math.abs(Number(value) || 0);
+    return amount ? amount.toLocaleString('de-CH', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '–';
+  }
+
+  function receiptRow(label, amount, side, className = '', note = '') {
+    const debit = side === 'debit' ? receiptAmount(amount) : '–';
+    const credit = side === 'credit' ? receiptAmount(amount) : '–';
+    return `<tr class="${className}"><th scope="row">${label}${note ? `<small>${note}</small>` : ''}</th><td>${debit}</td><td>${credit}</td></tr>`;
+  }
+
+  function dailyCycleReceiptMarkup(summary) {
+    const costs = summary?.costs || {};
+    const operatingResult = Number(summary?.operatingResult) || 0;
+    const investments = Number(summary?.investments) || 0;
+    const cashChange = Number(summary?.cashChange) || 0;
+    const days = Array.isArray(summary?.days) ? summary.days : [summary?.day].filter(Boolean);
+    const dayLabel = days.length > 1 ? `Tage ${days[0]}–${days[days.length - 1]}` : `Tag ${days[0] || '–'}`;
+    const documentNumber = days.length > 1 ? `TA-${days[0]}-${days[days.length - 1]}` : `TA-${String(days[0] || 0).padStart(5, '0')}`;
+    const operatingRows = [
+      receiptRow('Verkaufserlöse', summary?.revenue?.sales, 'credit'),
+      Number(costs.network) ? receiptRow('Netzunterhalt', costs.network, 'debit') : '',
+      Number(costs.factories) ? receiptRow('Fabrikbetrieb', costs.factories, 'debit') : '',
+      Number(costs.fleet) ? receiptRow('Fuhrpark-Fixkosten', costs.fleet, 'debit') : '',
+      Number(costs.transport) ? receiptRow('Transportaufwand', costs.transport, 'debit') : '',
+      receiptRow('Laufende Kosten gesamt', costs.total, 'debit', 'hf-v2-receipt__subtotal'),
+      receiptRow(operatingResult >= 0 ? 'Operativer Gewinn' : 'Operativer Verlust', operatingResult, operatingResult >= 0 ? 'credit' : 'debit', `hf-v2-receipt__result ${operatingResult >= 0 ? 'is-positive' : 'is-negative'}`),
+    ].join('');
+    const investmentRow = investments ? receiptRow('Investitionen, netto', investments, investments >= 0 ? 'debit' : 'credit', 'hf-v2-receipt__investment', 'nicht im operativen Ergebnis enthalten') : '';
+    return `<article class="hf-v2-receipt">
+      <header class="hf-v2-receipt__head"><div><span>Helvetic Freight</span><strong>Tagesabschluss</strong></div><dl><div><dt>Beleg</dt><dd>${documentNumber}</dd></div><div><dt>Periode</dt><dd>${dayLabel}</dd></div></dl></header>
+      <table class="hf-v2-receipt__table"><caption>Erfolgsrechnung</caption><thead><tr><th>Position</th><th>Aufwand<br><small>CHF</small></th><th>Ertrag<br><small>CHF</small></th></tr></thead><tbody>${operatingRows}${investmentRow}</tbody></table>
+      <footer class="hf-v2-receipt__footer"><div><span>Kontoveränderung</span><strong class="${cashChange >= 0 ? 'is-positive' : 'is-negative'}">${cashChange < 0 ? '−' : '+'} CHF ${receiptAmount(cashChange)}</strong></div><div class="hf-v2-receipt__balance"><span>Neuer Kontostand</span><strong>CHF ${receiptAmount(summary?.closingCash)}</strong></div></footer>
+      <p class="hf-v2-receipt__note">Automatisch verbucht · Beträge in Schweizer Franken</p>
+    </article>`;
+  }
+
+  function openDailyCycleReceipt(summary) {
+    if (!summary) return;
+    window.HFV2Modal?.openModal?.({className: 'hf-v2-receipt-modal', title: 'Tagesabschluss', subtitle: 'Buchungsbeleg', bodyHtml: dailyCycleReceiptMarkup(summary)});
+  }
+
   function runWithDailyCycleSummary(action) {
     const originalDailyCycle = window.HFV2DayCycle?.runDailyCycle;
     const summaries = [];
@@ -747,6 +789,7 @@
     const message = `${label}: ${window.HFV2Time?.formatClock?.() || ''}. ${dailyCycleSummaryText(summary)}`;
     setSaveStatus(message);
     setTimeStatus(message);
+    openDailyCycleReceipt(summary);
   }
 
   function renderLiveButton() {
@@ -775,6 +818,10 @@
     const message = `Live läuft: ${window.HFV2Time?.formatClock?.() || ''}. ${dailyCycleSummaryText(result.summary)}`;
     setTimeStatus(message);
     if (result.summary) setSaveStatus(message);
+    if (result.summary) {
+      stopLiveTime('Live pausiert: Tagesabschluss zur Prüfung geöffnet.');
+      openDailyCycleReceipt(result.summary);
+    }
   }
 
   function toggleLiveTime() {

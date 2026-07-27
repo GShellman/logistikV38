@@ -483,6 +483,73 @@ code {
   padding: 18px 24px 24px;
 }
 
+/* Tagesabschluss: bewusst wie ein Schweizer Buchungsbeleg statt wie ein Dashboard. */
+.hf-v2-receipt-modal { max-width: min(620px, 100%); }
+.hf-v2-receipt-modal .hf-v2-modal-scroll { background: #eef2f5; padding: 24px; }
+.hf-v2-receipt {
+  background: #fff;
+  border: 1px solid #d7dde2;
+  box-shadow: 0 10px 30px rgba(18, 34, 54, .09);
+  color: #172433;
+  font-variant-numeric: tabular-nums;
+  padding: 30px 32px 22px;
+}
+.hf-v2-receipt__head {
+  align-items: start;
+  border-bottom: 2px solid #172433;
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  padding-bottom: 18px;
+}
+.hf-v2-receipt__head span {
+  color: #5b6875;
+  display: block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.hf-v2-receipt__head strong { display: block; font-size: 22px; letter-spacing: -.03em; margin-top: 3px; }
+.hf-v2-receipt__head dl { display: grid; gap: 4px; margin: 0; min-width: 150px; }
+.hf-v2-receipt__head dl div { display: flex; gap: 12px; justify-content: space-between; }
+.hf-v2-receipt__head dt { color: #6b7680; font-size: 11px; }
+.hf-v2-receipt__head dd { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; font-weight: 700; margin: 0; }
+.hf-v2-receipt__table { border-collapse: collapse; margin-top: 22px; width: 100%; }
+.hf-v2-receipt__table caption { font-size: 12px; font-weight: 800; letter-spacing: .08em; padding: 0 0 8px; text-align: left; text-transform: uppercase; }
+.hf-v2-receipt__table th,
+.hf-v2-receipt__table td { border-bottom: 1px solid #dce1e5; padding: 9px 6px; }
+.hf-v2-receipt__table th { font-weight: 600; text-align: left; }
+.hf-v2-receipt__table td { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; text-align: right; width: 23%; }
+.hf-v2-receipt__table thead th { border-bottom-color: #8d979f; color: #65717c; font-size: 10px; letter-spacing: .07em; text-transform: uppercase; }
+.hf-v2-receipt__table thead th:not(:first-child) { text-align: right; }
+.hf-v2-receipt__table small { color: #7a858e; display: block; font-size: 9px; font-weight: 500; letter-spacing: 0; line-height: 1.4; text-transform: none; }
+.hf-v2-receipt__subtotal th,
+.hf-v2-receipt__subtotal td { border-top: 1px solid #8d979f; font-weight: 800; }
+.hf-v2-receipt__result th,
+.hf-v2-receipt__result td { border-bottom: 3px double #172433; font-size: 15px; font-weight: 900; padding-bottom: 12px; padding-top: 12px; }
+.hf-v2-receipt .is-positive { color: #17663a; }
+.hf-v2-receipt .is-negative { color: #a33131; }
+.hf-v2-receipt__investment th,
+.hf-v2-receipt__investment td { padding-top: 15px; }
+.hf-v2-receipt__footer { display: grid; gap: 9px; margin-top: 22px; }
+.hf-v2-receipt__footer > div { align-items: baseline; display: flex; justify-content: space-between; }
+.hf-v2-receipt__footer span { color: #596674; font-size: 12px; font-weight: 700; }
+.hf-v2-receipt__footer strong { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.hf-v2-receipt__balance { background: #172433; color: #fff; margin: 4px -10px 0; padding: 13px 10px; }
+.hf-v2-receipt__balance span { color: #dfe7ed; }
+.hf-v2-receipt__balance strong { font-size: 17px; }
+.hf-v2-receipt__note { color: #7a858e; font-size: 9px; letter-spacing: .06em; margin: 16px 0 0; text-align: center; text-transform: uppercase; }
+
+@media (max-width: 540px) {
+  .hf-v2-receipt-modal .hf-v2-modal-scroll { padding: 12px; }
+  .hf-v2-receipt { padding: 22px 16px 18px; }
+  .hf-v2-receipt__head { display: grid; }
+  .hf-v2-receipt__head dl { min-width: 0; width: 100%; }
+  .hf-v2-receipt__table th,
+  .hf-v2-receipt__table td { padding-left: 3px; padding-right: 3px; }
+}
+
 .hf-v2-network-menu {
   display: grid;
   gap: 12px;
