@@ -1020,29 +1020,34 @@
   }
 
   function beginRequiredDailyReturn(shipment, destinationCityId, arrivalAbsMinute) {
-    const dailyOrders = shipmentOrders(shipment).filter(order => order.frequency === 'daily' && order.fromCityId === shipment.fromCityId);
-    if (!dailyOrders.length || destinationCityId === shipment.fromCityId) return false;
+    const orders = shipmentOrders(shipment).filter(order => order.fromCityId === shipment.fromCityId);
+    const weeklyOrders = orders.filter(order => order.frequency === 'weekly');
+    const dailyOrders = orders.filter(order => order.frequency === 'daily');
+    if ((!weeklyOrders.length && !dailyOrders.length) || destinationCityId === shipment.fromCityId) return false;
 
-    const nextDepartureAbsMinute = Math.min(...dailyOrders.map(order => {
-      const arrivalDay = Math.floor(arrivalAbsMinute / MINUTES_PER_DAY) + 1;
-      return arrivalDay * MINUTES_PER_DAY + order.departureHour * 60 + order.departureMinute;
-    }));
     const requiredCount = Math.max(1, Math.trunc(Number(shipment.vehicleCount) || shipment.vehicleIds?.length || 1));
-    const alternatives = window.HFFleet?.getAvailableVehicles?.({
-      cityId: shipment.fromCityId,
-      vehicleType: shipment.vehicleType,
-      atAbsMinute: nextDepartureAbsMinute,
-    }) || [];
-    if (alternatives.length >= requiredCount) return false;
+    const requiresWeeklyReturn = weeklyOrders.length > 0;
+    if (!requiresWeeklyReturn) {
+      const nextDepartureAbsMinute = Math.min(...dailyOrders.map(order => {
+        const arrivalDay = Math.floor(arrivalAbsMinute / MINUTES_PER_DAY) + 1;
+        return arrivalDay * MINUTES_PER_DAY + order.departureHour * 60 + order.departureMinute;
+      }));
+      const alternatives = window.HFFleet?.getAvailableVehicles?.({
+        cityId: shipment.fromCityId,
+        vehicleType: shipment.vehicleType,
+        atAbsMinute: nextDepartureAbsMinute,
+      }) || [];
+      if (alternatives.length >= requiredCount) return false;
+    }
 
     const path = window.HFNetwork?.findPath?.(destinationCityId, shipment.fromCityId, {mode: 'road'});
     if (!path?.reachable) return false;
     const returnDepartureAbsMinute = arrivalAbsMinute;
     const returnArrivalAbsMinute = returnDepartureAbsMinute + shipmentDurationMinutes(path, shipment.vehicleType);
     const endOfDayAbsMinute = (Math.floor(arrivalAbsMinute / MINUTES_PER_DAY) + 1) * MINUTES_PER_DAY - 1;
-    if (returnArrivalAbsMinute > endOfDayAbsMinute) return false;
+    if (!requiresWeeklyReturn && returnArrivalAbsMinute > endOfDayAbsMinute) return false;
 
-    const reservationId = `shipment-${shipment.id}-daily-return`;
+    const reservationId = `shipment-${shipment.id}-${requiresWeeklyReturn ? 'weekly' : 'daily'}-return`;
     const reservation = window.HFNetwork?.reservePathCapacity?.(path, {
       startAbsMinute: returnDepartureAbsMinute,
       endAbsMinute: returnArrivalAbsMinute,
@@ -1053,6 +1058,7 @@
 
     shipment.returnDepartureAbsMinute = returnDepartureAbsMinute;
     shipment.returnArrivalAbsMinute = returnArrivalAbsMinute;
+    shipment.returnFromCityId = destinationCityId;
     shipment.returnGeometry = pathRouteGeometry(path);
     shipment.returnPathNodeIds = Array.isArray(path.nodes) ? path.nodes.map(normalizeId).filter(Boolean) : [];
     shipment.returnPathEdgeIds = Array.isArray(path.edges) ? path.edges.map(pathEdgeId).filter(Boolean) : [];
@@ -1076,11 +1082,12 @@
   function syncAssignedVehicles(shipment, nowAbsMinute) {
     if (!Array.isArray(shipment.vehicleIds) || !shipment.vehicleIds.length) return;
     if (shipment.status === 'returning') {
+      const returnFromCityId = shipment.returnFromCityId || shipment.toCityId;
       window.HFFleet?.updateAssignment?.(shipment.id, {
         status: 'returning',
-        currentCityId: shipment.toCityId,
+        currentCityId: returnFromCityId,
         availableAbsMinute: shipment.returnArrivalAbsMinute,
-        routeSegment: {fromCityId: shipment.toCityId, toCityId: shipment.fromCityId},
+        routeSegment: {fromCityId: returnFromCityId, toCityId: shipment.fromCityId},
       });
       return;
     }
