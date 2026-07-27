@@ -16,6 +16,7 @@
   const feedbackLog = [];
   const feedbackWarnings = new Map();
   const deliveredStopKeys = new Set();
+  const expandedListState = new Map();
   let receiptSequence = 0;
   const FEEDBACK_META = {
     positive: {icon: '✓', label: 'Erfolg'},
@@ -181,7 +182,7 @@
     return rows.length ? limitedEntriesMarkup(rows, ([goodId, kg]) => {
       const good = goodById(goodId);
       return `<article class="hf-v2-inventory-good"><div class="hf-v2-demand-icon">${goodIcon(good)}</div><div><b>${escapeHtml(good.name)}</b><span>${formatGoodAmount(goodId, kg)} · ${formatWeightKg(kg)}</span></div></article>`;
-    }, 4, 'hf-v2-inventory-grid') : '<p class="hf-v2-muted hf-v2-inventory-empty">📦 Lager leer</p>';
+    }, 4, 'hf-v2-inventory-grid', `${cityId}:inventory`) : '<p class="hf-v2-muted hf-v2-inventory-empty">📦 Lager leer</p>';
   }
 
   function inventorySectionMarkup(city) {
@@ -200,12 +201,14 @@
     return Math.max(1, Math.trunc(Number(time?.day) || 1));
   }
 
-  function limitedEntriesMarkup(entries, renderEntry, limit = 4, className = '') {
+  function limitedEntriesMarkup(entries, renderEntry, limit = 4, className = '', stateKey = '') {
     const visible = entries.slice(0, limit).map(renderEntry).join('');
     const remainder = entries.slice(limit).map(renderEntry).join('');
     const content = `<div class="${className}">${visible}</div>`;
     if (!remainder) return content;
-    return `${content}<details class="hf-v2-more"><summary>Alle anzeigen (${entries.length.toLocaleString('de-CH')})</summary><div class="${className}">${remainder}</div></details>`;
+    const keyAttribute = stateKey ? ` data-hf-v2-list-key="${escapeHtml(stateKey)}"` : '';
+    const openAttribute = stateKey && expandedListState.get(stateKey) ? ' open' : '';
+    return `${content}<details class="hf-v2-more"${keyAttribute}${openAttribute}><summary>Alle anzeigen (${entries.length.toLocaleString('de-CH')})</summary><div class="${className}">${remainder}</div></details>`;
   }
 
   function demandPanel(city) {
@@ -219,7 +222,7 @@
       const coveragePercent = dailyDemandKg > 0 ? Math.min(100, inventoryKg / dailyDemandKg * 100) : 100;
       return `<article class="hf-v2-demand-tile"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-tile__body"><b>${escapeHtml(row.good.name)}</b><small>Bestand: ${formatGoodAmount(row.good.id, inventoryKg)} · Tagesbedarf: ${formatDailyKg(dailyDemandKg)} · Verkaufspreis: ${formatSalePrice(row.good, salePricePerKg)}</small><span class="hf-v2-demand-tile__bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${coveragePercent}"><i style="width:${coveragePercent}%"></i></span></div></article>`;
     };
-    return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">Waren und Tagesbedarf</h3></div><strong>${formatDailyKg(total)}</strong></div>${rows.length ? limitedEntriesMarkup(rows, renderRow, 4, 'hf-v2-demand-compact-grid') : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
+    return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">Waren und Tagesbedarf</h3></div><strong>${formatDailyKg(total)}</strong></div>${rows.length ? limitedEntriesMarkup(rows, renderRow, 4, 'hf-v2-demand-compact-grid', `${city.id}:demand`) : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
   }
 
   function factoryById(factoryId) {
@@ -303,7 +306,7 @@
       const status = estimate?.reason === 'demand-limited' ? 'Nachfrage gedeckt' : estimate?.reason === 'capacity-limited' ? 'Lager voll' : estimate?.reason === 'input-limited' ? 'Inputs fehlen' : estimate?.reason === 'no-output' ? 'Kein Output' : 'Potenzial heute';
       return `<article class="hf-v2-factory-production-item"><div class="hf-v2-factory-production-head"><span>${escapeHtml(factory.icon || '🏭')}</span><div><b>${escapeHtml(factory.name || factory.id)}</b><small>Stufe ${level.toLocaleString('de-CH')} · ${factoryOutputsText(factory, outputMultiplier)}</small></div></div><div class="hf-v2-factory-production-bar"><span><i style="width:${fill}%"></i></span><small>${formatDailyKg(actualKg)} von ${formatDailyKg(capacityKg)} · ${status}</small></div><dl class="hf-v2-factory-production-stats"><div><dt>Kapazität aktuell</dt><dd>${formatDailyKg(capacityKg)}</dd></div><div><dt>Nach Ausbau</dt><dd>${formatDailyKg(nextCapacityKg)}</dd></div><div><dt>Betriebskosten</dt><dd>${formatCurrency(currentOperatingCost)}/Tag</dd></div><div><dt>Betriebskosten nach Ausbau</dt><dd>${formatCurrency(nextOperatingCost)}/Tag</dd></div><div><dt>Upgrade-Kosten</dt><dd>${formatCurrency(upgradeCost)}</dd></div></dl><button type="button" data-hf-v2-factory-upgrade data-city-id="${escapeHtml(city.id)}" data-factory-ref="${escapeHtml(factoryRef)}" title="${escapeHtml(buttonState.title)}"${buttonState.disabled ? ' disabled' : ''}>Fabrik ausbauen</button></article>`;
     });
-    return `<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div><strong>${builtFactories.length.toLocaleString('de-CH')}</strong></div>${limitedEntriesMarkup(rows, row => row, 3, 'hf-v2-factory-production-grid')}</section>${productionDebugMarkup(city)}`;
+    return `<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div><strong>${builtFactories.length.toLocaleString('de-CH')}</strong></div>${limitedEntriesMarkup(rows, row => row, 3, 'hf-v2-factory-production-grid', `${city.id}:factories`)}</section>${productionDebugMarkup(city)}`;
   }
 
 
@@ -425,8 +428,8 @@
     }) || '<p class="hf-v2-muted">Kalender nicht verfügbar.</p>';
   }
 
-  function logisticsListMarkup(items, emptyText, rowMarkup) {
-    return items.length ? limitedEntriesMarkup(items, rowMarkup, 3, 'hf-v2-production-debug-grid') : `<p class="hf-v2-muted">${emptyText}</p>`;
+  function logisticsListMarkup(items, emptyText, rowMarkup, stateKey) {
+    return items.length ? limitedEntriesMarkup(items, rowMarkup, 3, 'hf-v2-production-debug-grid', stateKey) : `<p class="hf-v2-muted">${emptyText}</p>`;
   }
 
   function cityLogisticsSectionMarkup(city) {
@@ -439,7 +442,7 @@
     const outgoingOrders = orders.filter(order => order.fromCityId === city.id);
     const calendarRows = shipmentCalendarRows(city, shipments, orders, logistics.dispatchPlan, logistics.assignments);
     const total = incomingOrders.length + outgoingOrders.length + calendarRows.length + assignments.length + waitingVehicles.length;
-    return `<section class="hf-v2-demand-card hf-v2-city-logistics" aria-labelledby="hfV2LogisticsTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Warenlogistik</p><h3 id="hfV2LogisticsTitle">Warenlogistik</h3></div><strong>${total.toLocaleString('de-CH')}</strong></div><h4>Eingehende Bestellungen</h4>${logisticsListMarkup(incomingOrders, 'Keine eingehenden Bestellungen.', orderCardMarkup)}<h4>Ausgehende Bestellungen</h4>${logisticsListMarkup(outgoingOrders, 'Keine ausgehenden Bestellungen.', orderCardMarkup)}<h4>Leerfahrten / Repositionierungen</h4>${logisticsListMarkup(assignments, 'Keine disponierten Leerfahrten.', repositioningCardMarkup)}<h4>Wartende Fahrzeuge</h4>${logisticsListMarkup(waitingVehicles, 'Keine verfügbaren Fahrzeuge an diesem Standort.', waitingVehicleCardMarkup)}<h4>Transportkalender</h4>${shipmentCalendarMarkup(city)}</section>`;
+    return `<section class="hf-v2-demand-card hf-v2-city-logistics" aria-labelledby="hfV2LogisticsTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Warenlogistik</p><h3 id="hfV2LogisticsTitle">Warenlogistik</h3></div><strong>${total.toLocaleString('de-CH')}</strong></div><h4>Eingehende Bestellungen</h4>${logisticsListMarkup(incomingOrders, 'Keine eingehenden Bestellungen.', orderCardMarkup, `${city.id}:incoming-orders`)}<h4>Ausgehende Bestellungen</h4>${logisticsListMarkup(outgoingOrders, 'Keine ausgehenden Bestellungen.', orderCardMarkup, `${city.id}:outgoing-orders`)}<h4>Leerfahrten / Repositionierungen</h4>${logisticsListMarkup(assignments, 'Keine disponierten Leerfahrten.', repositioningCardMarkup, `${city.id}:assignments`)}<h4>Wartende Fahrzeuge</h4>${logisticsListMarkup(waitingVehicles, 'Keine verfügbaren Fahrzeuge an diesem Standort.', waitingVehicleCardMarkup, `${city.id}:waiting-vehicles`)}<h4>Transportkalender</h4>${shipmentCalendarMarkup(city)}</section>`;
   }
 
   function isCityUnlocked(cityId) {
@@ -925,6 +928,11 @@
 
 
   function bindLogisticsPanelActions() {
+    document.addEventListener('toggle', event => {
+      const list = event.target?.closest?.('[data-hf-v2-list-key]');
+      if (!list) return;
+      expandedListState.set(list.dataset.hfV2ListKey, list.open);
+    }, true);
     document.addEventListener('click', event => {
       const requestedTab = event.target?.closest?.('[data-hf-v2-tab], [data-hf-v2-show-tab]');
       if (requestedTab) {
