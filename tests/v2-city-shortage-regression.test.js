@@ -19,7 +19,7 @@ test('leerer Warenbestand erzeugt weder Warenmangel-Kartenstatus noch Problemwar
 
   assert.doesNotMatch(mapState, /shortage|Warenmangel|getCityInventory|v2DemandRows/);
   assert.doesNotMatch(citySelection, /hf-v2-city-warning|Bestand liegt unter dem Tagesbedarf|Versorgung mit/);
-  assert.match(citySelection, /Keine akuten Probleme erkannt/);
+  assert.doesNotMatch(citySelection, /Aktuelle Probleme|Keine akuten Probleme erkannt/);
   assert.doesNotMatch(mapControls, /Warenmangel/);
 });
 
