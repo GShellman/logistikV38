@@ -23,12 +23,19 @@ test('leerer Warenbestand erzeugt weder Warenmangel-Kartenstatus noch Problemwar
   assert.doesNotMatch(mapControls, /Warenmangel/);
 });
 
-test('Bestand, Tagesbedarf und Reichweite bleiben neutrale Warenkennzahlen', () => {
+test('Bestand, Tagesbedarf und prozentuale Deckung bleiben neutrale Warenkennzahlen', () => {
   const inventory = functionSource('inventorySectionMarkup', 'currentTimeState');
   const demand = functionSource('demandPanel', 'factoryById');
 
   assert.match(inventory, /Güter \/ Lager/);
   assert.match(inventory, /von.*belegt/);
   assert.match(demand, /Tagesbedarf/);
-  assert.match(demand, /Reichweite:/);
+  assert.match(demand, /Bestand:/);
+  assert.doesNotMatch(demand, /Reichweite:|stockCoverageLabel|projectedEndOfDayStockKg|Tagesende:/);
+  assert.match(demand, /coveragePercent = dailyDemandKg > 0 \? Math\.min\(100, inventoryKg \/ dailyDemandKg \* 100\) : 100/);
+  assert.match(demand, /role="progressbar"/);
+  assert.match(demand, /aria-valuemin="0"/);
+  assert.match(demand, /aria-valuemax="100"/);
+  assert.match(demand, /aria-valuenow="\$\{coveragePercent\}"/);
+  assert.match(demand, /width:\$\{coveragePercent\}%/);
 });
