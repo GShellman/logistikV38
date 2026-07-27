@@ -510,6 +510,28 @@
     return '•';
   }
 
+  function cityMapState(city) {
+    const logistics = window.HFV2Logistics?.getState?.() || {};
+    const openDelivery = (logistics.shipments || []).some(item =>
+      (item.status === 'active' || item.status === 'returning') && item.toCityId === city.id);
+    const factories = window.HFV2Factories?.getCityFactoryInstances?.(city.id) || [];
+    const stopped = factories.some(factory => {
+      const estimate = window.HFV2Goods?.estimateCityFactoryProduction?.(city.id, factory);
+      return estimate && Number(estimate.actualKg ?? estimate.productionKg ?? 0) <= 0;
+    });
+    const used = Number(window.HFV2Goods?.getUsedCapacityKg?.(city.id)) || 0;
+    const capacity = Number(window.HFV2Goods?.getCapacityKg?.(city.id)) || 0;
+    const shortage = v2DemandRows(city).some(row => {
+      const stock = Number(window.HFV2Goods?.getCityInventory?.(city.id)?.[row.good.id]) || 0;
+      return stock < row.dailyKg * .25;
+    });
+    if (stopped) return {id: 'stopped', label: 'Produktionsstillstand', symbol: '×'};
+    if (shortage) return {id: 'shortage', label: 'Warenmangel', symbol: '!'};
+    if (capacity > 0 && used / capacity >= .9) return {id: 'full', label: 'Volle Lager', symbol: '■'};
+    if (openDelivery) return {id: 'delivery', label: 'Offene Lieferung', symbol: '↓'};
+    return {id: 'normal', label: 'Normal', symbol: '✓'};
+  }
+
   function cityIcon(city) {
     const small = city.tier === 1;
     const size = small ? MARKER_SIZE.small : MARKER_SIZE.normal;
@@ -522,9 +544,11 @@
       selectedClass(city).trim(),
     ].filter(Boolean).join(' ');
 
+    const state = cityMapState(city);
+    const hasProduction = (window.HFV2Factories?.getCityFactoryInstances?.(city.id) || window.HFV2Factories?.getCityFactories?.(city.id) || []).length > 0;
     return L.divIcon({
       className: '',
-      html: `<div id="mk-${city.id}" class="${classes}">${cityLabel(city)}</div>`,
+      html: `<div id="mk-${city.id}" class="${classes}" data-map-layer="city"><span aria-hidden="true">${cityLabel(city)}</span><span class="hf-v2-city-state hf-v2-city-state--${state.id}" role="img" aria-label="Zustand: ${state.label}">${state.symbol}</span>${hasProduction ? '<span class="hf-v2-production-site" aria-hidden="true">🏭</span>' : ''}</div>`,
       iconSize: [size, size],
       iconAnchor: [anchor, anchor],
     });
@@ -541,7 +565,9 @@
 
   function bindCityTooltip(marker, city) {
     marker.unbindTooltip();
-    marker.bindTooltip(city.name, {
+    const state = cityMapState(city);
+    marker.options.title = `${city.name} – ${state.label}`;
+    marker.bindTooltip(`${escapeHtml(city.name)}<span class="hf-v2-city-label-state">${escapeHtml(state.symbol)} ${escapeHtml(state.label)}</span>`, {
       permanent: city.tier >= 3 || city.id === selectedId,
       direction: 'top',
       offset: [0, -13],
@@ -602,6 +628,29 @@
     }
   }
 
+  function addMapControls() {
+    const Control = L.Control.extend({
+      options: {position: 'bottomleft'},
+      onAdd() {
+        const container = L.DomUtil.create('div', 'hf-v2-map-tools leaflet-bar');
+        container.innerHTML = `<details open><summary>Kartenanzeige</summary><div class="hf-v2-layer-control" role="group" aria-label="Kartenebenen">${[
+          ['network', 'Netzwerk'], ['goods', 'Warenlage'], ['production', 'Produktion'], ['vehicles', 'Fahrzeuge'],
+        ].map(([id, label]) => `<label><input type="checkbox" data-hf-map-layer="${id}" checked> ${label}</label>`).join('')}</div></details><details><summary>Legende</summary><div class="hf-v2-map-legend"><span><i class="legend-city">◆</i>Stadt</span><span><i>🏭</i>Produktionsort</span><span><i class="legend-road"></i>Strasse</span><span><i class="legend-rail"></i>Schiene</span><span><i>➤</i>Aktiver Transport</span><span><i>⚠</i>Warnung</span><span><i>◆</i>Engpass</span><hr><span>✓ Normal</span><span>! Warenmangel</span><span>■ Volles Lager</span><span>× Produktionsstillstand</span><span>↓ Offene Lieferung</span></div></details>`;
+        L.DomEvent.disableClickPropagation(container);
+        container.addEventListener('change', event => {
+          const input = event.target.closest('[data-hf-map-layer]');
+          if (!input) return;
+          const layer = input.dataset.hfMapLayer;
+          map.getContainer().classList.toggle(`hf-v2-hide-${layer}`, !input.checked);
+          if (layer === 'network') window.HFNetworkLayer?.setNetworkLayerVisible?.(input.checked, map);
+          if (layer === 'vehicles') window.HFV2LogisticsLayer?.setLogisticsLayerVisible?.(input.checked, map);
+        });
+        return container;
+      },
+    });
+    new Control().addTo(map);
+  }
+
   function bootMap(cities) {
     const mapError = document.getElementById('hfV2MapError');
     if (!window.L) {
@@ -657,6 +706,7 @@
     renderMarkers(cities);
     window.HFNetwork?.initNetworkLayer?.(map);
     window.HFV2LogisticsLayer?.initLogisticsLayer?.(map);
+    addMapControls();
     if (networkState) {
       window.HFNetwork?.renderNetworkLines?.(networkState.connections, citiesById);
     }
