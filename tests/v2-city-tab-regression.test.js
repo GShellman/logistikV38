@@ -73,6 +73,57 @@ test('Produktion bleibt nach einem Live-Refresh als Stadttab ausgewählt und sic
   assert.equal(productionPanel.hidden, false);
 });
 
+test('Alle anzeigen bleibt nach einem Live-Tick geöffnet', () => {
+  const handlers = {};
+  const facts = {
+    render(markup) {
+      this.details = {
+        dataset: {hfV2ListKey: 'zurich:inventory'},
+        open: /<details[^>]* open/.test(markup),
+        closest(selector) { return selector === '[data-hf-v2-list-key]' ? this : null; },
+      };
+    },
+  };
+  const context = vm.createContext({
+    facts,
+    document: {
+      addEventListener(type, handler) { handlers[type] = handler; },
+      getElementById: () => null,
+    },
+    window: {HFV2Time: {advanceMinutes: () => null, formatClock: () => '08:01'}},
+    Map,
+    escapeHtml: value => String(value),
+    renderHud() {},
+    renderActiveShipments() {},
+    runWithDailyCycleSummary: action => ({time: action(), summary: null}),
+    dailyCycleSummaryText: () => '',
+    setTimeStatus() {},
+  });
+
+  vm.runInContext(`
+    let selectedId = 'zurich';
+    const citiesById = {zurich: {id: 'zurich'}};
+    const expandedListState = new Map();
+    ${functionSource('limitedEntriesMarkup', 'demandPanel')}
+    function selectCity(city) {
+      facts.render(limitedEntriesMarkup([1, 2, 3, 4, 5], String, 4, 'entries', city.id + ':inventory'));
+    }
+    ${functionSource('refreshSelectedCity', 'updateAdvanceStatus')}
+    ${functionSource('liveTick', 'toggleLiveTime')}
+    ${functionSource('bindLogisticsPanelActions', 'bindTimeControls')}
+    selectCity(citiesById.zurich);
+    bindLogisticsPanelActions();
+  `, context);
+
+  const openedDetails = facts.details;
+  openedDetails.open = true;
+  handlers.toggle({target: openedDetails});
+  vm.runInContext('liveTick()', context);
+
+  assert.notEqual(facts.details, openedDetails, 'selectCity hat das details neu dargestellt');
+  assert.equal(facts.details.open, true);
+});
+
 test('Waren ist der Standardtab und die Stadtansicht enthält keinen Übersicht-Tab mehr', () => {
   assert.match(source, /let activeCityTab = 'goods';/);
   assert.doesNotMatch(source, /hfV2TabOverview|hfV2PanelOverview|data-hf-v2-tab="overview"|data-hf-v2-panel="overview"/);
