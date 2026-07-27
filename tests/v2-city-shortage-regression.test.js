@@ -39,3 +39,20 @@ test('Bestand, Tagesbedarf und prozentuale Deckung bleiben neutrale Warenkennzah
   assert.match(demand, /aria-valuenow="\$\{coveragePercent\}"/);
   assert.match(demand, /width:\$\{coveragePercent\}%/);
 });
+
+test('Warenbedarf zeigt den bestandsspezifischen, formatierten Verkaufspreis', () => {
+  const priceFormatter = functionSource('formatSalePrice', 'cityInventoryMarkup');
+  const demand = functionSource('demandPanel', 'factoryById');
+
+  assert.match(demand, /salePriceForCity\?\.\(city, row\.good\.id, \{stockKg: inventoryKg\}\)/);
+  assert.match(demand, /Verkaufspreis: \$\{formatSalePrice\(row\.good, salePricePerKg\)\}/);
+  assert.match(priceFormatter, /formatCurrency\(price\)/);
+});
+
+test('Verkaufspreise werden von Kilogramm auf die Katalogeinheit umgerechnet', () => {
+  const priceFormatter = functionSource('formatSalePrice', 'cityInventoryMarkup');
+
+  assert.match(priceFormatter, /good\?\.unit \|\| \{unit: 'kg', kgPerUnit: 1\}/);
+  assert.match(priceFormatter, /unitName === 'kg' \? pricePerKg : pricePerKg \* kgPerUnit/);
+  assert.match(priceFormatter, /\/ \$\{escapeHtml\(unitName\)\}/);
+});
