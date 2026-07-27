@@ -490,7 +490,7 @@
     if (!project || project.kind !== 'build') return null;
     const cash = window.HFV2Save?.getCash?.() ?? STARTING_CASH;
     if (cash < project.cost) return null;
-    window.HFV2Save?.changeCash?.(-project.cost, 'network-build');
+    window.HFV2Save?.changeCash?.(-project.cost, 'network-build', {reference: {networkProject: `${project.a}:${project.b}:${project.type}`}});
     const edges = splitRoadsForAutomaticJunctions(project);
     state.connections.push(...edges);
     state.cities = state.cities && typeof state.cities === 'object' ? state.cities : {};

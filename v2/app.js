@@ -701,14 +701,18 @@
 
   function dailyCycleSummaryText(summary) {
     if (!summary) return 'Kein Tagesabschluss ausgelöst.';
-    const sales = summary.sales || {};
-    const production = summary.production || {};
-    const sold = formatWeightKg(sales.soldKg);
-    const revenue = formatCurrency(sales.revenue);
-    const made = formatWeightKg(production.madeKg);
-    const blocked = Number(production.blocked) || 0;
-    const blockedText = blocked > 0 ? ` · ${blocked.toLocaleString('de-CH')} blockiert` : '';
-    return `Tagesabschluss: ${sold} verkauft für ${revenue} · ${made} produziert${blockedText}.`;
+    const costs = summary.costs || {};
+    const rows = [`Einnahmen ${formatCurrency(summary.revenue?.sales || 0)}`];
+    const networkFactories = (Number(costs.network) || 0) + (Number(costs.factories) || 0);
+    if (networkFactories) rows.push(`Netz & Fabriken −${formatCurrency(networkFactories)}`);
+    if (Number(costs.fleet)) rows.push(`Fuhrpark −${formatCurrency(costs.fleet)}`);
+    if (Number(costs.transport)) rows.push(`Fahrten −${formatCurrency(costs.transport)}`);
+    rows.push(`Gesamtkosten −${formatCurrency(costs.total || 0)}`);
+    const operatingResult = Number(summary.operatingResult) || 0;
+    rows.push(`Operativer ${operatingResult >= 0 ? 'Gewinn' : 'Verlust'} ${formatCurrency(Math.abs(operatingResult))}`);
+    if (Number(summary.investments)) rows.push(`Investitionen ${formatCurrency(summary.investments)}`);
+    rows.push(`Kontoveränderung ${formatCurrency(summary.cashChange || 0)}`, `Neuer Kontostand ${formatCurrency(summary.closingCash || 0)}`);
+    return `Tagesabschluss: ${rows.join(' · ')}.`;
   }
 
   function runWithDailyCycleSummary(action) {
