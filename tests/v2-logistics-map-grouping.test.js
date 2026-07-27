@@ -138,6 +138,26 @@ test('Leerfahrten und wartende Fahrzeuge behalten nicht-blaue Statusindikatoren'
   assert.match(html, /aria-label="Fahrzeug wartet"/);
 });
 
+test('eine normale Lieferung auf Rückfahrt wird ohne ursprüngliche Ware als Leerfahrt markiert', () => {
+  const {api, layers} = setup();
+  api.renderActiveShipments([{
+    ...shipment('returning', [[0, 0], [0, 10]]),
+    status: 'returning',
+    returnDepartureAbsMinute: 0,
+    returnArrivalAbsMinute: 10,
+    returnGeometry: [[0, 10], [0, 0]],
+  }], cities);
+
+  const [marker] = layers;
+  assert.doesNotMatch(marker.options.icon.html, /hf-v2-transport-marker__good-icon/);
+  assert.match(marker.options.icon.html, /hf-v2-transport-marker--empty/);
+  assert.match(marker.options.icon.html, /aria-label="Leerfahrt"/);
+  assert.match(marker.options.title, /Rückfahrt · Leerfahrt/);
+  assert.match(marker.tooltip, /Rückfahrt · Leerfahrt/);
+  assert.match(marker.popup, /Keine Ladung · Rückfahrt/);
+  assert.doesNotMatch(`${marker.options.title}${marker.tooltip}${marker.popup}`, /geladen: Holz|Geladene Waren: Holz|<dd>Holz<\/dd>/);
+});
+
 test('nahe Transporte werden mit Anzahl und Lieferdetails gruppiert', () => {
   const {api, layers} = setup();
   api.renderActiveShipments([
