@@ -7,7 +7,7 @@ function load(file, window) {
   vm.runInContext(readFileSync(file, 'utf8'), vm.createContext({window, console, Blob: undefined, File: undefined, CustomEvent: class {}}), {filename: file});
 }
 
-function logisticsHarness({capacity = true, vehicles = [{id: 1, vehicleType: 'van', currentCityId: 'a', availableAbsMinute: 0}], stock = 10000} = {}) {
+function logisticsHarness({capacity = true, vehicles = [{id: 1, vehicleType: 'van', currentCityId: 'a', availableAbsMinute: 0}], stock = 10000, localDemand = 100, localReserve = 0} = {}) {
   const time = {day: 1, hour: 0, minute: 0};
   const inventory = {a: {food: stock}, b: {food: 0}, c: {food: 0}};
   const path = (from, to) => ({reachable: true, distance: 60, duration: 1, nodes: [from, to], edges: []});
@@ -30,7 +30,8 @@ function logisticsHarness({capacity = true, vehicles = [{id: 1, vehicleType: 'va
     },
     HFV2Goods: {
       getCityInventory: cityId => inventory[cityId] || {},
-      getCityDailyDemandMap: () => ({food: 100}),
+      getCityDailyDemandMap: () => ({food: localDemand}),
+      getExportableStockKg: (cityId, goodId) => Math.max(0, (Number(inventory[cityId]?.[goodId]) || 0) - localReserve),
       removeFromInventory: (cityId, goodId, amountKg) => {
         const removedKg = Math.min(Number(inventory[cityId]?.[goodId]) || 0, amountKg);
         inventory[cityId][goodId] -= removedKg;
@@ -51,6 +52,19 @@ function logisticsHarness({capacity = true, vehicles = [{id: 1, vehicleType: 'va
 function dueOrder(id, amountKg, toCityId = 'b') {
   return {id, fromCityId: 'a', toCityId, goodId: 'food', frequency: 'daily', departureHour: 0, departureMinute: 0, vehicleType: 'van', amountKg, enabled: true, lastDispatchedDay: null};
 }
+
+test('Goods-API zieht den lokalen Tagesbedarf zentral vom Exportbestand ab', () => {
+  const window = {
+    HFV2GoodsCatalog: [{id: 'food', category: 'processed_food', price: 1, demand: {enabled: true}}],
+    HF_GOODS_DATABASE: {goods: {food: {demand: {enabled: true}}}},
+    HF_GAME_MECHANICS: {makeDemandsV2: () => ({food: {need: 100, dailyRate: 1}})},
+  };
+  load('v2/goods-logic.js', window);
+  window.HFV2Goods.configure({state: window.HFV2Goods.createGoodsState({cityInventories: {a: {food: 140}}}), cities: [{id: 'a'}]});
+
+  assert.equal(window.HFV2Goods.getLocalReserveKg('a', 'food'), 100);
+  assert.equal(window.HFV2Goods.getExportableStockKg('a', 'food'), 40);
+});
 
 test('alle sieben Wochentage werden normalisiert und nur am gewählten Tag fällig', () => {
   const {window} = logisticsHarness();
@@ -141,6 +155,50 @@ test('konkurrierende Bestellungen reduzieren denselben Restbestand fortlaufend',
   assert.deepEqual(Array.from(created[0].stops, stop => stop.amountKg).sort((a, b) => b - a), [100, 50]);
   assert.equal(inventory.a.food, 0);
   assert.deepEqual(state.orders.map(order => order.lastDispatchResult), ['created', 'partial-delivery']);
+});
+
+test('lokaler Tagesbedarf bleibt bei einzelnen und konkurrierenden Exportaufträgen reserviert', () => {
+  const {window, state, inventory} = logisticsHarness({stock: 140, localDemand: 100, localReserve: 100});
+  state.orders = [dueOrder(1, 30, 'b'), dueOrder(2, 30, 'c')];
+  window.HFV2Logistics.configure({state});
+
+  const created = window.HFV2Logistics.tick();
+
+  assert.equal(created.length, 1);
+  assert.equal(created[0].amountKg, 40);
+  assert.deepEqual(Array.from(created[0].stops, stop => stop.amountKg), [30, 10]);
+  assert.equal(inventory.a.food, 100);
+});
+
+test('nur zusätzlich produzierter Überschuss wird für einen späteren Export verfügbar', () => {
+  const {window, state, inventory, time} = logisticsHarness({stock: 140, localDemand: 100, localReserve: 100});
+  state.orders = [dueOrder(1, 100)];
+  window.HFV2Logistics.configure({state});
+
+  assert.equal(window.HFV2Logistics.tick()[0].amountKg, 40);
+  assert.equal(inventory.a.food, 100);
+  inventory.a.food += 25;
+  time.day = 2;
+  const second = window.HFV2Logistics.tick();
+
+  assert.equal(second[0].amountKg, 25);
+  assert.equal(inventory.a.food, 100);
+});
+
+test('Dispatch-Plan teilt nur den Exportüberschuss auf mehrere Aufträge auf', () => {
+  const {window, state} = logisticsHarness({stock: 140, localDemand: 100, localReserve: 100, vehicles: [
+    {id: 1, vehicleType: 'van', currentCityId: 'a', availableAbsMinute: 0},
+    {id: 2, vehicleType: 'van', currentCityId: 'a', availableAbsMinute: 0},
+  ]});
+  state.orders = [dueOrder(1, 30, 'b'), dueOrder(2, 30, 'c')];
+  window.HFV2Logistics.configure({state});
+  load('v2/fleet-dispatch-logic.js', window);
+
+  const plan = window.HFV2FleetDispatch.buildPlan({state, horizonDays: 3});
+  const firstDayKg = plan.legs
+    .filter(leg => leg.type === 'shipment' && leg.departureAbsMinute < 1440)
+    .reduce((sum, leg) => sum + leg.amountKg, 0);
+  assert.equal(firstDayKg, 40);
 });
 
 test('Dispatch-Plan speichert und reserviert die reduzierte Liefermenge', () => {
