@@ -12,6 +12,71 @@
   let liveTimer = null;
   let citiesById = {};
   const markerById = new Map();
+  const feedbackLog = [];
+  const feedbackWarnings = new Map();
+  const deliveredStopKeys = new Set();
+  const FEEDBACK_META = {
+    positive: {icon: '✓', label: 'Erfolg'},
+    neutral: {icon: 'ℹ', label: 'Info'},
+    negative: {icon: '!', label: 'Warnung'},
+  };
+
+  function feedbackTime() {
+    return window.HFV2Time?.formatClock?.() || new Date().toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'});
+  }
+
+  function ensureFeedbackUi() {
+    if (document.getElementById('hfV2Feedback')) return;
+    const root = document.createElement('section');
+    root.id = 'hfV2Feedback';
+    root.className = 'hf-v2-feedback';
+    root.setAttribute('aria-label', 'Benachrichtigungen');
+    root.innerHTML = `<div class="hf-v2-feedback__toasts" aria-live="polite" aria-atomic="false"></div><div class="hf-v2-feedback__cards" aria-live="polite" aria-atomic="false"></div><details class="hf-v2-event-log"><summary><span aria-hidden="true">☷</span> Ereignisprotokoll <b>0</b></summary><div class="hf-v2-event-log__list"><p class="hf-v2-event-log__empty">Noch keine Ereignisse.</p></div></details>`;
+    document.body.append(root);
+  }
+
+  function renderFeedbackLog() {
+    const root = document.getElementById('hfV2Feedback');
+    if (!root) return;
+    const list = root.querySelector('.hf-v2-event-log__list');
+    root.querySelector('.hf-v2-event-log summary b').textContent = feedbackLog.length.toLocaleString('de-CH');
+    list.innerHTML = feedbackLog.length ? feedbackLog.map(entry => {
+      const meta = FEEDBACK_META[entry.tone];
+      return `<article class="is-${entry.tone}"><span class="hf-v2-feedback__icon" aria-hidden="true">${meta.icon}</span><div><b>${escapeHtml(entry.title)}</b><p>${escapeHtml(entry.message)}${entry.count > 1 ? ` <strong>×${entry.count}</strong>` : ''}</p><small>${meta.label} · ${escapeHtml(entry.time)}</small></div></article>`;
+    }).join('') : '<p class="hf-v2-event-log__empty">Noch keine Ereignisse.</p>';
+  }
+
+  function notify({level = 'toast', tone = 'neutral', title, message, dedupeKey = ''}) {
+    ensureFeedbackUi();
+    const meta = FEEDBACK_META[tone] || FEEDBACK_META.neutral;
+    let entry = dedupeKey ? feedbackWarnings.get(dedupeKey) : null;
+    if (entry) {
+      entry.count += 1;
+      entry.time = feedbackTime();
+      entry.message = message;
+    } else {
+      entry = {tone, title, message, time: feedbackTime(), count: 1};
+      feedbackLog.unshift(entry);
+      if (feedbackLog.length > 30) feedbackLog.pop();
+      if (dedupeKey) feedbackWarnings.set(dedupeKey, entry);
+    }
+    renderFeedbackLog();
+    const host = document.querySelector(level === 'card' ? '.hf-v2-feedback__cards' : '.hf-v2-feedback__toasts');
+    let node = dedupeKey ? host?.querySelector(`[data-feedback-key="${CSS.escape(dedupeKey)}"]`) : null;
+    if (!node) {
+      node = document.createElement('article');
+      node.className = `hf-v2-feedback-item hf-v2-feedback-item--${level} is-${tone}`;
+      if (dedupeKey) node.dataset.feedbackKey = dedupeKey;
+      host?.prepend(node);
+    }
+    node.innerHTML = `<span class="hf-v2-feedback__icon" aria-hidden="true">${meta.icon}</span><div><span class="hf-v2-feedback__label">${meta.label}</span><h3>${escapeHtml(title)}${entry.count > 1 ? ` <small>×${entry.count}</small>` : ''}</h3><p>${escapeHtml(message)}</p></div><button type="button" aria-label="Meldung schließen">×</button>`;
+    node.querySelector('button').onclick = () => node.remove();
+    window.setTimeout(() => node?.remove(), level === 'card' ? 9000 : 4500);
+  }
+
+  function actionConfirmation(title, cost, result, tone = 'positive') {
+    notify({level: 'card', tone, title, message: `Kosten ${formatCurrency(cost)} · Konto ${formatCurrency(window.HFV2Save?.getCash?.())} · ${result}`});
+  }
 
   function normaliseCity(raw) {
     const coordinates = raw.coordinates || {};
@@ -856,6 +921,8 @@
 
   function openDailyCycleReceipt(summary) {
     if (!summary) return;
+    const result = Number(summary.operatingResult) || 0;
+    notify({tone: result < 0 ? 'negative' : 'positive', title: 'Tagesabschluss gebucht', message: `${result < 0 ? 'Verlust' : 'Gewinn'} ${formatCurrency(Math.abs(result))} · Konto ${formatCurrency(summary.closingCash)}`});
     window.HFV2Modal?.openModal?.({className: 'hf-v2-receipt-modal', title: 'Tagesabschluss', subtitle: 'Buchungsbeleg', bodyHtml: dailyCycleReceiptMarkup(summary)});
   }
 
@@ -1050,11 +1117,74 @@
     });
   }
 
+  function installActionFeedback() {
+    ensureFeedbackUi();
+    const wrap = (api, method, after) => {
+      const original = api?.[method];
+      if (typeof original !== 'function' || original.hfFeedbackWrapped) return;
+      function wrapped(...args) {
+        const beforeCash = window.HFV2Save?.getCash?.() || 0;
+        const result = original.apply(this, args);
+        if (result?.ok !== false && result != null) after(result, args, beforeCash);
+        return result;
+      }
+      wrapped.hfFeedbackWrapped = true;
+      api[method] = wrapped;
+    };
+
+    wrap(window.HFFleet, 'buyVehicle', (result) => {
+      actionConfirmation('Fahrzeug gekauft', result.cost, `${vehicleLabel(result.vehicleType)} in ${cityName(result.cityId)}`);
+    });
+    wrap(window.HFV2Factories, 'buildFactory', (result) => {
+      const factory = factoryById(result.factoryId);
+      actionConfirmation('Fabrik gebaut', result.cost, `${factory?.name || result.factoryId} in ${cityName(result.cityId)}`);
+    });
+    wrap(window.HFV2Factories, 'upgradeFactory', (result) => {
+      const factory = factoryById(result.factoryId);
+      actionConfirmation('Upgrade abgeschlossen', result.cost, `${factory?.name || result.factoryId} erreicht Stufe ${result.level}`);
+    });
+    wrap(window.HFNetwork, 'confirmProject', (result, args, beforeCash) => {
+      const edge = result;
+      const cost = Math.max(0, beforeCash - (window.HFV2Save?.getCash?.() || 0));
+      actionConfirmation('Netz erweitert', cost, `${cityName(edge?.a)} ↔ ${cityName(edge?.b)} erschlossen`);
+    });
+  }
+
+  function reportShipmentChanges() {
+    const shipments = window.HFV2Logistics?.getState?.().shipments || [];
+    for (const shipment of shipments) {
+      const stops = Array.isArray(shipment.stops) && shipment.stops.length ? shipment.stops : [shipment];
+      stops.forEach((stop, index) => {
+        if (!['delivered', 'partial', 'failed'].includes(stop.status) && !Number.isFinite(Number(stop.deliveredAbsMinute ?? shipment.deliveredAbsMinute))) return;
+        const key = `${shipment.id}:${stop.orderId || index}:${stop.deliveredAbsMinute ?? shipment.deliveredAbsMinute}`;
+        if (deliveredStopKeys.has(key)) return;
+        deliveredStopKeys.add(key);
+        const kg = Math.max(0, Number(stop.deliveredKg ?? shipment.deliveredKg) || 0);
+        const goodId = stop.goodId || shipment.goodId;
+        const targetId = stop.toCityId || shipment.toCityId;
+        if (kg > 0) {
+          const price = window.HFV2Goods?.salePriceForCity?.(targetId, goodId) || 0;
+          notify({level: 'card', tone: stop.status === 'partial' ? 'neutral' : 'positive', title: stop.status === 'partial' ? 'Teillieferung angekommen' : 'Lieferung abgeschlossen', message: `${goodById(goodId).name} · ${formatGoodAmount(goodId, kg)} · Erlös ${formatCurrency(price * kg)} · ${cityName(targetId)}`});
+        } else {
+          notify({tone: 'negative', title: 'Lieferung fehlgeschlagen', message: `${goodById(goodId).name} konnte ${cityName(targetId)} nicht erreichen.`, dedupeKey: `delivery-failed:${goodId}:${targetId}`});
+        }
+      });
+    }
+  }
+
+  function feedbackForStateChange(event) {
+    const reason = String(event?.detail?.reason || '');
+    if (reason === 'logistics-order-created') notify({title: 'Auftrag eingeplant', message: 'Die Disposition hat den Transportplan aktualisiert.'});
+    if (reason === 'logistics-shipments-created') notify({title: 'Fahrt disponiert', message: 'Fahrzeug und Route sind für die Lieferung reserviert.'});
+    if (reason === 'logistics-shipments-advanced') reportShipmentChanges();
+  }
+
   function boot() {
     const cities = loadCities();
     citiesById = Object.fromEntries(cities.map(city => [city.id, city]));
     savePackage = window.HFV2Save?.createDefaultState?.() || {state: {network: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}), fleet: window.HFFleet?.createFleetState?.(), factories: window.HFV2Factories?.createFactoryState?.(), goods: window.HFV2Goods?.createGoodsState?.(), time: window.HFV2Save?.defaultTimeState?.() || {day: 1, hour: 8, minute: 0}, logistics: window.HFV2Save?.defaultLogisticsState?.() || window.HFV2Logistics?.createLogisticsState?.() || {orders: [], shipments: [], nextOrderId: 1, nextShipmentId: 1, schemaVersion: 1}}};
     configureGameSystems(cities);
+    installActionFeedback();
     document.getElementById('hfV2CityCount').textContent = `${cities.length.toLocaleString('de-CH')} Orte`;
     bindSaveControls();
     bindTimeControls();
@@ -1065,6 +1195,7 @@
     window.addEventListener('hf:network:confirmed', () => window.HFV2FleetDispatch?.invalidate?.('network-changed'));
     window.addEventListener('hf:v2:state-changed', refreshChangedStateView);
     window.addEventListener('hf:v2:state-changed', renderHud);
+    window.addEventListener('hf:v2:state-changed', feedbackForStateChange);
     if (!bootMap(cities)) return;
     const zurich = cities.find(city => city.id === 'zurich');
     if (zurich) selectCity(zurich, cities);
