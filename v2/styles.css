@@ -2042,6 +2042,34 @@ code { background: #edf4f9; color: #174a78; }
   margin-top: 3px;
 }
 
+/* Central fleet control room */
+.hf-v2-fleet-live,
+.hf-v2-fleet-plan,
+.hf-v2-fleet-purchase { background: #fff; border: 1px solid #dbe5ef; border-radius: 14px; padding: 16px; }
+.hf-v2-fleet-table-wrap { overflow-x: auto; }
+.hf-v2-fleet-table { border-collapse: collapse; min-width: 1050px; width: 100%; }
+.hf-v2-fleet-table th,
+.hf-v2-fleet-table td { border-bottom: 1px solid #e6edf4; padding: 10px 8px; text-align: left; vertical-align: top; }
+.hf-v2-fleet-table th { color: #60748c; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+.hf-v2-fleet-table td { color: #173553; font-size: 13px; }
+.hf-v2-fleet-table td small { color: #718399; display: block; margin-top: 3px; }
+.hf-v2-fleet-status { background: #dce8f4; border-radius: 999px; display: inline-block; font-size: 11px; font-weight: 800; padding: 4px 8px; white-space: nowrap; }
+.hf-v2-fleet-status.is-available { background: #dff3e5; color: #176337; }
+.hf-v2-fleet-status.is-assigned,
+.hf-v2-fleet-status.is-returning { background: #fff0cc; color: #795300; }
+.hf-v2-fleet-plan-columns { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.hf-v2-fleet-plan-columns > div { background: #f5f8fb; border-radius: 10px; padding: 12px; }
+.hf-v2-fleet-plan h4 { color: #173553; font-size: 14px; margin: 0 0 9px; }
+.hf-v2-fleet-plan ul { display: grid; gap: 7px; list-style: none; margin: 0; padding: 0; }
+.hf-v2-fleet-plan li { color: #526b84; display: grid; font-size: 12px; gap: 2px; }
+.hf-v2-fleet-plan li b { color: #173553; }
+.hf-v2-fleet-plan li strong { color: #a33b30; }
+.hf-v2-fleet-depot { align-items: start; background: #eef5fc; border-radius: 10px; display: grid; gap: 5px; margin: 10px 0 14px; max-width: 460px; padding: 12px; }
+.hf-v2-fleet-depot span { color: #173553; font-size: 13px; font-weight: 800; }
+.hf-v2-fleet-depot select { background: #fff; border: 1px solid #b9cadb; border-radius: 7px; color: #173553; font: inherit; padding: 9px; }
+.hf-v2-fleet-depot small { color: #60748c; }
+@media (max-width: 800px) { .hf-v2-fleet-plan-columns { grid-template-columns: 1fr; } }
+
 @media (max-width: 980px) {
   .hf-v2-fleet-compact-panels { grid-template-columns: 1fr; }
 }
