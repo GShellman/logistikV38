@@ -299,7 +299,7 @@
     ]);
   }
 
-  function runDailySales() {
+  function runDailySales(options = {}) {
     configure();
     const demandIds = demandGoodIds();
     const summary = {revenue: 0, soldKg: 0, cities: 0, goods: 0, byCity: {}, byGood: {}};
@@ -324,7 +324,7 @@
         if (removedKg <= 0) continue;
 
         const bookedRevenue = Math.round(price * removedKg * 100) / 100;
-        window.HFV2Save?.changeCash?.(bookedRevenue, 'goods-daily-sales');
+        window.HFV2Save?.changeCash?.(bookedRevenue, 'goods-daily-sales', {absMinute: options.absMinute, reference: {cityId, goodId}});
         summary.revenue += bookedRevenue;
         summary.soldKg += removedKg;
         cityRevenue += bookedRevenue;

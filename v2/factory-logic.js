@@ -176,7 +176,7 @@
   function upgradeFactory(cityId, factoryRef) {
     const check = canUpgradeFactory(cityId, factoryRef);
     if (!check.ok) return check;
-    window.HFV2Save?.changeCash?.(-check.cost, 'factory-upgraded');
+    window.HFV2Save?.changeCash?.(-check.cost, 'factory-upgraded', {reference: {factoryId: check.factoryId, cityId: check.cityId, factoryIndex: check.index}});
     state.factoryUpgrades[check.cityId] = normalizeUpgradeMap(state.factoryUpgrades[check.cityId], state.cityFactories[check.cityId]);
     state.factoryUpgrades[check.cityId][check.key] = check.nextLevel;
     window.HFV2Save?.dispatchStateChanged?.('factory-upgraded');
@@ -221,7 +221,7 @@
     const check = canBuildFactory(cityId, factoryId);
     if (!check.ok) return check;
 
-    window.HFV2Save?.changeCash?.(-check.cost, 'factory-built');
+    window.HFV2Save?.changeCash?.(-check.cost, 'factory-built', {reference: {factoryId: check.factoryId, cityId: check.cityId}});
     const factories = getCityFactories(check.cityId);
     factories.push(check.factoryId);
     state.factoryUpgrades[check.cityId] = normalizeUpgradeMap(state.factoryUpgrades[check.cityId], factories);
