@@ -688,21 +688,25 @@
     const vehicleType = order.vehicleType || DEFAULT_VEHICLE_TYPE;
     const departureAbsMinute = nowAbsMinute;
     const plannedTrip = window.HFV2FleetDispatch?.plannedTrip?.(order.id, departureAbsMinute);
-    const validation = validateRoadShipment({fromCityId: order.fromCityId, toCityId: order.toCityId, vehicleType, amountKg: order.amountKg, departureAbsMinute});
+    const plannedAmountKg = Number(plannedTrip?.amountKg);
+    const requestedAmountKg = Number.isFinite(plannedAmountKg) && plannedAmountKg > 0
+      ? Math.min(Number(order.amountKg), plannedAmountKg)
+      : Number(order.amountKg);
+    const amountKg = Math.min(requestedAmountKg, sourceStockKg(order.fromCityId, order.goodId));
+    if (amountKg <= 0) {
+      markOrderDispatchResult(order, 'stock-limited');
+      return null;
+    }
+    const validation = validateRoadShipment({fromCityId: order.fromCityId, toCityId: order.toCityId, vehicleType, amountKg, departureAbsMinute});
     if (!validation.ok) {
       markOrderDispatchResult(order, validation.reason);
       return null;
     }
 
-    const availableKg = sourceStockKg(order.fromCityId, order.goodId);
-    if (availableKg < order.amountKg) {
-      markOrderDispatchResult(order, 'stock-limited');
-      return null;
-    }
-
     const {path, vehicleCount, arrivalAbsMinute} = validation;
     const reservationId = `shipment-${state.nextShipmentId}`;
-    const assigned = reserveShipmentVehicles({shipmentId: state.nextShipmentId, cityId: order.fromCityId, vehicleType, vehicleIds: plannedTrip?.vehicleIds, count: vehicleCount, departureAbsMinute, finalAvailableAbsMinute: arrivalAbsMinute, toCityId: order.toCityId});
+    const plannedVehicleIds = plannedTrip?.vehicleIds?.slice(0, vehicleCount);
+    const assigned = reserveShipmentVehicles({shipmentId: state.nextShipmentId, cityId: order.fromCityId, vehicleType, vehicleIds: plannedVehicleIds, count: vehicleCount, departureAbsMinute, finalAvailableAbsMinute: arrivalAbsMinute, toCityId: order.toCityId});
     if (assigned.length !== vehicleCount) {
       markOrderDispatchResult(order, 'not-enough-vehicles');
       return null;
@@ -726,14 +730,14 @@
 
     let removed;
     try {
-      removed = window.HFV2Goods?.removeFromInventory?.(order.fromCityId, order.goodId, order.amountKg);
+      removed = window.HFV2Goods?.removeFromInventory?.(order.fromCityId, order.goodId, amountKg);
     } catch (error) {
       releaseRouteReservations({reservationId: reservation?.reservationId || reservationId});
       rollbackVehicleReservation(state.nextShipmentId, order.fromCityId, departureAbsMinute);
       markOrderDispatchResult(order, error?.reason || 'stock-removal-failed');
       return null;
     }
-    if (!removed?.ok || Number(removed.removedKg) !== order.amountKg) {
+    if (!removed?.ok || Number(removed.removedKg) !== amountKg) {
       releaseRouteReservations({reservationId: reservation?.reservationId || reservationId});
       rollbackVehicleReservation(state.nextShipmentId, order.fromCityId, departureAbsMinute);
       if (Number(removed?.removedKg) > 0) window.HFV2Goods?.addToInventory?.(order.fromCityId, order.goodId, Number(removed.removedKg));
@@ -748,7 +752,7 @@
       fromCityId: order.fromCityId,
       toCityId: order.toCityId,
       goodId: order.goodId,
-      amountKg: order.amountKg,
+      amountKg,
       vehicleType,
       vehicleIds: assigned.map(vehicle => vehicle.id),
       vehicleCount: assigned.length,
@@ -768,7 +772,7 @@
     bookTripCosts(shipment, 'logistics-shipment-cost', 'shipment');
     created.push(shipment);
     order.lastDispatchedDay = Math.max(1, Math.trunc(Number(time.day) || 1));
-    markOrderDispatchResult(order, 'created');
+    markOrderDispatchResult(order, amountKg < Number(order.amountKg) ? 'partial-delivery' : 'created');
     return shipment;
   }
 
@@ -776,24 +780,39 @@
     if (orders.length < 2) return false;
     const vehicleType = orders[0].vehicleType || DEFAULT_VEHICLE_TYPE;
     const capacityKg = vehicleCapacityKg(vehicleType);
-    const amountKg = Math.round(orders.reduce((total, order) => total + order.amountKg, 0) * 1000) / 1000;
-    if (capacityKg <= 0 || amountKg > capacityKg) return false;
+    if (capacityKg <= 0) return false;
     const vehicle = window.HFVehicleCatalog?.VEHICLE_CATALOG?.[vehicleType] || null;
     const availableVehicles = window.HFFleet?.getAvailableVehicles?.({cityId: orders[0].fromCityId, vehicleType, atAbsMinute: nowAbsMinute}) || [];
     if (!vehicle || vehicle.mode !== 'road' || availableVehicles.length <= 0) return false;
 
-    const requiredByGood = {};
-    for (const order of orders) requiredByGood[order.goodId] = (requiredByGood[order.goodId] || 0) + order.amountKg;
-    for (const [goodId, requiredKg] of Object.entries(requiredByGood)) {
-      if (sourceStockKg(orders[0].fromCityId, goodId) < requiredKg) return false;
+    const remainingByGood = new Map();
+    const dispatches = [];
+    for (const order of orders) {
+      if (!remainingByGood.has(order.goodId)) remainingByGood.set(order.goodId, sourceStockKg(order.fromCityId, order.goodId));
+      const plannedTrip = window.HFV2FleetDispatch?.plannedTrip?.(order.id, nowAbsMinute);
+      const plannedAmountKg = Number(plannedTrip?.amountKg);
+      const requestedAmountKg = Number.isFinite(plannedAmountKg) && plannedAmountKg > 0
+        ? Math.min(Number(order.amountKg), plannedAmountKg)
+        : Number(order.amountKg);
+      const amountKg = Math.min(requestedAmountKg, remainingByGood.get(order.goodId));
+      if (amountKg <= 0) {
+        markOrderDispatchResult(order, 'stock-limited');
+        continue;
+      }
+      dispatches.push({order, amountKg});
+      remainingByGood.set(order.goodId, Math.max(0, remainingByGood.get(order.goodId) - amountKg));
     }
+    if (dispatches.length < 2) return false;
+    const amountKg = Math.round(dispatches.reduce((total, dispatch) => total + dispatch.amountKg, 0) * 1000) / 1000;
+    if (amountKg > capacityKg) return false;
 
-    const stops = orders.map(order => ({toCityId: order.toCityId, goodId: order.goodId, amountKg: order.amountKg, orderId: order.id}));
+    const dispatchedOrders = dispatches.map(dispatch => dispatch.order);
+    const stops = dispatches.map(({order, amountKg: stopAmountKg}) => ({toCityId: order.toCityId, goodId: order.goodId, amountKg: stopAmountKg, orderId: order.id}));
     const route = combinedRoute(orders[0].fromCityId, stops, vehicleType, {departureAbsMinute: nowAbsMinute});
     if (!route) return false;
-    if (window.HFV2FleetDispatch?.canBundleOrders?.(orders, route.arrivalAbsMinute) === false) return false;
+    if (window.HFV2FleetDispatch?.canBundleOrders?.(dispatchedOrders, route.arrivalAbsMinute) === false) return false;
     const routeStops = route.stops;
-    for (const order of orders) window.HFV2FleetDispatch?.consumeTrip?.(order.id, nowAbsMinute);
+    for (const order of dispatchedOrders) window.HFV2FleetDispatch?.consumeTrip?.(order.id, nowAbsMinute);
     const reservationId = `shipment-${state.nextShipmentId}`;
     const assigned = reserveShipmentVehicles({shipmentId: state.nextShipmentId, cityId: orders[0].fromCityId, vehicleType, count: 1, departureAbsMinute: nowAbsMinute, finalAvailableAbsMinute: route.arrivalAbsMinute, toCityId: routeStops[routeStops.length - 1].toCityId});
     if (assigned.length !== 1) return false;
@@ -857,9 +876,9 @@
     state.shipments.push(shipment);
     bookTripCosts(shipment, 'logistics-shipment-cost', 'shipment');
     created.push(shipment);
-    for (const order of orders) {
+    for (const {order, amountKg: dispatchedAmountKg} of dispatches) {
       order.lastDispatchedDay = Math.max(1, Math.trunc(Number(time.day) || 1));
-      markOrderDispatchResult(order, 'created');
+      markOrderDispatchResult(order, dispatchedAmountKg < Number(order.amountKg) ? 'partial-delivery' : 'created');
     }
     return true;
   }
