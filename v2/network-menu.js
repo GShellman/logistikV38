@@ -276,40 +276,6 @@
     window.HFV2Modal?.setModalBody?.(html);
   }
 
-  function showNetworkBody(originId, html) {
-    const origin = cityById(originId);
-    window.HFV2Modal?.openModal?.({
-      className: 'hf-v2-network-modal',
-      title: 'Netzwerkplanung',
-      subtitle: origin?.name || originId || '',
-      bodyHtml: html,
-    });
-    if (!window.HFV2Modal?.openModal) setBody(html);
-  }
-
-  function renderBuildSuccess(project, edge) {
-    const origin = cityById(project.a);
-    const target = cityById(project.b);
-    const typeLabel = DISPLAY_NAMES[project.type] || network()?.TRANSPORT_TYPES?.[project.type]?.name || project.type;
-    const builtDistance = edge?.distance || project.distance;
-    return `
-      <div class="hf-v2-network-menu">
-        <p class="hf-v2-network-eyebrow">Verbindung gebaut</p>
-        <h3>${escapeHtml(origin?.name || project.a)} → ${escapeHtml(target?.name || project.b)}</h3>
-        ${renderCashBadge()}
-        <p class="hf-v2-network-hint">Die Verbindung wurde erfolgreich gebaut und die Zielstadt ist jetzt im Netz sichtbar.</p>
-        <div class="hf-v2-network-option__rows">
-          <span><em>Verbindungstyp</em><strong>${escapeHtml(typeLabel)}</strong></span>
-          <span><em>Distanz</em><strong>${formatKm(builtDistance)}</strong></span>
-          <span><em>Neue Netzstadt</em><strong>${escapeHtml(target?.name || project.b)}</strong></span>
-        </div>
-        <div class="hf-v2-network-grid">
-          <button class="hf-v2-network-back" type="button" data-action="show-target-picker">Weitere Verbindung bauen</button>
-          <button class="hf-v2-network-back" type="button" data-action="close-network-modal">Schließen</button>
-        </div>
-      </div>`;
-  }
-
   function renderBuildFailure() {
     return `
       <div class="hf-v2-network-menu">
@@ -342,7 +308,7 @@
       setBody(renderBuildFailure());
       return;
     }
-    showNetworkBody(project.a, renderBuildSuccess(project, confirmedEdge));
+    window.HFV2Modal?.closeModal?.();
   }
 
   function bindNetworkMenuEvents() {
