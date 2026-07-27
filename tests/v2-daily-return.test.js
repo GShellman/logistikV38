@@ -10,6 +10,7 @@ function loadScript(file, window) {
 function harness({alternativeVehicles = 0, arrivalAbsMinute = 600, distance = 60} = {}) {
   const time = {day: 1, hour: Math.floor(arrivalAbsMinute / 60), minute: arrivalAbsMinute % 60};
   const vehicles = [{id: 1, vehicleType: 'van', status: 'assigned', currentCityId: 'zurich', availableAbsMinute: arrivalAbsMinute, activeAssignmentId: '1'}];
+  const releasedReservations = [];
   for (let index = 0; index < alternativeVehicles; index += 1) {
     vehicles.push({id: index + 2, vehicleType: 'van', status: 'available', currentCityId: 'zurich', availableAbsMinute: 0, activeAssignmentId: null});
   }
@@ -21,6 +22,7 @@ function harness({alternativeVehicles = 0, arrivalAbsMinute = 600, distance = 60
     HFNetwork: {
       findPath: (from, to) => ({reachable: true, distance, duration: 1, nodes: [from, to], edges: [{id: `${from}-${to}`, a: from, b: to, type: 'road'}]}),
       reservePathCapacity: (_path, options) => ({ok: true, reservationId: options.reservationId}),
+      releaseCapacityReservation: id => releasedReservations.push(id),
       nodeInfo: id => id === 'zurich' ? {lat: 47, lng: 8} : {lat: 46, lng: 7},
     },
   };
@@ -32,7 +34,7 @@ function harness({alternativeVehicles = 0, arrivalAbsMinute = 600, distance = 60
     shipments: [{id: 1, orderId: 1, fromCityId: 'zurich', toCityId: 'bern', goodId: 'food', amountKg: 100, vehicleType: 'van', vehicleIds: [1], vehicleCount: 1, departureAbsMinute: 480, arrivalAbsMinute, status: 'active'}],
   });
   window.HFV2Logistics.configure({state, citiesById: {zurich: {id: 'zurich'}, bern: {id: 'bern'}}});
-  return {window, state};
+  return {window, state, time, releasedReservations};
 }
 
 test('tägliche Fahrt kehrt bei fehlendem Ersatz noch am selben Tag zurück', () => {
@@ -42,6 +44,25 @@ test('tägliche Fahrt kehrt bei fehlendem Ersatz noch am selben Tag zurück', ()
   assert.equal(state.shipments[0].returnArrivalAbsMinute, 660);
   assert.equal(window.HFFleet.getState().vehicles[0].activeAssignmentId, '1');
   assert.equal(window.HFFleet.getState().vehicles[0].status, 'returning');
+});
+
+test('Planreservierungen werden über Hin- und Rückfahrt übernommen und nach Ankunft vollständig freigegeben', () => {
+  const setup = harness();
+  Object.assign(setup.state.shipments[0], {
+    reservationId: 'fleet-plan-loaded-1-1-0',
+    plannedReturnReservationIds: ['fleet-plan-return-1-1-1'],
+    plannedReturnDepartureAbsMinute: 600,
+    plannedReturnArrivalAbsMinute: 660,
+  });
+
+  setup.window.HFV2Logistics.advanceShipments();
+  assert.equal(setup.state.shipments[0].returnReservationId, 'fleet-plan-return-1-1-1');
+  assert.deepEqual(setup.releasedReservations, ['fleet-plan-loaded-1-1-0']);
+
+  Object.assign(setup.time, {hour: 11, minute: 0});
+  setup.window.HFV2Logistics.advanceShipments();
+  assert.equal(setup.state.shipments[0].status, 'returned');
+  assert.deepEqual(setup.releasedReservations, ['fleet-plan-loaded-1-1-0', 'fleet-plan-return-1-1-1']);
 });
 
 test('tägliche Fahrt bleibt am Ziel, wenn am Ursprungsort Ersatz verfügbar ist', () => {

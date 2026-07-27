@@ -15,6 +15,7 @@ function harness({orders, shipment, nowAbsMinute, returnDistances}) {
     {id: 2, vehicleType: 'van', status: 'available', currentCityId: 'zurich', availableAbsMinute: 0, activeAssignmentId: null},
   ];
   const reservations = [];
+  const releasedReservations = [];
   const window = {
     HFVehicleCatalog: {VEHICLE_TYPES: ['van'], VEHICLE_CATALOG: {van: {mode: 'road', load: 1, speed: 60, kmCost: 1}}},
     HFV2Save: {STARTING_CASH: 500000, getState: () => ({time}), dispatchStateChanged: () => {}},
@@ -29,6 +30,7 @@ function harness({orders, shipment, nowAbsMinute, returnDistances}) {
         reservations.push(options);
         return {ok: true, reservationId: options.reservationId};
       },
+      releaseCapacityReservation: id => releasedReservations.push(id),
       nodeInfo: id => ({lat: id.length, lng: id.length + 1}),
     },
   };
@@ -37,7 +39,7 @@ function harness({orders, shipment, nowAbsMinute, returnDistances}) {
   loadScript('v2/logistics-logic.js', window);
   const state = window.HFV2Logistics.createLogisticsState({orders, shipments: [shipment]});
   window.HFV2Logistics.configure({state, citiesById: {zurich: {id: 'zurich'}, bern: {id: 'bern'}, basel: {id: 'basel'}, lucerne: {id: 'lucerne'}}});
-  return {window, state, time, reservations};
+  return {window, state, time, reservations, releasedReservations};
 }
 
 function weeklyOrder(id, toCityId) {
@@ -46,7 +48,7 @@ function weeklyOrder(id, toCityId) {
 
 test('wöchentliche Einzellieferung kehrt trotz Ersatzfahrzeug und Tagesende zum Ursprung zurück', () => {
   const shipment = {id: 1, orderId: 1, fromCityId: 'zurich', toCityId: 'bern', goodId: 'food', amountKg: 100, vehicleType: 'van', vehicleIds: [1], vehicleCount: 1, departureAbsMinute: 1200, arrivalAbsMinute: 1380, status: 'active'};
-  const {window, state, time, reservations} = harness({orders: [weeklyOrder(1, 'bern')], shipment, nowAbsMinute: 1380, returnDistances: {bern: 120}});
+  const {window, state, time, reservations, releasedReservations} = harness({orders: [weeklyOrder(1, 'bern')], shipment, nowAbsMinute: 1380, returnDistances: {bern: 120}});
 
   window.HFV2Logistics.advanceShipments();
   assert.equal(state.shipments[0].status, 'returning');
@@ -65,6 +67,19 @@ test('wöchentliche Einzellieferung kehrt trotz Ersatzfahrzeug und Tagesende zum
   assert.equal(state.shipments[0].status, 'returned');
   assert.equal(window.HFFleet.getState().vehicles[0].currentCityId, 'zurich');
   assert.equal(window.HFFleet.getState().vehicles[0].status, 'available');
+  assert.deepEqual(releasedReservations, ['shipment-1-weekly-return']);
+});
+
+test('wöchentliche Plan-Rückfahrt wird nicht doppelt reserviert und nach Rückkehr freigegeben', () => {
+  const shipment = {id: 1, orderId: 1, fromCityId: 'zurich', toCityId: 'bern', goodId: 'food', amountKg: 100, vehicleType: 'van', vehicleIds: [1], vehicleCount: 1, departureAbsMinute: 1200, arrivalAbsMinute: 1380, status: 'active', reservationId: 'planned-outbound', plannedReturnReservationIds: ['planned-return'], plannedReturnDepartureAbsMinute: 1380, plannedReturnArrivalAbsMinute: 1500};
+  const setup = harness({orders: [weeklyOrder(1, 'bern')], shipment, nowAbsMinute: 1380, returnDistances: {bern: 120}});
+
+  setup.window.HFV2Logistics.advanceShipments();
+  assert.equal(setup.reservations.length, 0);
+  assert.equal(setup.state.shipments[0].returnReservationId, 'planned-return');
+  Object.assign(setup.time, {day: 2, hour: 1, minute: 0});
+  setup.window.HFV2Logistics.advanceShipments();
+  assert.deepEqual(setup.releasedReservations, ['planned-outbound', 'planned-return']);
 });
 
 test('wöchentliche Sammellieferung beginnt die Rückfahrt erst nach dem letzten Stopp', () => {

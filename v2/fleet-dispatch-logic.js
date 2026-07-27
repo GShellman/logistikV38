@@ -264,13 +264,33 @@
     return plan?.legs?.find(leg => leg.type === 'shipment' && leg.orderId === Number(orderId) && leg.status === 'planned' && Math.abs(leg.departureAbsMinute - Number(departureAbsMinute)) <= 1) || null;
   }
 
-  function consumeTrip(orderId, departureAbsMinute) {
+  function consumeTrip(orderId, departureAbsMinute, options = {}) {
     const leg = plannedTrip(orderId, departureAbsMinute);
     if (!leg) return null;
-    for (const id of leg.capacityReservationIds || []) window.HFNetwork?.releaseCapacityReservation?.(id);
+    const capacityReservationIds = [...(leg.capacityReservationIds || [])];
     leg.capacityReservationIds = [];
     leg.status = 'started';
-    return leg;
+    const vehicleIds = new Set((options.vehicleIds || leg.vehicleIds || []).map(Number));
+    const returnLegs = (logisticsState?.dispatchPlan?.legs || []).filter(candidate => candidate.type === 'return'
+      && candidate.status === 'planned'
+      && (candidate.tripId === leg.tripId || candidate.outboundLegId === leg.id)
+      && (!vehicleIds.size || candidate.vehicleIds?.some(id => vehicleIds.has(Number(id)))));
+    const plannedReturn = returnLegs.length ? {
+      departureAbsMinute: returnLegs[0].departureAbsMinute,
+      arrivalAbsMinute: returnLegs[0].arrivalAbsMinute,
+      fromCityId: returnLegs[0].fromCityId,
+      toCityId: returnLegs[0].toCityId,
+      capacityReservationIds: returnLegs.flatMap(candidate => candidate.capacityReservationIds || []),
+    } : null;
+    for (const returnLeg of returnLegs) {
+      returnLeg.capacityReservationIds = [];
+      returnLeg.status = 'consumed';
+    }
+    if (options.transferReservations !== true) {
+      for (const id of [...capacityReservationIds, ...(plannedReturn?.capacityReservationIds || [])]) window.HFNetwork?.releaseCapacityReservation?.(id);
+      return leg;
+    }
+    return {...leg, capacityReservationIds, plannedReturn};
   }
 
   function canBundleOrders(orders, routeArrivalAbsMinute) {

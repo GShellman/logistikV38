@@ -354,7 +354,7 @@
     if (!vehicle || vehicle.mode !== 'road' || available.length <= 0) throw new Error('Selected road vehicle type is not available in the source city fleet');
   }
 
-  function validateRoadShipment({fromCityId, toCityId, vehicleType, amountKg, departureAbsMinute}) {
+  function validateRoadShipment({fromCityId, toCityId, vehicleType, amountKg, departureAbsMinute, reservationId}) {
     const path = window.HFNetwork?.findPath?.(fromCityId, toCityId, {mode: 'road'});
     if (!path?.reachable) return {ok: false, reason: 'no-route'};
 
@@ -372,7 +372,7 @@
 
     const startAbsMinute = Number(departureAbsMinute);
     const endAbsMinute = startAbsMinute + Math.ceil((Number(path.duration) || 0) * 60);
-    const capacityStatus = window.HFNetwork?.pathCapacityStatus?.(path, {startAbsMinute, endAbsMinute, units: vehicleCount});
+    const capacityStatus = window.HFNetwork?.pathCapacityStatus?.(path, {startAbsMinute, endAbsMinute, units: vehicleCount, reservationId});
     if (capacityStatus && capacityStatus.ok === false) return {ok: false, reason: capacityStatus.reason || 'route-overloaded', path, capacityKg, vehicleCount, arrivalAbsMinute: endAbsMinute, capacityStatus};
 
     return {ok: true, path, capacityKg, vehicleCount, departureAbsMinute: startAbsMinute, arrivalAbsMinute: endAbsMinute};
@@ -667,6 +667,18 @@
     if (reservation?.reservationId) window.HFNetwork?.releaseCapacityReservation?.(reservation.reservationId);
   }
 
+  function releaseShipmentReservations(shipment, fields) {
+    const ids = new Set();
+    for (const field of fields) {
+      const value = shipment?.[field];
+      if (Array.isArray(value)) {
+        for (const id of value) if (id) ids.add(id);
+      } else if (value) ids.add(value);
+    }
+    for (const id of ids) window.HFNetwork?.releaseCapacityReservation?.(id);
+    for (const field of fields) delete shipment[field];
+  }
+
   function reserveShipmentVehicles({shipmentId, cityId, vehicleType, vehicleIds = null, count, departureAbsMinute, finalAvailableAbsMinute, toCityId}) {
     const assigned = window.HFFleet?.assignVehicles?.({
       cityId,
@@ -700,7 +712,8 @@
       markOrderDispatchResult(order, 'stock-limited');
       return null;
     }
-    const validation = validateRoadShipment({fromCityId: order.fromCityId, toCityId: order.toCityId, vehicleType, amountKg, departureAbsMinute});
+    const plannedReservationId = plannedTrip?.capacityReservationIds?.length === 1 ? plannedTrip.capacityReservationIds[0] : null;
+    const validation = validateRoadShipment({fromCityId: order.fromCityId, toCityId: order.toCityId, vehicleType, amountKg, departureAbsMinute, reservationId: plannedReservationId});
     if (!validation.ok) {
       markOrderDispatchResult(order, validation.reason);
       return null;
@@ -714,17 +727,28 @@
       markOrderDispatchResult(order, 'not-enough-vehicles');
       return null;
     }
-    window.HFV2FleetDispatch?.consumeTrip?.(order.id, departureAbsMinute);
+    const consumedTrip = window.HFV2FleetDispatch?.consumeTrip?.(order.id, departureAbsMinute, {
+      transferReservations: true,
+      vehicleIds: assigned.map(vehicle => vehicle.id),
+    });
+    const transferredOutboundId = consumedTrip?.capacityReservationIds?.length === 1 ? consumedTrip.capacityReservationIds[0] : null;
     let reservation;
     try {
-      reservation = window.HFNetwork?.reservePathCapacity?.(path, {startAbsMinute: departureAbsMinute, endAbsMinute: arrivalAbsMinute, units: vehicleCount, reservationId});
+      if (transferredOutboundId) reservation = {ok: true, reservationId: transferredOutboundId};
+      else {
+        for (const id of consumedTrip?.capacityReservationIds || []) window.HFNetwork?.releaseCapacityReservation?.(id);
+        reservation = window.HFNetwork?.reservePathCapacity?.(path, {startAbsMinute: departureAbsMinute, endAbsMinute: arrivalAbsMinute, units: vehicleCount, reservationId});
+      }
     } catch (error) {
+      for (const id of consumedTrip?.capacityReservationIds || []) window.HFNetwork?.releaseCapacityReservation?.(id);
+      for (const id of consumedTrip?.plannedReturn?.capacityReservationIds || []) window.HFNetwork?.releaseCapacityReservation?.(id);
       rollbackVehicleReservation(state.nextShipmentId, order.fromCityId, departureAbsMinute);
       markOrderDispatchResult(order, error?.reason || 'route-reservation-failed');
       window.HFV2FleetDispatch?.invalidate?.('shipment-failed', departureAbsMinute);
       return null;
     }
     if (reservation && reservation.ok === false) {
+      for (const id of consumedTrip?.plannedReturn?.capacityReservationIds || []) window.HFNetwork?.releaseCapacityReservation?.(id);
       rollbackVehicleReservation(state.nextShipmentId, order.fromCityId, departureAbsMinute);
       markOrderDispatchResult(order, reservation.reason || 'route-overloaded');
       window.HFV2FleetDispatch?.invalidate?.('shipment-failed', departureAbsMinute);
@@ -736,12 +760,14 @@
       removed = window.HFV2Goods?.removeFromInventory?.(order.fromCityId, order.goodId, amountKg);
     } catch (error) {
       releaseRouteReservations({reservationId: reservation?.reservationId || reservationId});
+      for (const id of consumedTrip?.plannedReturn?.capacityReservationIds || []) window.HFNetwork?.releaseCapacityReservation?.(id);
       rollbackVehicleReservation(state.nextShipmentId, order.fromCityId, departureAbsMinute);
       markOrderDispatchResult(order, error?.reason || 'stock-removal-failed');
       return null;
     }
     if (!removed?.ok || Number(removed.removedKg) !== amountKg) {
       releaseRouteReservations({reservationId: reservation?.reservationId || reservationId});
+      for (const id of consumedTrip?.plannedReturn?.capacityReservationIds || []) window.HFNetwork?.releaseCapacityReservation?.(id);
       rollbackVehicleReservation(state.nextShipmentId, order.fromCityId, departureAbsMinute);
       if (Number(removed?.removedKg) > 0) window.HFV2Goods?.addToInventory?.(order.fromCityId, order.goodId, Number(removed.removedKg));
       markOrderDispatchResult(order, removed?.reason || 'stock-limited');
@@ -766,6 +792,9 @@
       departureAbsMinute,
       arrivalAbsMinute,
       reservationId: reservation?.reservationId || reservationId,
+      plannedReturnReservationIds: consumedTrip?.plannedReturn?.capacityReservationIds || [],
+      plannedReturnDepartureAbsMinute: consumedTrip?.plannedReturn?.departureAbsMinute ?? null,
+      plannedReturnArrivalAbsMinute: consumedTrip?.plannedReturn?.arrivalAbsMinute ?? null,
       status: 'active',
       shipmentSemantics: 'destination-fleet-v2',
       createdAtAbsMinute: nowAbsMinute,
@@ -1047,8 +1076,13 @@
     const endOfDayAbsMinute = (Math.floor(arrivalAbsMinute / MINUTES_PER_DAY) + 1) * MINUTES_PER_DAY - 1;
     if (!requiresWeeklyReturn && returnArrivalAbsMinute > endOfDayAbsMinute) return false;
 
+    const plannedIds = Array.isArray(shipment.plannedReturnReservationIds) ? shipment.plannedReturnReservationIds.filter(Boolean) : [];
+    const canReusePlanned = plannedIds.length === requiredCount
+      && Number(shipment.plannedReturnDepartureAbsMinute) === returnDepartureAbsMinute
+      && Number(shipment.plannedReturnArrivalAbsMinute) === returnArrivalAbsMinute;
+    if (!canReusePlanned) releaseShipmentReservations(shipment, ['plannedReturnReservationIds']);
     const reservationId = `shipment-${shipment.id}-${requiresWeeklyReturn ? 'weekly' : 'daily'}-return`;
-    const reservation = window.HFNetwork?.reservePathCapacity?.(path, {
+    const reservation = canReusePlanned ? {ok: true, reservationId: plannedIds[0]} : window.HFNetwork?.reservePathCapacity?.(path, {
       startAbsMinute: returnDepartureAbsMinute,
       endAbsMinute: returnArrivalAbsMinute,
       units: requiredCount,
@@ -1063,6 +1097,8 @@
     shipment.returnPathNodeIds = Array.isArray(path.nodes) ? path.nodes.map(normalizeId).filter(Boolean) : [];
     shipment.returnPathEdgeIds = Array.isArray(path.edges) ? path.edges.map(pathEdgeId).filter(Boolean) : [];
     shipment.returnReservationId = reservation?.reservationId || reservationId;
+    shipment.returnReservationIds = canReusePlanned ? plannedIds : [shipment.returnReservationId];
+    delete shipment.plannedReturnReservationIds;
     shipment.status = 'returning';
     window.HFFleet?.updateAssignment?.(shipment.id, {
       status: 'returning',
@@ -1074,7 +1110,9 @@
   }
 
   function completeShipmentAtDestination(shipment, destinationCityId, arrivalAbsMinute) {
+    releaseShipmentReservations(shipment, ['reservationId']);
     if (beginRequiredDailyReturn(shipment, destinationCityId, arrivalAbsMinute)) return;
+    releaseShipmentReservations(shipment, ['plannedReturnReservationIds']);
     shipment.status = shipment.undeliveredKg > 0 ? (shipment.deliveredKg > 0 ? 'partial' : 'failed') : 'delivered';
     window.HFFleet?.releaseAssignment?.(shipment.id, destinationCityId, arrivalAbsMinute);
   }
@@ -1115,6 +1153,7 @@
     if (shipment.status !== 'returning' || !Number.isFinite(returnArrivalAbsMinute) || returnArrivalAbsMinute > nowAbsMinute) return false;
     shipment.status = 'returned';
     shipment.returnedAbsMinute = returnArrivalAbsMinute;
+    releaseShipmentReservations(shipment, ['returnReservationId', 'returnReservationIds']);
     window.HFFleet?.releaseAssignment?.(shipment.id, shipment.fromCityId, returnArrivalAbsMinute);
     return true;
   }
