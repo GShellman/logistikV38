@@ -15,17 +15,23 @@ function setup({goods, goodImage} = {}) {
       addTo(target) { this._map = target; return this; },
       remove() { this._map = null; },
       clearLayers() { layers.clear(); },
-      removeLayer(marker) { layers.delete(marker); },
+      removeLayer(marker) { marker.closePopup?.(); layers.delete(marker); },
     }),
     marker: (position, options) => ({
       position,
       options,
+      events: {},
       addTo() { layers.add(this); return this; },
       bindTooltip(content) { this.tooltip = content; return this; },
+      bindPopup(content, popupOptions) { this.popup = content; this.popupOptions = popupOptions; this._popup = {isOpen: () => Boolean(this.popupOpen)}; return this; },
+      on(name, callback) { this.events[name] = callback; return this; },
+      openPopup() { this.popupOpen = true; this.openCount = (this.openCount || 0) + 1; this.events.popupopen?.(); return this; },
+      closePopup() { if (!this.popupOpen) return this; this.popupOpen = false; this.events.popupclose?.(); return this; },
       getLatLng() { return {lat: this.position[0], lng: this.position[1]}; },
       setLatLng(next) { this.position = next; },
       setIcon(icon) { this.options.icon = icon; },
       setTooltipContent(content) { this.tooltip = content; },
+      setPopupContent(content) { this.popup = content; },
     }),
   };
   const window = {
@@ -143,9 +149,42 @@ test('nahe Transporte werden mit Anzahl und Lieferdetails gruppiert', () => {
   assert.match(marker.options.icon.html, /× 2/);
   assert.doesNotMatch(marker.options.icon.html, /hf-v2-transport-direction/);
   assert.match(marker.tooltip, /2 Transporte/);
-  assert.match(marker.tooltip, /Bern/);
-  assert.match(marker.tooltip, /Chur/);
-  assert.match(marker.tooltip, /Holz/);
+  assert.match(marker.tooltip, /Klicken für Details/);
+  assert.match(marker.popup, /Bern/);
+  assert.match(marker.popup, /Chur/);
+  assert.match(marker.popup, /Holz/);
+});
+
+test('angeklickte Transportdetails bleiben über mehrere Renderzyklen geöffnet', () => {
+  const {api, layers} = setup();
+  const active = shipment('persistent', [[0, 0], [0, 10]]);
+  api.renderActiveShipments([active], cities, [], [{id: 17, name: 'Nordstern', licensePlate: 'AG 1234', vehicleType: 'truck'}]);
+  const [marker] = layers;
+  active.vehicleIds = [17];
+  marker.openPopup();
+
+  api.renderActiveShipments([active], cities, [], [{id: 17, name: 'Nordstern', licensePlate: 'AG 1234', vehicleType: 'truck'}]);
+  api.renderActiveShipments([active], cities, [], [{id: 17, name: 'Nordstern', licensePlate: 'AG 1234', vehicleType: 'truck'}]);
+
+  assert.equal(marker.popupOpen, true);
+  assert.match(marker.popup, /Nordstern · AG 1234/);
+  assert.match(marker.popup, /Route &amp; Status/);
+  assert.match(marker.popup, /Erwartete Ankunft/);
+  assert.equal(marker.options.keyboard, true);
+});
+
+test('ein abgeschlossener Transport entfernt Marker und gespeicherte Detailauswahl', () => {
+  const {api, layers} = setup();
+  api.renderActiveShipments([shipment('done', [[0, 0], [0, 10]])], cities);
+  const [marker] = layers;
+  marker.openPopup();
+
+  api.renderActiveShipments([{...shipment('done', [[0, 0], [0, 10]]), status: 'completed'}], cities);
+  assert.equal(layers.size, 0);
+  assert.equal(marker.popupOpen, false);
+
+  api.renderActiveShipments([], cities);
+  assert.equal(marker.openCount, 1);
 });
 
 test('eine Gruppe löst sich nach einer Positionsänderung wieder auf', () => {

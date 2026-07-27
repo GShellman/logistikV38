@@ -3,6 +3,8 @@
 
   let logisticsVehicleLayer = null;
   const shipmentMarkers = new Map();
+  let selectedTransportId = null;
+  let isReconcilingSelection = false;
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>\"]/g, char => ({
@@ -216,6 +218,7 @@
     shipmentMarkers.forEach(marker => cancelMarkerAnimation(marker));
     shipmentMarkers.clear();
     logisticsVehicleLayer?.clearLayers?.();
+    selectedTransportId = null;
   }
 
   function shipmentId(shipment) {
@@ -248,28 +251,76 @@
     return stop.toCityName || stop.toCityId;
   }
 
-  function shipmentTooltip(shipment, fromCity, toCity) {
-    if (shipment.type === 'waiting') return `<strong>${escapeHtml(fromCity?.name || shipment.currentCityId)}</strong><br>Fahrzeug: ${escapeHtml(window.HFVehicleCatalog?.VEHICLE_CATALOG?.[shipment.vehicleType]?.name || shipment.vehicleType)}<br>Status: wartet / verfügbar`;
-    if (shipment.type === 'repositioning') return [`<strong>${escapeHtml(fromCity?.name || shipment.fromCityId)} → ${escapeHtml(toCity?.name || shipment.toCityId)}</strong>`, 'Transport: Leerfahrt / Repositionierung', `Abfahrt: ${escapeHtml(formatAbsMinute(shipment.departureAbsMinute))}`, `Ankunft: ${escapeHtml(formatAbsMinute(shipment.arrivalAbsMinute))}`, `Kosten: CHF ${Math.max(0, Number(shipment.costs?.total) || 0).toLocaleString('de-CH')}`].join('<br>');
+  function vehicleIds(shipment) {
+    const ids = Array.isArray(shipment?.vehicleIds) ? shipment.vehicleIds : [shipment?.vehicleId ?? shipment?.id];
+    return [...new Set(ids.filter(id => id !== undefined && id !== null).map(String))];
+  }
+
+  function centralVehicles(vehicles = []) {
+    const stateVehicles = window.HFFleet?.getState?.().vehicles;
+    const source = Array.isArray(stateVehicles) ? stateVehicles : vehicles;
+    return new Map(source.map(vehicle => [String(vehicle.id), vehicle]));
+  }
+
+  function vehicleLabel(vehicle, shipment) {
+    const spec = window.HFVehicleCatalog?.VEHICLE_CATALOG?.[vehicle?.vehicleType || shipment?.vehicleType] || {};
+    const name = vehicle?.name || spec.name || vehicle?.vehicleType || shipment?.vehicleType || 'Fahrzeug';
+    const plate = vehicle?.licensePlate || vehicle?.plate || vehicle?.registration || vehicle?.registrationNumber;
+    return `${name}${plate ? ` · ${plate}` : ''}`;
+  }
+
+  function vehiclesSection(shipment, fleet) {
+    const ids = vehicleIds(shipment);
+    const rows = ids.map(id => {
+      const vehicle = fleet.get(id);
+      return `<li><span>${escapeHtml(vehicleLabel(vehicle, shipment))}</span><small>ID ${escapeHtml(id)}</small></li>`;
+    }).join('');
+    if (!ids.length) return '<p>Keine Fahrzeugzuordnung</p>';
+    if (ids.length === 1) return `<p>${escapeHtml(vehicleLabel(fleet.get(ids[0]), shipment))}</p>`;
+    return `<details class="hf-v2-transport-detail__vehicles"><summary>${ids.length} Fahrzeuge anzeigen</summary><ul>${rows}</ul></details>`;
+  }
+
+  function tripLabel(shipment) {
+    if (shipment.type === 'waiting') return 'Wartend';
+    if (shipment.type === 'repositioning') return 'Leerfahrt';
+    return shipment.status === 'returning' ? 'Rückfahrt' : 'Hinfahrt';
+  }
+
+  function stopsMarkup(shipment) {
     const stops = shipmentStops(shipment);
-    const isBundled = stops.length > 0;
-    const good = goodById(shipment.goodId);
-    const isReturnTrip = shipment.status === 'returning';
-    const departureAbsMinute = isReturnTrip ? shipment.returnDepartureAbsMinute : shipment.departureAbsMinute;
-    const arrivalAbsMinute = isReturnTrip ? shipment.returnArrivalAbsMinute : shipment.arrivalAbsMinute;
-    const stopList = isBundled ? `<ul class="hf-v2-shipment-tooltip__stops">${stops.map(stop => {
-      const stopGood = goodById(stop.goodId);
-      const arrival = Number.isFinite(Number(stop.arrivalAbsMinute)) ? ` · ${formatAbsMinute(stop.arrivalAbsMinute)}` : '';
-      return `<li><strong>${escapeHtml(stopCityName(stop))}</strong>: ${escapeHtml(stopGood.name || stop.goodId)} · ${escapeHtml(formatGoodAmount(stop.goodId, stop.amountKg))}${escapeHtml(arrival)}</li>`;
-    }).join('')}</ul>` : '';
-    return [
-      `<strong>${escapeHtml(fromCity?.name || shipment.fromCityId)} → ${escapeHtml(toCity?.name || shipment.toCityId)}</strong>`,
-      isBundled ? 'Transport: Sammellieferung' : `Ware: ${escapeHtml(good.name || shipment.goodId)}`,
-      isBundled ? `Stopps:${stopList}` : `Menge: ${escapeHtml(formatGoodAmount(shipment.goodId, shipment.amountKg))}`,
-      `Abfahrt: ${escapeHtml(formatAbsMinute(departureAbsMinute))}`,
-      `Ankunft: ${escapeHtml(formatAbsMinute(arrivalAbsMinute))}`,
-      `Status: ${escapeHtml(isReturnTrip ? 'Rückfahrt' : shipment.status)}`,
-    ].join('<br>');
+    if (!stops.length) {
+      const good = goodById(shipment.goodId);
+      return `<dl><div><dt>Ware</dt><dd>${escapeHtml(good.name || shipment.goodId || '–')}</dd></div><div><dt>Menge</dt><dd>${escapeHtml(formatGoodAmount(shipment.goodId, shipment.amountKg))}</dd></div></dl>`;
+    }
+    return `<ol class="hf-v2-transport-stops">${stops.map(stop => {
+      const good = goodById(stop.goodId);
+      const arrival = Number.isFinite(Number(stop.arrivalAbsMinute)) ? formatAbsMinute(stop.arrivalAbsMinute) : 'Noch offen';
+      return `<li><strong>${escapeHtml(stopCityName(stop))}</strong><dl><div><dt>Ware</dt><dd>${escapeHtml(good.name || stop.goodId)}</dd></div><div><dt>Menge</dt><dd>${escapeHtml(formatGoodAmount(stop.goodId, stop.amountKg))}</dd></div><div><dt>Ankunft</dt><dd>${escapeHtml(arrival)}</dd></div></dl></li>`;
+    }).join('')}</ol>`;
+  }
+
+  function shipmentTooltip(shipment, fromCity, toCity, progress = 0, fleet = new Map()) {
+    const from = fromCity?.name || shipment.fromCityId || shipment.currentCityId || '–';
+    const to = toCity?.name || shipment.toCityId || shipment.currentCityId || '–';
+    const departure = shipment.status === 'returning' ? shipment.returnDepartureAbsMinute : shipment.departureAbsMinute;
+    const arrival = shipment.status === 'returning' ? shipment.returnArrivalAbsMinute : shipment.arrivalAbsMinute;
+    const percent = Math.round(clamp01(progress) * 100);
+    const status = tripLabel(shipment);
+    return `<article class="hf-v2-transport-detail" tabindex="-1" aria-label="Transportdetails ${escapeHtml(from)} nach ${escapeHtml(to)}">
+      <header><span class="hf-v2-transport-detail__kind hf-v2-transport-detail__kind--${escapeHtml(status.toLowerCase())}">${escapeHtml(status)}</span><h3>${escapeHtml(from)} <span aria-hidden="true">→</span> ${escapeHtml(to)}</h3></header>
+      <section aria-label="Route und Status"><h4>Route &amp; Status</h4><dl><div><dt>Status</dt><dd>${escapeHtml(shipment.status || status)}</dd></div><div><dt>Fortschritt</dt><dd><strong>${percent}%</strong></dd></div></dl><div class="hf-v2-transport-detail__progress" role="progressbar" aria-label="Fortschritt" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><i style="width:${percent}%"></i></div></section>
+      <section aria-label="Ladung"><h4>Ladung</h4>${shipment.type === 'repositioning' ? '<p>Keine Ladung · Repositionierung</p>' : shipment.type === 'waiting' ? '<p>Keine Ladung · verfügbar</p>' : stopsMarkup(shipment)}</section>
+      <section aria-label="Fahrzeugdaten"><h4>Fahrzeugdaten</h4>${vehiclesSection(shipment, fleet)}</section>
+      <section aria-label="Zeitplan"><h4>Zeitplan</h4><dl><div><dt>Abfahrt</dt><dd><strong>${escapeHtml(Number.isFinite(Number(departure)) ? formatAbsMinute(departure) : '–')}</strong></dd></div><div><dt>Erwartete Ankunft</dt><dd><strong>${escapeHtml(Number.isFinite(Number(arrival)) ? formatAbsMinute(arrival) : '–')}</strong></dd></div></dl></section>
+    </article>`;
+  }
+
+  function hoverHint(group) {
+    if (group.length > 1) return `<strong>${group.length} Transporte</strong><br><span>Klicken für Details</span>`;
+    const {shipment, fromCity, toCity} = group[0];
+    const from = fromCity?.name || shipment.fromCityId || shipment.currentCityId || '–';
+    const to = toCity?.name || shipment.toCityId || shipment.currentCityId || '–';
+    return `<strong>${escapeHtml(from)} → ${escapeHtml(to)}</strong><br><span>${escapeHtml(tripLabel(shipment))} · Klicken für Details</span>`;
   }
 
   const SHIPMENT_GROUP_DISTANCE_PX = 36;
@@ -299,22 +350,9 @@
     return [...groups.values()];
   }
 
-  function groupTooltip(group) {
-    if (group.length === 1) return shipmentTooltip(group[0].shipment, group[0].fromCity, group[0].toCity);
-    const rows = group.map(entry => {
-      const shipment = entry.shipment;
-      const destination = entry.toCity?.name || shipment.toCityId || shipment.currentCityId || '–';
-      let cargo = 'wartet / verfügbar';
-      if (shipment.type === 'repositioning') cargo = 'Leerfahrt';
-      else if (shipment.type !== 'waiting') {
-        const stops = shipmentStops(shipment);
-        cargo = stops.length
-          ? stops.map(stop => `${stopCityName(stop)}: ${goodById(stop.goodId).name || stop.goodId} (${formatGoodAmount(stop.goodId, stop.amountKg)})`).join('; ')
-          : `${goodById(shipment.goodId).name || shipment.goodId} (${formatGoodAmount(shipment.goodId, shipment.amountKg)})`;
-      }
-      return `<li><strong>${escapeHtml(destination)}</strong> · ${escapeHtml(cargo)}</li>`;
-    }).join('');
-    return `<strong>${group.length} Transporte</strong><br>Lieferungen, Zielstädte und Waren:<ul class="hf-v2-shipment-tooltip__group">${rows}</ul>`;
+  function groupTooltip(group, fleet) {
+    if (group.length === 1) return shipmentTooltip(group[0].shipment, group[0].fromCity, group[0].toCity, group[0].progress, fleet);
+    return `<section class="hf-v2-transport-group" aria-label="Fahrzeuggruppe"><header><span>${group.length} Transporte</span><h3>Fahrzeuggruppe</h3></header><div class="hf-v2-transport-group__list">${group.map((entry, index) => `<details${index === 0 ? ' open' : ''}><summary>${escapeHtml(entry.fromCity?.name || entry.shipment.fromCityId || '–')} → ${escapeHtml(entry.toCity?.name || entry.shipment.toCityId || '–')} · ${escapeHtml(tripLabel(entry.shipment))}</summary>${shipmentTooltip(entry.shipment, entry.fromCity, entry.toCity, entry.progress, fleet)}</details>`).join('')}</div></section>`;
   }
 
   function renderActiveShipments(shipments = [], citiesById = {}, assignments = [], vehicles = []) {
@@ -322,6 +360,7 @@
     const nowAbsMinute = currentAbsMinute();
     const activeShipmentIds = new Set();
     const entries = [];
+    const fleet = centralVehicles(vehicles);
 
     const moving = [
       ...shipments.filter(shipment => shipment?.status === 'active' || shipment?.status === 'returning').map(shipment => ({...shipment, _markerId: `shipment-${shipmentId(shipment)}`})),
@@ -355,6 +394,8 @@
       entries.push({id, shipment, fromCity: city, toCity: city, coords: [position], position, progress: 0, title: `${city.name || vehicle.currentCityId}: Fahrzeug wartet`, zIndexOffset: 450, interactive: false});
     });
 
+    isReconcilingSelection = true;
+    const renderedGroups = [];
     groupNearbyShipments(entries, logisticsVehicleLayer._map).forEach(group => {
       const grouped = group.length > 1;
       const representative = [...group].sort((a, b) => (a.shipment.type === 'waiting') - (b.shipment.type === 'waiting') || (a.shipment.type === 'repositioning') - (b.shipment.type === 'repositioning'))[0];
@@ -363,24 +404,30 @@
       const progress = group.reduce((sum, entry) => sum + entry.progress, 0) / group.length;
       const title = grouped ? `${group.length} Transporte an dieser Position` : representative.title;
       activeShipmentIds.add(id);
+      renderedGroups.push({id, memberIds: group.map(entry => entry.id)});
       let marker = shipmentMarkers.get(id);
       if (!marker) {
         const direction = initialDirection(representative.coords);
         marker = L.marker(position, {icon: vehicleIcon(representative.shipment, direction, progress, {groupCount: group.length}), title: grouped ? title : `${title}, Fahrtrichtung ${direction ? 'Osten' : 'Westen'}, ${Math.round(progress * 100)} Prozent`, zIndexOffset: Math.max(...group.map(entry => entry.zIndexOffset)), interactive: grouped || representative.interactive, keyboard: grouped || representative.interactive}).addTo(logisticsVehicleLayer);
         marker._hfV2VehicleType = String(representative.shipment?.vehicleType || '').trim();
         marker._hfV2DirectionRight = direction;
-        marker.bindTooltip(groupTooltip(group), {direction: 'top', sticky: true, className: 'city-label'});
+        marker.bindTooltip(hoverHint(group), {direction: 'top', sticky: true, className: 'city-label hf-v2-transport-hint'});
+        marker.bindPopup(groupTooltip(group, fleet), {className: 'hf-v2-transport-popup', maxWidth: 440, minWidth: 300, closeButton: true, autoClose: true});
+        marker.on?.('popupopen', () => { if (!isReconcilingSelection) selectedTransportId = marker._hfV2SelectionId; });
+        marker.on?.('popupclose', () => { if (!isReconcilingSelection && selectedTransportId === marker._hfV2SelectionId) selectedTransportId = null; });
+        marker._hfV2SelectionId = id;
         shipmentMarkers.set(id, marker);
-        return;
+      } else {
+        const currentLatLng = marker.getLatLng?.();
+        const hasHorizontalMovement = Math.abs(Number(position[1]) - Number(currentLatLng?.lng)) > 0.000001;
+        const direction = hasHorizontalMovement ? isMovingRight(currentLatLng, position) : Boolean(marker._hfV2DirectionRight);
+        marker.options.title = title;
+        marker._hfV2SelectionId = id;
+        updateMarkerIcon(marker, representative.shipment, direction, progress, {groupCount: group.length});
+        marker.setTooltipContent?.(hoverHint(group));
+        marker.setPopupContent?.(groupTooltip(group, fleet));
+        animateMarkerTo(marker, position);
       }
-
-      const currentLatLng = marker.getLatLng?.();
-      const hasHorizontalMovement = Math.abs(Number(position[1]) - Number(currentLatLng?.lng)) > 0.000001;
-      const direction = hasHorizontalMovement ? isMovingRight(currentLatLng, position) : Boolean(marker._hfV2DirectionRight);
-      marker.options.title = title;
-      updateMarkerIcon(marker, representative.shipment, direction, progress, {groupCount: group.length});
-      marker.setTooltipContent?.(groupTooltip(group));
-      animateMarkerTo(marker, position);
     });
 
     shipmentMarkers.forEach((marker, id) => {
@@ -389,6 +436,17 @@
       logisticsVehicleLayer.removeLayer(marker);
       shipmentMarkers.delete(id);
     });
+
+    if (selectedTransportId) {
+      const selectedGroup = renderedGroups.find(group => group.id === selectedTransportId || group.memberIds.includes(selectedTransportId));
+      if (selectedGroup) {
+        const marker = shipmentMarkers.get(selectedGroup.id);
+        marker?._popup?.isOpen?.() || marker?.openPopup?.();
+      } else {
+        selectedTransportId = null;
+      }
+    }
+    isReconcilingSelection = false;
 
     return logisticsVehicleLayer;
   }
