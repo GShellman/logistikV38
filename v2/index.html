@@ -11,61 +11,65 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main class="hf-v2-shell" aria-label="Helvetic Freight V2 Karte">
-    <section class="hf-v2-map-card" aria-labelledby="hfV2Title">
-      <header class="hf-v2-header">
-        <div>
-          <p class="hf-v2-kicker">Helvetic Freight V2.0</p>
-          <h1 id="hfV2Title">Schweiz-Karte</h1>
-          <p class="hf-v2-subtitle">Alle Orte aus dem bestehenden Katalog, mit einfachem In-Memory-Kapital, ohne Browser-Speicherung.</p>
-        </div>
-        <span class="hf-v2-badge" id="hfV2CityCount">0 Orte</span>
-      </header>
+  <main class="hf-v2-shell" aria-label="Helvetic Freight Spieloberfläche">
+    <header class="hf-v2-hud" aria-label="Unternehmensübersicht">
+      <a class="hf-v2-brand" href="#hfV2Map" aria-label="Helvetic Freight – zur Karte">
+        <span class="hf-v2-brand__mark" aria-hidden="true">HF</span>
+        <strong>Helvetic Freight</strong>
+      </a>
 
-      <div class="hf-v2-map-wrap">
-        <div id="hfV2Map" class="hf-v2-map" role="application" aria-label="Echte Schweiz-Karte mit klickbaren Orten"></div>
-        <p id="hfV2MapError" class="hf-v2-map-error" hidden>Die Kartenbibliothek konnte nicht geladen werden. Bitte die V2 mit Internetverbindung öffnen.</p>
+      <div class="hf-v2-hud-stats">
+        <section class="hf-v2-hud-stat" aria-label="Kontostand" title="Aktuell verfügbares Firmenkapital">
+          <span>Kontostand</span><strong id="hfV2HudCash">CHF 0.00</strong>
+        </section>
+        <section class="hf-v2-hud-stat" aria-label="Datum und Uhrzeit">
+          <span>Datum &amp; Uhrzeit</span><strong id="hfV2Clock">Mo · Tag 1 · 08:00</strong>
+        </section>
+        <section class="hf-v2-hud-stat" aria-label="Laufende Transporte" title="Aktive Hin- und Rückfahrten">
+          <span>Unterwegs</span><strong id="hfV2HudTransports">0 Transporte</strong>
+        </section>
+        <section class="hf-v2-hud-stat" aria-label="Heutiges Betriebsergebnis" title="Heutige Erlöse abzüglich laufender Betriebskosten">
+          <span>Ergebnis heute</span><strong id="hfV2HudResult">CHF 0.00</strong>
+        </section>
       </div>
-    </section>
 
-    <aside class="hf-v2-panel" aria-live="polite">
-      <section class="hf-v2-panel-card hf-v2-time-card" aria-labelledby="hfV2TimeTitle">
-        <div class="hf-v2-time-card__head">
-          <div>
-            <p class="hf-v2-kicker">Zeitsteuerung</p>
-            <h2 id="hfV2TimeTitle">Uhr & Tempo</h2>
-          </div>
-          <b id="hfV2Clock" class="hf-v2-time-clock">Mo · Tag 1 · 08:00</b>
-        </div>
-        <div class="hf-v2-time-actions" aria-label="Zeitsteuerung-Aktionen">
+      <div class="hf-v2-hud-controls">
+        <div class="hf-v2-time-actions" aria-label="Zeitsteuerung">
           <button id="hfV2LiveButton" class="hf-v2-save-button hf-v2-time-live-button" type="button" aria-pressed="false">▶ Live</button>
           <button id="hfV2NextHourButton" class="hf-v2-save-button" type="button">+1 Std.</button>
           <button id="hfV2NextDayButton" class="hf-v2-save-button hf-v2-save-button--ghost" type="button">Tag beenden</button>
         </div>
-        <p id="hfV2TimeStatus" class="hf-v2-time-status" role="status" aria-live="polite">Bereit für die nächste Produktionsstunde.</p>
-      </section>
+        <details class="hf-v2-system-menu">
+          <summary aria-label="Systemmenü öffnen" title="Systemmenü: Spielstand verwalten"><span aria-hidden="true">💾</span><span>System</span></summary>
+          <div class="hf-v2-system-menu__popover">
+            <strong>Spielstand</strong>
+            <button id="hfV2SaveButton" type="button">Speichern</button>
+            <button id="hfV2ExportButton" type="button">Exportieren</button>
+            <button id="hfV2ImportButton" type="button">Importieren</button>
+            <input id="hfV2ImportInput" type="file" accept="application/json,.json" hidden>
+            <p id="hfV2SaveStatus" class="hf-v2-save-status" role="status" aria-live="polite">Bereit.</p>
+          </div>
+        </details>
+      </div>
+    </header>
 
+    <section class="hf-v2-map-card" aria-label="Schweiz-Karte">
+      <div class="hf-v2-map-wrap">
+        <div id="hfV2Map" class="hf-v2-map" role="application" aria-label="Schweiz-Karte mit klickbaren Orten"></div>
+        <p id="hfV2MapError" class="hf-v2-map-error" hidden>Die Karte konnte nicht geladen werden. Bitte prüfe deine Internetverbindung.</p>
+      </div>
+    </section>
+
+    <aside class="hf-v2-panel" aria-live="polite">
       <section class="hf-v2-panel-card">
-        <p class="hf-v2-kicker">V2.1 Detailpanel</p>
+        <div class="hf-v2-panel-heading"><p class="hf-v2-kicker">Standort</p><span class="hf-v2-badge" id="hfV2CityCount">0 Orte</span></div>
         <h2 id="hfV2SelectedName">Ort auswählen</h2>
-        <p id="hfV2SelectedIntro" class="hf-v2-muted">Klicke einen Marker auf der Karte an. Es werden Basisdaten angezeigt – mit einfachem V2-Kapital für Fahrzeugkäufe, aber noch ohne Wirtschaftssimulation, Waren und Speicherung.</p>
+        <p id="hfV2SelectedIntro" class="hf-v2-muted">Wähle einen Marker, um Standortdaten und verfügbare Aktionen anzuzeigen.</p>
         <dl class="hf-v2-facts" id="hfV2Facts"></dl>
       </section>
-
-      <section class="hf-v2-panel-card hf-v2-storage-note">
-        <h2>Manueller Spielstand</h2>
-        <p>Diese V2 nutzt eine zentrale JSON-Save-Schicht ohne <code>localStorage</code>, <code>sessionStorage</code>, IndexedDB oder Cache APIs. Exportiere den Spielstand als Datei, damit er nicht an Browserdaten hängt.</p>
-        <div class="hf-v2-save-actions" aria-label="Spielstand-Aktionen">
-          <button id="hfV2SaveButton" class="hf-v2-save-button" type="button">Speichern</button>
-          <button id="hfV2ExportButton" class="hf-v2-save-button" type="button">Exportieren</button>
-          <button id="hfV2ImportButton" class="hf-v2-save-button hf-v2-save-button--ghost" type="button">Importieren</button>
-          <input id="hfV2ImportInput" type="file" accept="application/json,.json" hidden>
-        </div>
-        <p id="hfV2SaveStatus" class="hf-v2-save-status" role="status" aria-live="polite">Noch kein manueller Export in dieser Sitzung.</p>
-      </section>
+      <p id="hfV2TimeStatus" class="hf-v2-shell-status" role="status" aria-live="polite">Bereit für die nächste Produktionsstunde.</p>
     </aside>
   </main>
-
   <div id="hfV2ModalBack" class="hf-v2-modal-back" hidden>
     <section id="hfV2Modal" class="hf-v2-modal" role="dialog" aria-modal="true" aria-labelledby="hfV2ModalTitle" aria-describedby="hfV2ModalSubtitle">
       <div class="hf-v2-modal-header">

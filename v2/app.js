@@ -53,6 +53,12 @@
     return `CHF ${Math.max(0, Number(value) || 0).toLocaleString('de-CH', {maximumFractionDigits: 2})}`;
   }
 
+  function formatHudCurrency(value) {
+    const amount = Number(value) || 0;
+    const sign = amount < 0 ? '−' : '';
+    return `${sign}CHF ${Math.abs(amount).toLocaleString('de-CH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+  }
+
   function formatDailyKg(value) {
     const kg = Math.max(0, Number(value) || 0);
     if (kg >= 1000) return `${(kg / 1000).toLocaleString('de-CH', {maximumFractionDigits: 1})} t/Tag`;
@@ -699,6 +705,27 @@
     if (clock) clock.textContent = window.HFV2Time?.formatClock?.() || 'Mo · Tag 1 · 08:00';
   }
 
+  function renderHud() {
+    const saveState = window.HFV2Save?.getState?.() || {};
+    const time = window.HFV2Time?.getState?.() || saveState.time || {day: 1};
+    const logistics = window.HFV2Logistics?.getState?.() || {};
+    const activeTransports = (logistics.shipments || []).filter(shipment => ['active', 'returning'].includes(shipment.status)).length;
+    const today = Math.max(1, Math.trunc(Number(time.day) || 1));
+    const todaySummary = window.HFV2DayCycle?.summaryForDay?.(today) || {operatingResult: 0};
+    const cashNode = document.getElementById('hfV2HudCash');
+    const transportNode = document.getElementById('hfV2HudTransports');
+    const resultNode = document.getElementById('hfV2HudResult');
+    if (cashNode) cashNode.textContent = formatHudCurrency(window.HFV2Save?.getCash?.() ?? saveState.cash);
+    if (transportNode) transportNode.textContent = `${activeTransports.toLocaleString('de-CH')} ${activeTransports === 1 ? 'Transport' : 'Transporte'}`;
+    if (resultNode) {
+      const result = Number(todaySummary.operatingResult) || 0;
+      resultNode.textContent = formatHudCurrency(result);
+      resultNode.classList.toggle('is-positive', result > 0);
+      resultNode.classList.toggle('is-negative', result < 0);
+    }
+    renderClock();
+  }
+
   function dailyCycleSummaryText(summary) {
     if (!summary) return 'Kein Tagesabschluss ausgelöst.';
     const costs = summary.costs || {};
@@ -783,7 +810,7 @@
   }
 
   function updateAdvanceStatus(label, summary) {
-    renderClock();
+    renderHud();
     renderActiveShipments();
     refreshSelectedCity();
     const message = `${label}: ${window.HFV2Time?.formatClock?.() || ''}. ${dailyCycleSummaryText(summary)}`;
@@ -812,7 +839,7 @@
 
   function liveTick() {
     const result = runWithDailyCycleSummary(() => window.HFV2Time?.advanceMinutes?.(1, {reason: 'time-live'}));
-    renderClock();
+    renderHud();
     renderActiveShipments();
     refreshSelectedCity();
     const message = `Live läuft: ${window.HFV2Time?.formatClock?.() || ''}. ${dailyCycleSummaryText(result.summary)}`;
@@ -898,7 +925,7 @@
     savePackage = window.HFV2Save?.hydrateState?.(nextPackage) || nextPackage;
     configureGameSystems(Object.values(citiesById));
     refreshNetworkView();
-    renderClock();
+    renderHud();
     renderActiveShipments();
     refreshSelectedCity();
     return savePackage;
@@ -943,12 +970,12 @@
     bindSaveControls();
     bindTimeControls();
     bindLogisticsPanelActions();
-    renderClock();
+    renderHud();
     renderLiveButton();
     window.addEventListener('hf:network:confirmed', refreshNetworkView);
     window.addEventListener('hf:network:confirmed', () => window.HFV2FleetDispatch?.invalidate?.('network-changed'));
     window.addEventListener('hf:v2:state-changed', refreshChangedStateView);
-    window.addEventListener('hf:v2:state-changed', renderClock);
+    window.addEventListener('hf:v2:state-changed', renderHud);
     if (!bootMap(cities)) return;
     const zurich = cities.find(city => city.id === 'zurich');
     if (zurich) selectCity(zurich, cities);
