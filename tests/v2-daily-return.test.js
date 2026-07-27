@@ -1,0 +1,60 @@
+const assert = require('node:assert/strict');
+const {readFileSync} = require('node:fs');
+const test = require('node:test');
+const vm = require('node:vm');
+
+function loadScript(file, window) {
+  vm.runInContext(readFileSync(file, 'utf8'), vm.createContext({window, console}), {filename: file});
+}
+
+function harness({alternativeVehicles = 0, arrivalAbsMinute = 600, distance = 60} = {}) {
+  const time = {day: 1, hour: Math.floor(arrivalAbsMinute / 60), minute: arrivalAbsMinute % 60};
+  const vehicles = [{id: 1, vehicleType: 'van', status: 'assigned', currentCityId: 'zurich', availableAbsMinute: arrivalAbsMinute, activeAssignmentId: '1'}];
+  for (let index = 0; index < alternativeVehicles; index += 1) {
+    vehicles.push({id: index + 2, vehicleType: 'van', status: 'available', currentCityId: 'zurich', availableAbsMinute: 0, activeAssignmentId: null});
+  }
+  const window = {
+    HFVehicleCatalog: {VEHICLE_TYPES: ['van'], VEHICLE_CATALOG: {van: {mode: 'road', load: 1, speed: 60, kmCost: 1}}},
+    HFV2Save: {STARTING_CASH: 500000, getState: () => ({time}), dispatchStateChanged: () => {}},
+    HFV2Time: {getState: () => time},
+    HFV2Goods: {addToInventory: (_city, _good, amountKg) => ({ok: true, addedKg: amountKg})},
+    HFNetwork: {
+      findPath: (from, to) => ({reachable: true, distance, duration: 1, nodes: [from, to], edges: [{id: `${from}-${to}`, a: from, b: to, type: 'road'}]}),
+      reservePathCapacity: (_path, options) => ({ok: true, reservationId: options.reservationId}),
+      nodeInfo: id => id === 'zurich' ? {lat: 47, lng: 8} : {lat: 46, lng: 7},
+    },
+  };
+  loadScript('v2/fleet-logic.js', window);
+  window.HFFleet.configure({state: {vehicles, nextVehicleId: vehicles.length + 1, depotCityId: 'zurich'}});
+  loadScript('v2/logistics-logic.js', window);
+  const state = window.HFV2Logistics.createLogisticsState({
+    orders: [{id: 1, fromCityId: 'zurich', toCityId: 'bern', goodId: 'food', frequency: 'daily', departureHour: 8, departureMinute: 0, vehicleType: 'van', amountKg: 100, enabled: true, lastDispatchedDay: 1}],
+    shipments: [{id: 1, orderId: 1, fromCityId: 'zurich', toCityId: 'bern', goodId: 'food', amountKg: 100, vehicleType: 'van', vehicleIds: [1], vehicleCount: 1, departureAbsMinute: 480, arrivalAbsMinute, status: 'active'}],
+  });
+  window.HFV2Logistics.configure({state, citiesById: {zurich: {id: 'zurich'}, bern: {id: 'bern'}}});
+  return {window, state};
+}
+
+test('tägliche Fahrt kehrt bei fehlendem Ersatz noch am selben Tag zurück', () => {
+  const {window, state} = harness();
+  window.HFV2Logistics.advanceShipments();
+  assert.equal(state.shipments[0].status, 'returning');
+  assert.equal(state.shipments[0].returnArrivalAbsMinute, 660);
+  assert.equal(window.HFFleet.getState().vehicles[0].activeAssignmentId, '1');
+  assert.equal(window.HFFleet.getState().vehicles[0].status, 'returning');
+});
+
+test('tägliche Fahrt bleibt am Ziel, wenn am Ursprungsort Ersatz verfügbar ist', () => {
+  const {window, state} = harness({alternativeVehicles: 1});
+  window.HFV2Logistics.advanceShipments();
+  assert.equal(state.shipments[0].status, 'delivered');
+  assert.equal(window.HFFleet.getState().vehicles[0].currentCityId, 'bern');
+  assert.equal(window.HFFleet.getState().vehicles[0].status, 'available');
+});
+
+test('keine automatische Rückkehr, wenn sie nicht bis 23:59 abgeschlossen werden kann', () => {
+  const {window, state} = harness({arrivalAbsMinute: 23 * 60, distance: 120});
+  window.HFV2Logistics.advanceShipments();
+  assert.equal(state.shipments[0].status, 'delivered');
+  assert.equal(window.HFFleet.getState().vehicles[0].currentCityId, 'bern');
+});
