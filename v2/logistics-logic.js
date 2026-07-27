@@ -15,6 +15,7 @@
       orders: [],
       shipments: [],
       assignments: [],
+      dispatchPlan: null,
       nextOrderId: 1,
       nextShipmentId: 1,
       nextAssignmentId: 1,
@@ -141,6 +142,7 @@
     state.bundleWindowMinutes = Math.max(0, Math.trunc(Number(state.bundleWindowMinutes) || 60));
     cities = Array.isArray(options.cities) ? options.cities : cities;
     citiesById = options.citiesById && typeof options.citiesById === 'object' ? options.citiesById : Object.fromEntries(cities.map(city => [String(city.id), city]));
+    window.HFV2FleetDispatch?.configure?.({state});
     return state;
   }
 
@@ -355,6 +357,7 @@
     assertFleetVehicle(fromCityId, vehicleType);
     const order = {id: state.nextOrderId++, fromCityId, toCityId, goodId, frequency, departureHour, departureMinute, vehicleType, amountKg, enabled: true, lastDispatchedDay: null};
     state.orders.push(order);
+    window.HFV2FleetDispatch?.invalidate?.('order-created');
     window.HFV2Save?.dispatchStateChanged?.('logistics-order-created');
     return order;
   }
@@ -365,7 +368,10 @@
     const before = state.orders.length;
     state.orders = state.orders.filter(order => order.id !== id);
     const removed = before !== state.orders.length;
-    if (removed) window.HFV2Save?.dispatchStateChanged?.('logistics-order-cancelled');
+    if (removed) {
+      window.HFV2FleetDispatch?.invalidate?.('order-cancelled');
+      window.HFV2Save?.dispatchStateChanged?.('logistics-order-cancelled');
+    }
     return removed;
   }
 
@@ -374,6 +380,7 @@
     const order = state.orders.find(entry => entry.id === positiveInteger(orderId, null));
     if (!order) return null;
     order.enabled = enabled === true;
+    window.HFV2FleetDispatch?.invalidate?.('order-enabled-changed');
     window.HFV2Save?.dispatchStateChanged?.('logistics-order-enabled');
     return order;
   }
@@ -547,10 +554,11 @@
     if (reservation?.reservationId) window.HFNetwork?.releaseCapacityReservation?.(reservation.reservationId);
   }
 
-  function reserveShipmentVehicles({shipmentId, cityId, vehicleType, count, departureAbsMinute, finalAvailableAbsMinute, toCityId}) {
+  function reserveShipmentVehicles({shipmentId, cityId, vehicleType, vehicleIds = null, count, departureAbsMinute, finalAvailableAbsMinute, toCityId}) {
     const assigned = window.HFFleet?.assignVehicles?.({
       cityId,
       vehicleType,
+      vehicleIds,
       count,
       assignmentId: shipmentId,
       departureAbsMinute,
@@ -569,6 +577,7 @@
   function createSingleShipment(order, time, nowAbsMinute, created) {
     const vehicleType = order.vehicleType || DEFAULT_VEHICLE_TYPE;
     const departureAbsMinute = nowAbsMinute;
+    const plannedTrip = window.HFV2FleetDispatch?.plannedTrip?.(order.id, departureAbsMinute);
     const validation = validateRoadShipment({fromCityId: order.fromCityId, toCityId: order.toCityId, vehicleType, amountKg: order.amountKg, departureAbsMinute});
     if (!validation.ok) {
       markOrderDispatchResult(order, validation.reason);
@@ -583,22 +592,25 @@
 
     const {path, vehicleCount, arrivalAbsMinute} = validation;
     const reservationId = `shipment-${state.nextShipmentId}`;
-    const assigned = reserveShipmentVehicles({shipmentId: state.nextShipmentId, cityId: order.fromCityId, vehicleType, count: vehicleCount, departureAbsMinute, finalAvailableAbsMinute: arrivalAbsMinute, toCityId: order.toCityId});
+    const assigned = reserveShipmentVehicles({shipmentId: state.nextShipmentId, cityId: order.fromCityId, vehicleType, vehicleIds: plannedTrip?.vehicleIds, count: vehicleCount, departureAbsMinute, finalAvailableAbsMinute: arrivalAbsMinute, toCityId: order.toCityId});
     if (assigned.length !== vehicleCount) {
       markOrderDispatchResult(order, 'not-enough-vehicles');
       return null;
     }
+    window.HFV2FleetDispatch?.consumeTrip?.(order.id, departureAbsMinute);
     let reservation;
     try {
       reservation = window.HFNetwork?.reservePathCapacity?.(path, {startAbsMinute: departureAbsMinute, endAbsMinute: arrivalAbsMinute, units: vehicleCount, reservationId});
     } catch (error) {
       rollbackVehicleReservation(state.nextShipmentId, order.fromCityId, departureAbsMinute);
       markOrderDispatchResult(order, error?.reason || 'route-reservation-failed');
+      window.HFV2FleetDispatch?.invalidate?.('shipment-failed', departureAbsMinute);
       return null;
     }
     if (reservation && reservation.ok === false) {
       rollbackVehicleReservation(state.nextShipmentId, order.fromCityId, departureAbsMinute);
       markOrderDispatchResult(order, reservation.reason || 'route-overloaded');
+      window.HFV2FleetDispatch?.invalidate?.('shipment-failed', departureAbsMinute);
       return null;
     }
 
@@ -667,7 +679,9 @@
     const stops = orders.map(order => ({toCityId: order.toCityId, goodId: order.goodId, amountKg: order.amountKg, orderId: order.id}));
     const route = combinedRoute(orders[0].fromCityId, stops, vehicleType, {departureAbsMinute: nowAbsMinute});
     if (!route) return false;
+    if (window.HFV2FleetDispatch?.canBundleOrders?.(orders, route.arrivalAbsMinute) === false) return false;
     const routeStops = route.stops;
+    for (const order of orders) window.HFV2FleetDispatch?.consumeTrip?.(order.id, nowAbsMinute);
     const reservationId = `shipment-${state.nextShipmentId}`;
     const assigned = reserveShipmentVehicles({shipmentId: state.nextShipmentId, cityId: orders[0].fromCityId, vehicleType, count: 1, departureAbsMinute: nowAbsMinute, finalAvailableAbsMinute: route.arrivalAbsMinute, toCityId: routeStops[routeStops.length - 1].toCityId});
     if (assigned.length !== 1) return false;
@@ -740,6 +754,8 @@
     configure();
     const time = currentTime();
     const nowAbsMinute = absoluteMinute(time);
+    advanceAssignments(nowAbsMinute);
+    window.HFV2FleetDispatch?.ensurePlan?.({state});
     window.HFNetwork?.cleanupCapacityReservations?.(nowAbsMinute - MINUTES_PER_DAY);
     const created = [];
     const dueOrders = state.orders.filter(order => orderDueToday(order, time));
@@ -828,6 +844,28 @@
   function advanceAssignments(nowAbsMinute) {
     const completed = [];
     for (const assignment of state.assignments) {
+      if (assignment.type === 'repositioning' && assignment.status === 'planned' && assignment.departureAbsMinute <= nowAbsMinute) {
+        const assigned = window.HFFleet?.assignVehicles?.({
+          cityId: assignment.fromCityId,
+          vehicleType: assignment.vehicleType,
+          vehicleIds: assignment.vehicleIds,
+          count: assignment.vehicleIds.length,
+          assignmentId: assignment.id,
+          departureAbsMinute: assignment.departureAbsMinute,
+          availableAbsMinute: assignment.arrivalAbsMinute,
+          routeSegment: {fromCityId: assignment.fromCityId, toCityId: assignment.toCityId},
+        }) || [];
+        if (assigned.length !== assignment.vehicleIds.length) {
+          assignment.status = 'cancelled';
+          for (const id of assignment.capacityReservationIds || []) window.HFNetwork?.releaseCapacityReservation?.(id);
+          window.HFV2FleetDispatch?.invalidate?.('repositioning-failed', nowAbsMinute);
+          continue;
+        }
+        assignment.status = 'active';
+        assignment.startedAbsMinute = Math.max(assignment.departureAbsMinute, nowAbsMinute);
+        const cost = Math.max(0, Number(assignment.costs?.total) || 0);
+        if (cost) window.HFV2Save?.changeCash?.(-cost, 'logistics-repositioning-cost');
+      }
       if (assignment.type !== 'repositioning' || assignment.status !== 'active' || assignment.arrivalAbsMinute > nowAbsMinute) continue;
       assignment.status = 'completed';
       assignment.completedAbsMinute = assignment.arrivalAbsMinute;
@@ -889,6 +927,7 @@
     stop.undeliveredKg = Math.max(0, Math.round((amountKg - stop.deliveredKg) * 1000) / 1000);
     stop.deliveredAbsMinute = nowAbsMinute;
     stop.status = stop.deliveredKg >= amountKg ? 'delivered' : (stop.deliveredKg > 0 ? 'partial' : 'failed');
+    if (stop.status === 'failed') window.HFV2FleetDispatch?.invalidate?.('shipment-failed', nowAbsMinute);
     return stop.deliveredKg;
   }
 

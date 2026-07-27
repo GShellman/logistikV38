@@ -95,6 +95,7 @@
     const currentCityId = requestedCityId || fleet.depotCityId;
     const record = {id: fleet.nextVehicleId++, vehicleType, status: 'available', currentCityId, availableAbsMinute: 0, activeAssignmentId: null};
     fleet.vehicles.push(record);
+    window.HFV2FleetDispatch?.invalidate?.('vehicle-bought');
     window.HFV2Save?.changeCash?.(-vehicle.cost, 'fleet-buy');
     return {ok: true, cityId: currentCityId, vehicleType, vehicle: record, owned: getOwnedCountByType(vehicleType), cost: vehicle.cost, state: fleet};
   }
@@ -105,6 +106,7 @@
     const candidate = getAvailableVehicles({cityId, vehicleType})[0];
     if (!candidate) return {ok: false, reason: 'none-available'};
     state.vehicles = state.vehicles.filter(entry => entry.id !== candidate.id);
+    window.HFV2FleetDispatch?.invalidate?.('vehicle-sold');
     const refund = Math.round(vehicle.cost * .6);
     window.HFV2Save?.changeCash?.(refund, 'fleet-sell');
     return {ok: true, cityId: normalizeId(cityId), vehicleType, vehicleId: candidate.id, owned: getOwnedCountByType(vehicleType), refund, state};
