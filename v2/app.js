@@ -465,20 +465,61 @@
     return (Math.max(1, dueDay) - 1) * 1440 + departureDayMinute;
   }
 
-  function shipmentCalendarRows(city, shipments, orders) {
+  function shipmentCalendarPosition(startAbsMinute, endAbsMinute, dayStartAbsMinute) {
+    const start = Number(startAbsMinute);
+    const end = Number(endAbsMinute);
+    const dayStart = Number(dayStartAbsMinute);
+    if (![start, end, dayStart].every(Number.isFinite) || end <= start) return null;
+    const visibleStart = Math.max(start, dayStart);
+    const visibleEnd = Math.min(end, dayStart + 1440);
+    if (visibleEnd <= visibleStart) return null;
+    return {
+      topPercent: ((visibleStart - dayStart) / 1440) * 100,
+      heightPercent: ((visibleEnd - visibleStart) / 1440) * 100,
+      durationMinutes: end - start,
+      continuesBefore: start < dayStart,
+      continuesAfter: end > dayStart + 1440,
+    };
+  }
+
+  function shipmentCalendarLayout(dayRows) {
+    const rows = [...dayRows].sort((a, b) => a.visibleStartAbsMinute - b.visibleStartAbsMinute || b.visibleEndAbsMinute - a.visibleEndAbsMinute);
+    const groups = [];
+    let group = [];
+    let groupEnd = -Infinity;
+    const finishGroup = () => {
+      if (!group.length) return;
+      const laneEnds = [];
+      for (const row of group) {
+        let lane = laneEnds.findIndex(end => end <= row.visibleStartAbsMinute);
+        if (lane < 0) lane = laneEnds.length;
+        laneEnds[lane] = row.visibleEndAbsMinute;
+        row.lane = lane;
+      }
+      group.forEach(row => { row.laneCount = laneEnds.length; });
+      groups.push(...group);
+      group = [];
+    };
+    for (const row of rows) {
+      if (group.length && row.visibleStartAbsMinute >= groupEnd) finishGroup();
+      group.push(row);
+      groupEnd = Math.max(groupEnd, row.visibleEndAbsMinute);
+    }
+    finishGroup();
+    return groups;
+  }
+
+  function shipmentCalendarRows(city, shipments, orders, dispatchPlan = null, assignments = []) {
     const cityId = city?.id;
+    const orderById = new Map((Array.isArray(orders) ? orders : []).map(order => [String(order.id), order]));
     const relevantShipments = (Array.isArray(shipments) ? shipments : [])
       .filter(shipment => shipment?.fromCityId === cityId || shipment?.toCityId === cityId)
-      .map(shipment => {
+      .flatMap(shipment => {
         const departure = Number(shipment.departureAbsMinute);
         const arrival = Number(shipment.arrivalAbsMinute);
-        return {
+        const base = {
           id: `shipment-${shipment.id}`,
           orderId: shipment.orderId,
-          kind: shipment.status === 'returned' || shipment.status === 'delivered' ? 'delivered' : 'active',
-          sortAbsMinute: Number.isFinite(departure) ? departure : arrival,
-          departureAbsMinute: departure,
-          arrivalAbsMinute: arrival,
           fromCityId: shipment.fromCityId,
           toCityId: shipment.toCityId,
           goodId: shipment.goodId,
@@ -490,21 +531,51 @@
           status: shipmentStatusLabel(shipment),
           stops: shipmentStops(shipment),
         };
+        const rows = [];
+        if (Number.isFinite(departure) && Number.isFinite(arrival) && arrival > departure) rows.push({...base,
+          kind: shipment.status === 'active' ? 'active' : 'completed', status: shipment.status === 'active' ? 'Aktiv' : 'Abgeschlossen',
+          sortAbsMinute: departure, departureAbsMinute: departure, arrivalAbsMinute: arrival,
+        });
+        const returnDeparture = Number(shipment.returnDepartureAbsMinute);
+        const returnArrival = Number(shipment.returnArrivalAbsMinute);
+        if (Number.isFinite(returnDeparture) && Number.isFinite(returnArrival) && returnArrival > returnDeparture) rows.push({...base,
+          id: `${base.id}-return`, kind: shipment.status === 'returned' ? 'completed' : 'return', status: shipment.status === 'returned' ? 'Abgeschlossen' : 'Rückfahrt',
+          sortAbsMinute: returnDeparture, departureAbsMinute: returnDeparture, arrivalAbsMinute: returnArrival,
+          fromCityId: shipment.toCityId, toCityId: shipment.fromCityId,
+        });
+        return rows;
       })
       .filter(row => Number.isFinite(row.sortAbsMinute));
 
-    const activeOrderIds = new Set(relevantShipments.filter(row => row.kind === 'active').map(row => String(row.orderId)));
+    const planLegs = (Array.isArray(dispatchPlan?.legs) ? dispatchPlan.legs : [])
+      .filter(leg => (leg?.fromCityId === cityId || leg?.toCityId === cityId) && Number(leg.arrivalAbsMinute) > Number(leg.departureAbsMinute))
+      .map(leg => {
+        const order = orderById.get(String(leg.orderId)) || {};
+        const repositioning = leg.type === 'repositioning';
+        return {
+          id: `plan-${leg.id}`, orderId: leg.orderId, kind: repositioning ? 'reposition' : 'planned',
+          sortAbsMinute: Number(leg.departureAbsMinute), departureAbsMinute: Number(leg.departureAbsMinute), arrivalAbsMinute: Number(leg.arrivalAbsMinute),
+          fromCityId: leg.fromCityId, toCityId: leg.toCityId, goodId: repositioning ? null : (leg.goodId || order.goodId),
+          amountKg: leg.amountKg ?? order.amountKg, vehicleType: leg.vehicleType || order.vehicleType,
+          vehicleCount: Array.isArray(leg.vehicleIds) ? leg.vehicleIds.length : leg.vehicleCount,
+          status: repositioning ? 'Leerfahrt' : 'Geplant', stops: leg.stops,
+        };
+      });
+    const plannedOrderIds = new Set(planLegs.filter(row => row.kind === 'planned').map(row => String(row.orderId)));
+    const activeOrderIds = new Set(relevantShipments.filter(row => row.kind === 'active' || row.kind === 'return').map(row => String(row.orderId)));
     const plannedOrders = (Array.isArray(orders) ? orders : [])
-      .filter(order => (order?.fromCityId === cityId || order?.toCityId === cityId) && !activeOrderIds.has(String(order.id)))
+      .filter(order => (order?.fromCityId === cityId || order?.toCityId === cityId) && !activeOrderIds.has(String(order.id)) && !plannedOrderIds.has(String(order.id)))
       .map(order => {
         const departureAbsMinute = shipmentCalendarOrderAbsMinute(order);
+        const cachedArrival = Number(order.plannedArrivalAbsMinute);
+        const arrivalAbsMinute = Number.isFinite(cachedArrival) && cachedArrival > departureAbsMinute ? cachedArrival : departureAbsMinute + 60;
         return {
           id: `order-${order.id}`,
           orderId: order.id,
           kind: 'planned',
           sortAbsMinute: departureAbsMinute,
           departureAbsMinute,
-          arrivalAbsMinute: null,
+          arrivalAbsMinute,
           fromCityId: order.fromCityId,
           toCityId: order.toCityId,
           goodId: order.goodId,
@@ -516,34 +587,45 @@
       })
       .filter(row => Number.isFinite(row.sortAbsMinute));
 
-    return [...relevantShipments, ...plannedOrders].sort((a, b) => a.sortAbsMinute - b.sortAbsMinute || String(a.id).localeCompare(String(b.id), 'de-CH'));
+    const plannedAssignmentIds = new Set(planLegs.filter(row => row.kind === 'reposition').map(row => String(row.id).replace(/^plan-/, '')));
+    const repositioningRows = (Array.isArray(assignments) ? assignments : [])
+      .filter(item => (item?.fromCityId === cityId || item?.toCityId === cityId) && !plannedAssignmentIds.has(String(item.id)) && Number(item.arrivalAbsMinute) > Number(item.departureAbsMinute))
+      .map(item => ({id: `assignment-${item.id}`, kind: item.status === 'completed' ? 'completed' : 'reposition', status: item.status === 'completed' ? 'Abgeschlossen' : 'Leerfahrt', sortAbsMinute: Number(item.departureAbsMinute), departureAbsMinute: Number(item.departureAbsMinute), arrivalAbsMinute: Number(item.arrivalAbsMinute), fromCityId: item.fromCityId, toCityId: item.toCityId, goodId: null, vehicleType: item.vehicleType, vehicleCount: item.vehicleIds?.length || 0}));
+    return [...relevantShipments, ...planLegs, ...plannedOrders, ...repositioningRows].sort((a, b) => a.sortAbsMinute - b.sortAbsMinute || String(a.id).localeCompare(String(b.id), 'de-CH'));
   }
 
   function shipmentCalendarMarkup(city) {
     const logistics = window.HFV2Logistics?.getState?.() || {orders: [], shipments: []};
-    const rows = shipmentCalendarRows(city, logistics.shipments, logistics.orders);
+    const rows = shipmentCalendarRows(city, logistics.shipments, logistics.orders, logistics.dispatchPlan, logistics.assignments);
     if (!rows.length) return '<p class="hf-v2-muted">Keine Transporte oder geplanten Bestellungen.</p>';
-
-    const groups = new Map();
-    for (const row of rows) {
-      const dayKey = shipmentCalendarDayKey(row.sortAbsMinute);
-      if (!groups.has(dayKey)) groups.set(dayKey, []);
-      groups.get(dayKey).push(row);
-    }
-
-    return `<div class="hf-v2-transport-calendar">${Array.from(groups.entries()).map(([dayKey, dayRows]) => `<section class="hf-v2-transport-calendar__day"><h4 class="hf-v2-transport-calendar__day-title">${escapeHtml(dayKey)}</h4>${dayRows.map(row => {
+    const firstDay = Math.floor(Math.min(...rows.map(row => row.departureAbsMinute)) / 1440);
+    const lastDay = Math.floor((Math.max(...rows.map(row => row.arrivalAbsMinute)) - 1) / 1440);
+    const days = Array.from({length: lastDay - firstDay + 1}, (_, index) => firstDay + index);
+    const hourLabels = Array.from({length: 24}, (_, hour) => `<span style="top:${hour * 60}px">${String(hour).padStart(2, '0')}:00</span>`).join('');
+    const legend = [['planned', 'Geplant'], ['active', 'Aktiv'], ['return', 'Rückfahrt'], ['reposition', 'Leerfahrt'], ['completed', 'Abgeschlossen']].map(([kind, label]) => `<span><i class="hf-v2-transport-calendar__swatch hf-v2-transport-calendar__swatch--${kind}"></i>${label}</span>`).join('');
+    return `<div class="hf-v2-transport-calendar__legend" aria-label="Statuslegende">${legend}</div><div class="hf-v2-transport-calendar" role="region" aria-label="Transportkalender" tabindex="0"><div class="hf-v2-transport-calendar__canvas" style="--hf-calendar-days:${days.length}"><div class="hf-v2-transport-calendar__corner">Uhrzeit</div>${days.map(day => `<h4 class="hf-v2-transport-calendar__day-title">${escapeHtml(shipmentCalendarDayKey(day * 1440))}</h4>`).join('')}<div class="hf-v2-transport-calendar__times">${hourLabels}</div>${days.map(day => {
+      const dayStart = day * 1440;
+      const dayRows = shipmentCalendarLayout(rows.map(row => {
+        const position = shipmentCalendarPosition(row.departureAbsMinute, row.arrivalAbsMinute, dayStart);
+        return position ? {...row, ...position, visibleStartAbsMinute: Math.max(row.departureAbsMinute, dayStart), visibleEndAbsMinute: Math.min(row.arrivalAbsMinute, dayStart + 1440)} : null;
+      }).filter(Boolean));
+      return `<section class="hf-v2-transport-calendar__day" aria-label="${escapeHtml(shipmentCalendarDayKey(dayStart))}">${dayRows.map(row => {
       const stops = Array.isArray(row.stops) ? row.stops : [];
       const isBundled = stops.length > 0;
       const good = goodById(row.goodId);
       const eventClass = `hf-v2-transport-calendar__event hf-v2-transport-calendar__event--${row.kind}`;
-      const arrivalLabel = row.status === 'Rückfahrt' && Number.isFinite(Number(row.returnArrivalAbsMinute)) ? `Rückkehr ${shipmentCalendarTimeLabel(row.returnArrivalAbsMinute)}` : (Number.isFinite(Number(row.arrivalAbsMinute)) ? shipmentCalendarTimeLabel(row.arrivalAbsMinute) : 'wartet');
-      const vehicleText = row.vehicleCount ? `${Number(row.vehicleCount).toLocaleString('de-CH')} × ${vehicleLabel(row.vehicleType)}` : vehicleLabel(row.vehicleType);
+      const vehicleText = row.vehicleCount ? `${Number(row.vehicleCount).toLocaleString('de-CH')} × ${vehicleLabel(row.vehicleType)}` : (row.vehicleType ? vehicleLabel(row.vehicleType) : '–');
       const routeText = isBundled ? [row.fromCityId, ...stops.map(stop => stop.toCityId)].map(cityName).join(' → ') : `${cityName(row.fromCityId)} → ${cityName(row.toCityId)}`;
-      const summaryText = isBundled ? 'Sammellieferung' : escapeHtml(good.name || row.goodId);
-      const amountText = isBundled ? stopAmountsMarkup(stops, '<br>') : `${formatGoodAmount(row.goodId, row.amountKg)} · ${formatWeightKg(row.amountKg)}`;
-      return `<article class="hf-v2-transport-calendar__slot"><time class="hf-v2-transport-calendar__time" datetime="${escapeHtml(String(row.sortAbsMinute))}"><strong>${escapeHtml(shipmentCalendarTimeLabel(row.departureAbsMinute))}</strong><span>bis ${escapeHtml(arrivalLabel)}</span></time><div class="${eventClass}"><div><b>${escapeHtml(routeText)}</b><span>${summaryText}</span>${isBundled ? `<small>${amountText}</small>` : ''}</div><dl><div><dt>Ware</dt><dd>${summaryText}</dd></div><div><dt>${isBundled ? 'Stop-Mengen' : 'Menge'}</dt><dd>${amountText}</dd></div><div><dt>Fahrzeuge</dt><dd>${escapeHtml(vehicleText)}</dd></div><div><dt>Status</dt><dd>${escapeHtml(row.status)}</dd></div></dl></div></article>`;
-    }).join('')}</section>`).join('')}</div>`;
+      const summaryText = row.kind === 'reposition' ? 'Keine Ware' : (isBundled ? 'Sammellieferung' : escapeHtml(good.name || row.goodId || 'Ware'));
+      const laneWidth = 100 / row.laneCount;
+      const style = `top:${row.topPercent}%;height:max(${row.heightPercent}%,32px);left:calc(${row.lane * laneWidth}% + 2px);width:calc(${laneWidth}% - 4px)`;
+      const continuation = `${row.continuesBefore ? '↥ ' : ''}${shipmentCalendarTimeLabel(row.departureAbsMinute)}–${shipmentCalendarTimeLabel(row.arrivalAbsMinute)}${row.continuesAfter ? ' ↧' : ''}`;
+      return `<details class="${eventClass}" style="${style}"><summary><b>${escapeHtml(routeText)}</b><span>${summaryText}</span><small>${escapeHtml(vehicleText)} · ${escapeHtml(continuation)}</small></summary><dl><div><dt>Beginn / Ende</dt><dd>${escapeHtml(formatAbsMinute(row.departureAbsMinute))} – ${escapeHtml(formatAbsMinute(row.arrivalAbsMinute))}</dd></div><div><dt>Fahrzeuge</dt><dd>${escapeHtml(vehicleText)}</dd></div><div><dt>Status</dt><dd>${escapeHtml(row.status)}</dd></div></dl></details>`;
+    }).join('')}</section>`;
+    }).join('')}</div></div>`;
   }
+
+  window.HFV2ShipmentCalendar = Object.freeze({position: shipmentCalendarPosition, layout: shipmentCalendarLayout});
 
   function logisticsListMarkup(items, emptyText, rowMarkup) {
     return items.length ? limitedEntriesMarkup(items, rowMarkup, 3, 'hf-v2-production-debug-grid') : `<p class="hf-v2-muted">${emptyText}</p>`;
@@ -557,7 +639,7 @@
     const waitingVehicles = (window.HFFleet?.getState?.().vehicles || []).filter(vehicle => vehicle?.status === 'available' && vehicle?.currentCityId === city.id);
     const incomingOrders = orders.filter(order => order.toCityId === city.id);
     const outgoingOrders = orders.filter(order => order.fromCityId === city.id);
-    const calendarRows = shipmentCalendarRows(city, shipments, orders);
+    const calendarRows = shipmentCalendarRows(city, shipments, orders, logistics.dispatchPlan, logistics.assignments);
     const total = incomingOrders.length + outgoingOrders.length + calendarRows.length + assignments.length + waitingVehicles.length;
     return `<section class="hf-v2-demand-card hf-v2-city-logistics" aria-labelledby="hfV2LogisticsTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Warenlogistik</p><h3 id="hfV2LogisticsTitle">Warenlogistik</h3></div><strong>${total.toLocaleString('de-CH')}</strong></div><h4>Eingehende Bestellungen</h4>${logisticsListMarkup(incomingOrders, 'Keine eingehenden Bestellungen.', orderCardMarkup)}<h4>Ausgehende Bestellungen</h4>${logisticsListMarkup(outgoingOrders, 'Keine ausgehenden Bestellungen.', orderCardMarkup)}<h4>Leerfahrten / Repositionierungen</h4>${logisticsListMarkup(assignments, 'Keine disponierten Leerfahrten.', repositioningCardMarkup)}<h4>Wartende Fahrzeuge</h4>${logisticsListMarkup(waitingVehicles, 'Keine verfügbaren Fahrzeuge an diesem Standort.', waitingVehicleCardMarkup)}<h4>Transportkalender</h4>${shipmentCalendarMarkup(city)}</section>`;
   }
