@@ -425,7 +425,7 @@
   }
 
   function waitingVehicleCardMarkup(vehicle) {
-    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row"><b>Wartendes Fahrzeug</b><span><small>Standort</small>${escapeHtml(cityName(vehicle.currentCityId))}</span><span><small>Fahrzeug</small>${escapeHtml(vehicleLabel(vehicle.vehicleType))}</span><span><small>ID</small>#${Number(vehicle.id).toLocaleString('de-CH')}</span><span><small>Status</small>Verfügbar</span></article>`;
+    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row"><b>Wartendes Fahrzeug · ${escapeHtml(vehicle.licensePlate || '–')}</b><span><small>Standort</small>${escapeHtml(cityName(vehicle.currentCityId))}</span><span><small>Fahrzeug</small>${escapeHtml(vehicleLabel(vehicle.vehicleType))}</span><span><small>Kennzeichen</small>${escapeHtml(vehicle.licensePlate || '–')}</span><span><small>Interne ID</small>#${Number(vehicle.id).toLocaleString('de-CH')}</span><span><small>Status</small>Verfügbar</span></article>`;
   }
 
 
@@ -1250,7 +1250,7 @@
 
     wrap(window.HFFleet, 'buyVehicle', (result) => {
       actionConfirmation('Fahrzeug gekauft', result.cost, `${vehicleLabel(result.vehicleType)} in ${cityName(result.cityId)}`);
-      openTransactionReceipt({icon: '▣', documentLabel: 'Fahrzeugkaufbeleg', number: receiptNumber('FK'), positions: [{label: vehicleLabel(result.vehicleType), detail: `Standort ${cityName(result.cityId)} · Fahrzeug ${result.vehicle?.id || '–'}`, amount: result.cost}], total: result.cost, closingCash: window.HFV2Save?.getCash?.()});
+      openTransactionReceipt({icon: '▣', documentLabel: 'Fahrzeugkaufbeleg', number: receiptNumber('FK'), positions: [{label: vehicleLabel(result.vehicleType), detail: `Standort ${cityName(result.cityId)} · Kennzeichen ${result.vehicle?.licensePlate || '–'} · interne ID ${result.vehicle?.id || '–'}`, amount: result.cost}], total: result.cost, closingCash: window.HFV2Save?.getCash?.()});
     });
     wrap(window.HFV2Factories, 'buildFactory', (result) => {
       const factory = factoryById(result.factoryId);

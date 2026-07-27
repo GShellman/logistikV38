@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const SCHEMA_VERSION = 6;
+  const SCHEMA_VERSION = 7;
   const SAVE_FILE_PREFIX = 'helvetic-freight-v2';
   const STARTING_CASH = 500000;
 
@@ -168,6 +168,8 @@
         availableAbsMinute: Math.max(0, Number(rawVehicle.availableAbsMinute) || 0),
         activeAssignmentId,
       };
+      const licensePlate = String(rawVehicle.licensePlate || '').trim().toUpperCase();
+      if (licensePlate) normalized.licensePlate = licensePlate;
       if (Array.isArray(rawVehicle.position) && rawVehicle.position.length >= 2 && rawVehicle.position.slice(0, 2).every(value => Number.isFinite(Number(value)))) normalized.position = rawVehicle.position.slice(0, 2).map(Number);
       if (rawVehicle.routeSegment && typeof rawVehicle.routeSegment === 'object' && !Array.isArray(rawVehicle.routeSegment)) {
         const fromCityId = String(rawVehicle.routeSegment.fromCityId || '').trim();

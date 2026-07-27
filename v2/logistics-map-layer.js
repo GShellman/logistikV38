@@ -265,7 +265,7 @@
   function vehicleLabel(vehicle, shipment) {
     const spec = window.HFVehicleCatalog?.VEHICLE_CATALOG?.[vehicle?.vehicleType || shipment?.vehicleType] || {};
     const name = vehicle?.name || spec.name || vehicle?.vehicleType || shipment?.vehicleType || 'Fahrzeug';
-    const plate = vehicle?.licensePlate || vehicle?.plate || vehicle?.registration || vehicle?.registrationNumber;
+    const plate = vehicle?.licensePlate || shipment?.licensePlate;
     return `${name}${plate ? ` · ${plate}` : ''}`;
   }
 
@@ -390,7 +390,7 @@
       const city = citiesById[vehicle.currentCityId];
       const position = cityCoordinates(city);
       if (!position) return;
-      const shipment = {...vehicle, id, type: 'waiting'};
+      const shipment = {...vehicle, id, vehicleId: vehicle.id, type: 'waiting'};
       entries.push({id, shipment, fromCity: city, toCity: city, coords: [position], position, progress: 0, title: `${city.name || vehicle.currentCityId}: Fahrzeug wartet`, zIndexOffset: 450, interactive: false});
     });
 

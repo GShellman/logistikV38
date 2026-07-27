@@ -5,6 +5,16 @@
   const VEHICLES = window.HFVehicleCatalog?.VEHICLE_CATALOG || {};
   const STARTING_CASH = window.HFV2Save?.STARTING_CASH ?? 500000;
   const DEFAULT_DEPOT_CITY_ID = 'zurich';
+  const SAFE_PLATE_DIGITS = '23456789';
+  const CITY_CANTONS = Object.freeze({
+    zurich: 'ZH', winterthur: 'ZH', uster: 'ZH', geneva: 'GE', meyrin: 'GE', carouge: 'GE', vernier: 'GE', onex: 'GE',
+    basel: 'BS', liestal: 'BL', reinach_bl: 'BL', muttenz: 'BL', pratteln: 'BL', bern: 'BE', biel: 'BE', thun: 'BE', koeniz: 'BE', interlaken: 'BE',
+    lausanne: 'VD', yverdon_les_bains: 'VD', montreux: 'VD', vevey: 'VD', nyon: 'VD', morges: 'VD', renens: 'VD', lucerne: 'LU',
+    st_gallen: 'SG', rapperswil: 'SG', wil_sg: 'SG', rorschach: 'SG', buchs_sg: 'SG', lugano: 'TI', bellinzona: 'TI', locarno: 'TI',
+    la_chaux_de_fonds: 'NE', neuchatel: 'NE', schaffhausen: 'SH', fribourg: 'FR', chur: 'GR', davos: 'GR', st_moritz: 'GR',
+    zug: 'ZG', sion: 'VS', brig: 'VS', sierre: 'VS', aarau: 'AG', baden: 'AG', rheinfelden: 'AG', wohlen: 'AG', wettingen: 'AG', brugg: 'AG', zofingen: 'AG',
+    solothurn: 'SO', olten: 'SO', kreuzlingen: 'TG', frauenfeld: 'TG', weinfelden: 'TG', arbon: 'TG', herisau: 'AR', appenzell: 'AI', glarus: 'GL',
+  });
   let state = null;
 
   function createFleetState(overrides = {}) {
@@ -13,6 +23,32 @@
 
   function normalizeId(value) {
     return String(value ?? '').trim();
+  }
+
+  function plateForSeed(cityId, seed) {
+    const canton = CITY_CANTONS[normalizeId(cityId)] || 'CH';
+    let value = Math.abs(Math.trunc(Number(seed) || 0)) + 1;
+    let number = '';
+    for (let index = 0; index < 6; index += 1) {
+      number = SAFE_PLATE_DIGITS[value % SAFE_PLATE_DIGITS.length] + number;
+      value = Math.floor(value / SAFE_PLATE_DIGITS.length);
+    }
+    return `${canton} ${number}`;
+  }
+
+  // Swiss-style canton prefix plus unambiguous digits. Collision retries live here,
+  // so callers create one visible identity rather than assembling plates themselves.
+  function generateLicensePlate(cityId, usedPlates = new Set(), options = {}) {
+    const used = usedPlates instanceof Set ? usedPlates : new Set(usedPlates || []);
+    const deterministicSeed = Number.isFinite(Number(options.seed)) ? Number(options.seed) : null;
+    for (let attempt = 0; attempt < 1000000; attempt += 1) {
+      const seed = deterministicSeed == null
+        ? Math.floor((typeof options.random === 'function' ? options.random() : Math.random()) * (SAFE_PLATE_DIGITS.length ** 6)) + attempt
+        : deterministicSeed + attempt;
+      const plate = plateForSeed(cityId, seed);
+      if (!used.has(plate)) return plate;
+    }
+    throw new Error('Kein eindeutiges Kennzeichen verfügbar.');
   }
 
   function normalizeVehicle(vehicle, fallbackId) {
@@ -26,15 +62,19 @@
     const status = activeAssignmentId ? (vehicle.status === 'returning' ? 'returning' : 'assigned') : 'available';
     const position = Array.isArray(vehicle.position) && vehicle.position.length >= 2 ? [Number(vehicle.position[0]), Number(vehicle.position[1])] : null;
     const routeSegment = vehicle.routeSegment && typeof vehicle.routeSegment === 'object' ? {...vehicle.routeSegment} : null;
-    return {id, vehicleType, status, currentCityId, availableAbsMinute, activeAssignmentId, ...(position ? {position} : {}), ...(routeSegment ? {routeSegment} : {})};
+    const licensePlate = normalizeId(vehicle.licensePlate).toUpperCase() || null;
+    return {id, vehicleType, status, currentCityId, availableAbsMinute, activeAssignmentId, ...(licensePlate ? {licensePlate} : {}), ...(position ? {position} : {}), ...(routeSegment ? {routeSegment} : {})};
   }
 
   function configure(options = {}) {
     state = options.state || state || createFleetState();
     const usedIds = new Set();
+    const usedPlates = new Set();
     state.vehicles = (Array.isArray(state.vehicles) ? state.vehicles : []).map((vehicle, index) => normalizeVehicle(vehicle, index + 1)).filter(vehicle => {
       if (!vehicle || usedIds.has(vehicle.id)) return false;
       usedIds.add(vehicle.id);
+      if (!vehicle.licensePlate || usedPlates.has(vehicle.licensePlate)) vehicle.licensePlate = generateLicensePlate(vehicle.currentCityId || state.depotCityId, usedPlates, {seed: vehicle.id});
+      usedPlates.add(vehicle.licensePlate);
       return true;
     });
     state.nextVehicleId = Math.max(1, Math.trunc(Number(state.nextVehicleId) || 1), ...state.vehicles.map(vehicle => vehicle.id + 1));
@@ -93,7 +133,8 @@
     if (cash < vehicle.cost) return {ok: false, reason: 'not-enough-cash'};
     const fleet = getState();
     const currentCityId = requestedCityId || fleet.depotCityId;
-    const record = {id: fleet.nextVehicleId++, vehicleType, status: 'available', currentCityId, availableAbsMinute: 0, activeAssignmentId: null};
+    const licensePlate = generateLicensePlate(currentCityId, new Set(fleet.vehicles.map(entry => entry.licensePlate).filter(Boolean)));
+    const record = {id: fleet.nextVehicleId++, vehicleType, licensePlate, status: 'available', currentCityId, availableAbsMinute: 0, activeAssignmentId: null};
     fleet.vehicles.push(record);
     window.HFV2FleetDispatch?.invalidate?.('vehicle-bought');
     window.HFV2Save?.changeCash?.(-vehicle.cost, 'fleet-buy', {reference: {vehicleId: record.id}});
@@ -146,5 +187,5 @@
     return assigned;
   }
 
-  window.HFFleet = {VEHICLES, VEHICLE_TYPES, STARTING_CASH, createFleetState, configure, getState, getVehiclesAtCity, getAvailableVehicles, getOwnedCountByType, getFleetSummary, buyVehicle, sellVehicle, assignVehicles, releaseAssignment, updateAssignment};
+  window.HFFleet = {VEHICLES, VEHICLE_TYPES, STARTING_CASH, createFleetState, normalizeVehicle, generateLicensePlate, configure, getState, getVehiclesAtCity, getAvailableVehicles, getOwnedCountByType, getFleetSummary, buyVehicle, sellVehicle, assignVehicles, releaseAssignment, updateAssignment};
 })();
