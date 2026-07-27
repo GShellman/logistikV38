@@ -296,6 +296,28 @@
     return Object.entries(reservations).reduce((total, [id, units]) => total + (id === exceptReservationId ? 0 : Math.max(0, Number(units) || 0)), 0);
   }
 
+  function currentAbsoluteMinute() {
+    const time = window.HFV2Time?.getState?.() || window.HFV2Save?.getState?.().time || {day: 1, hour: 0, minute: 0};
+    if (window.HFV2Time?.absoluteMinute) return window.HFV2Time.absoluteMinute(time);
+    return (Math.max(1, Math.trunc(Number(time.day) || 1)) - 1) * 1440
+      + Math.max(0, Math.trunc(Number(time.hour) || 0)) * 60
+      + Math.max(0, Math.trunc(Number(time.minute) || 0));
+  }
+
+  // Read-only view of the same reservation buckets used by capacity checks.
+  function getEdgeOccupancy(edge, options = {}) {
+    const targetState = options.state || state || createNetworkState();
+    const absMinute = Number.isFinite(Number(options.absMinute)) ? Number(options.absMinute) : currentAbsoluteMinute();
+    return Object.freeze({
+      used: reservedUnitsFor(edge, capacityWindowKey(absMinute), targetState),
+      capacity: edgeCapacity(edge),
+    });
+  }
+
+  function dispatchCapacityChanged() {
+    window.dispatchEvent?.(new CustomEvent('hf:network:capacity-changed'));
+  }
+
   function pathCapacityStatus(path, options = {}) {
     const targetState = options.state || state || createNetworkState();
     const edges = Array.isArray(path?.edges) ? path.edges : [];
@@ -329,6 +351,7 @@
         targetState.usedCapacity[id][windowKey][reservationId] = units;
       }
     }
+    dispatchCapacityChanged();
     return {ok: true, reservationId};
   }
 
@@ -346,6 +369,7 @@
       }
       if (!Object.keys(targetState.usedCapacity[edgeKey] || {}).length) delete targetState.usedCapacity[edgeKey];
     }
+    if (removed) dispatchCapacityChanged();
     return removed;
   }
 
@@ -363,6 +387,7 @@
       }
       if (!Object.keys(targetState.usedCapacity[edgeKey] || {}).length) delete targetState.usedCapacity[edgeKey];
     }
+    if (removed) dispatchCapacityChanged();
     return removed;
   }
 
@@ -503,5 +528,5 @@
     return edges[0];
   }
 
-  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject, pathCapacityStatus, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
+  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject, getEdgeOccupancy, pathCapacityStatus, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
 })();

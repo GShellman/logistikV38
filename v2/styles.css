@@ -2498,3 +2498,27 @@ code {
 @media (prefers-reduced-motion: reduce) {
   .hf-v2-feedback-item { animation: none; }
 }
+
+/* Permanent road capacity indicator; Leaflet positions the transparent wrapper. */
+.hf-v2-capacity-marker {
+  background: transparent;
+  border: 0;
+}
+.hf-v2-capacity-bubble {
+  align-items: center;
+  background: var(--color-instrument-dark);
+  border: 2px solid var(--color-paper-white);
+  border-radius: 999px;
+  box-shadow: 0 1px 5px rgba(16, 37, 54, .45);
+  color: var(--text-on-dark);
+  display: flex;
+  font-family: var(--font-technical);
+  font-size: 12px;
+  font-weight: 900;
+  height: 28px;
+  justify-content: center;
+  letter-spacing: .02em;
+  min-width: 52px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
