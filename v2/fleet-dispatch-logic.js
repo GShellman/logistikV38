@@ -193,8 +193,10 @@
         legs.push({...assignment, orderId: order.id});
       }
       const vehicleIds = selected.map(candidate => candidate.vehicle.id);
+      const tripId = `trip-${order.id}-${occurrence.day}`;
       legs.push({
         id: `planned-shipment-${order.id}-${occurrence.day}`, type: 'shipment', status: 'planned', orderId: order.id,
+        tripId,
         fromCityId: order.fromCityId, toCityId: order.toCityId, vehicleType: type, vehicleIds,
         amountKg,
         departureAbsMinute: occurrence.departureAbsMinute, arrivalAbsMinute: loadedEnd,
@@ -221,6 +223,7 @@
         legs.push({
           id: `planned-return-${order.id}-${occurrence.day}-${candidate.vehicle.id}`,
           type: 'return', legKind: 'return', status: 'planned', orderId: order.id,
+          tripId, outboundLegId: `planned-shipment-${order.id}-${occurrence.day}`,
           fromCityId: order.toCityId, toCityId: order.fromCityId, vehicleType: type,
           vehicleIds: [candidate.vehicle.id], departureAbsMinute: loadedEnd, arrivalAbsMinute: returnEnd,
           capacityReservationIds: commitReservations ? [returnId] : [],

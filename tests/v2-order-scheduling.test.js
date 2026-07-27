@@ -166,8 +166,11 @@ test('Dispatch-Plan reserviert die Rückfahrt und führt die Fahrzeug-Zeitleiste
   window.HFV2Logistics.configure({state});
   load('v2/fleet-dispatch-logic.js', window);
   const plan = window.HFV2FleetDispatch.buildPlan({state, horizonDays: 3});
+  const shipmentLeg = plan.legs.find(leg => leg.type === 'shipment');
   const returnLeg = plan.legs.find(leg => leg.type === 'return');
   assert.ok(returnLeg);
+  assert.equal(returnLeg.tripId, shipmentLeg.tripId);
+  assert.equal(returnLeg.outboundLegId, shipmentLeg.id);
   assert.equal(returnLeg.fromCityId, 'b');
   assert.equal(returnLeg.toCityId, 'a');
   assert.ok(reservations.some(item => item.reservationId.includes('-return-')));

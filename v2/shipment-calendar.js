@@ -20,6 +20,28 @@
     for (const row of rows) { if(group.length && row.visibleStartAbsMinute>=groupEnd) finish(); group.push(row); groupEnd=Math.max(groupEnd,row.visibleEndAbsMinute); } finish(); return result;
   }
 
+  function idsOverlap(left = [], right = []) {
+    if (!left.length || !right.length) return true;
+    const ids = new Set(left.map(String));
+    return right.some(id => ids.has(String(id)));
+  }
+
+  function shipmentOrderIds(shipment) {
+    const ids = [shipment?.orderId, ...(shipment?.stops || []).map(stop => stop?.orderId)];
+    return new Set(ids.filter(id => id != null).map(String));
+  }
+
+  function legWasTakenOver(leg, shipments, direction) {
+    const departureKey = direction === 'return' ? 'returnDepartureAbsMinute' : 'departureAbsMinute';
+    return shipments.some(shipment => {
+      if (shipment?.[departureKey] == null) return false;
+      const departure = Number(shipment?.[departureKey]);
+      if (!Number.isFinite(departure) || Math.abs(departure - Number(leg.departureAbsMinute)) > 1) return false;
+      if (!shipmentOrderIds(shipment).has(String(leg.orderId))) return false;
+      return idsOverlap(leg.vehicleIds, shipment.vehicleIds || []);
+    });
+  }
+
   function rows(city, shipments = [], orders = [], plan = null, assignments = [], extraLegs = []) {
     const cityId=city?.id, orderById=new Map(orders.map(order=>[String(order.id),order]));
     const result=[];
@@ -31,6 +53,8 @@
     const legs=[...(plan?.legs||[]),...(extraLegs||[])];
     for(const leg of legs) {
       if((leg?.fromCityId!==cityId&&leg?.toCityId!==cityId)||Number(leg.arrivalAbsMinute)<=Number(leg.departureAbsMinute)) continue;
+      if(leg.type==='shipment'&&legWasTakenOver(leg,shipments,'outbound')) continue;
+      if(leg.type==='return'&&legWasTakenOver(leg,shipments,'return')) continue;
       const order=orderById.get(String(leg.orderId))||{};
       const kind=leg.type==='return'?'return':leg.type==='repositioning'?'reposition':'planned';
       result.push({...leg,id:`plan-${leg.id}`,kind,status:kind==='return'?'Rückfahrt':kind==='reposition'?'Leerfahrt':'Geplant',goodId:kind==='planned'?(leg.goodId||order.goodId):null,amountKg:leg.amountKg??order.amountKg,vehicleCount:leg.vehicleIds?.length??leg.vehicleCount,sortAbsMinute:Number(leg.departureAbsMinute)});
