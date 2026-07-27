@@ -60,6 +60,12 @@
     const production = window.HFV2Goods?.runDailyProduction?.() || emptyProductionSummary();
     bookDailyCosts(day);
     state.finance.lastClosedDay = day;
+    // Sales and production change the stock available to tomorrow's orders.
+    // Rebuild now, while midnight is processed, instead of waiting for a menu
+    // render or a later logistics tick to lazily complete the calendar.
+    const newDayStartAbsMinute = (currentDay - 1) * 1440;
+    window.HFV2FleetDispatch?.invalidate?.('daily-cycle-complete', newDayStartAbsMinute);
+    window.HFV2FleetDispatch?.buildPlan?.({fromAbsMinute: newDayStartAbsMinute});
     return summaryForDay(day, sales, production);
   }
 

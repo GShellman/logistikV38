@@ -75,9 +75,10 @@
     return `fleet-plan-${kind}-${orderId}-${day}-${vehicleId}`;
   }
 
-  function reserve(path, start, end, units, id) {
+  function reserve(path, start, end, units, id, commit = true) {
     const status = window.HFNetwork?.pathCapacityStatus?.(path, {startAbsMinute: start, endAbsMinute: end, units, reservationId: id});
     if (status?.ok === false) return false;
+    if (!commit) return true;
     const result = window.HFNetwork?.reservePathCapacity?.(path, {startAbsMinute: start, endAbsMinute: end, units, reservationId: id});
     return result?.ok !== false;
   }
@@ -111,8 +112,9 @@
     const horizonDays = Math.max(3, Math.trunc(Number(options.horizonDays) || DEFAULT_HORIZON_DAYS));
     const end = start + horizonDays * MINUTES_PER_DAY;
 
+    const commitReservations = options.reserveCapacity !== false;
     const preservedLegs = (state.dispatchPlan?.legs || []).filter(leg => leg.departureAbsMinute < start || leg.status === 'active' || leg.status === 'completed');
-    for (const leg of state.dispatchPlan?.legs || []) if (!preservedLegs.includes(leg)) releaseLeg(leg);
+    if (commitReservations) for (const leg of state.dispatchPlan?.legs || []) if (!preservedLegs.includes(leg)) releaseLeg(leg);
     state.assignments = (state.assignments || []).filter(assignment => assignment.status !== 'planned' || assignment.departureAbsMinute < start);
 
     const vehicles = window.HFFleet?.getState?.().vehicles || [];
@@ -157,7 +159,7 @@
       const loadedDuration = durationMinutes(loadedPath, type);
       const loadedEnd = occurrence.departureAbsMinute + loadedDuration;
       const loadedReservation = reservationId('loaded', order.id, occurrence.day, 0);
-      if (!reserve(loadedPath, occurrence.departureAbsMinute, loadedEnd, count, loadedReservation)) {
+      if (!reserve(loadedPath, occurrence.departureAbsMinute, loadedEnd, count, loadedReservation, commitReservations)) {
         unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: 'route-overloaded'});
         continue;
       }
@@ -167,12 +169,12 @@
         if (!candidate.deadheadPath) continue;
         const departure = occurrence.departureAbsMinute - candidate.deadheadDuration;
         const id = reservationId('empty', order.id, occurrence.day, candidate.vehicle.id);
-        if (!reserve(candidate.deadheadPath, departure, occurrence.departureAbsMinute, 1, id)) { valid = false; break; }
+        if (!reserve(candidate.deadheadPath, departure, occurrence.departureAbsMinute, 1, id, commitReservations)) { valid = false; break; }
         createdDeadheads.push({candidate, departure, id});
       }
       if (!valid) {
-        window.HFNetwork?.releaseCapacityReservation?.(loadedReservation);
-        for (const entry of createdDeadheads) window.HFNetwork?.releaseCapacityReservation?.(entry.id);
+        if (commitReservations) window.HFNetwork?.releaseCapacityReservation?.(loadedReservation);
+        if (commitReservations) for (const entry of createdDeadheads) window.HFNetwork?.releaseCapacityReservation?.(entry.id);
         unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: 'repositioning-overloaded'});
         continue;
       }
@@ -199,13 +201,52 @@
         capacityReservationIds: [loadedReservation], priority: occurrence.priority,
       });
       plannedStock.set(stockKey, Math.max(0, plannedStock.get(stockKey) - amountKg));
-      for (const candidate of selected) timelines.set(candidate.vehicle.id, {cityId: order.toCityId, availableAbsMinute: loadedEnd});
+      // A delivery is not the end of a vehicle movement. Return every vehicle to
+      // the dispatching location, so today's plan is a complete, capacity-backed
+      // timeline rather than an optimistic list of outbound loads.
+      const returnPath = route(order.toCityId, order.fromCityId);
+      const returnDuration = returnPath?.reachable ? durationMinutes(returnPath, type) : 0;
+      for (const candidate of selected) {
+        if (!returnPath?.reachable) {
+          timelines.set(candidate.vehicle.id, {cityId: order.toCityId, availableAbsMinute: loadedEnd});
+          continue;
+        }
+        const returnEnd = loadedEnd + returnDuration;
+        const returnId = reservationId('return', order.id, occurrence.day, candidate.vehicle.id);
+        if (!reserve(returnPath, loadedEnd, returnEnd, 1, returnId, commitReservations)) {
+          unplanned.push({orderId: order.id, vehicleId: candidate.vehicle.id, departureAbsMinute: loadedEnd, reason: 'return-overloaded'});
+          timelines.set(candidate.vehicle.id, {cityId: order.toCityId, availableAbsMinute: loadedEnd});
+          continue;
+        }
+        legs.push({
+          id: `planned-return-${order.id}-${occurrence.day}-${candidate.vehicle.id}`,
+          type: 'return', legKind: 'return', status: 'planned', orderId: order.id,
+          fromCityId: order.toCityId, toCityId: order.fromCityId, vehicleType: type,
+          vehicleIds: [candidate.vehicle.id], departureAbsMinute: loadedEnd, arrivalAbsMinute: returnEnd,
+          capacityReservationIds: commitReservations ? [returnId] : [],
+        });
+        timelines.set(candidate.vehicle.id, {cityId: order.fromCityId, availableAbsMinute: returnEnd});
+      }
     }
 
     state.dispatchPlan = {version: 1, generatedAtAbsMinute: start, horizonDays, horizonEndAbsMinute: end, reason: dirtyReason, legs, unplanned};
     delete state.planInvalidatedFromAbsMinute;
     dirtyReason = '';
     return state.dispatchPlan;
+  }
+
+  function previewOrder(order, options = {}) {
+    const live = configure(options);
+    if (!live || !order) return null;
+    const previewState = {
+      ...live,
+      orders: [...(live.orders || []), {...order, id: order.id ?? 'preview-order', enabled: true}],
+      assignments: [...(live.assignments || [])],
+      dispatchPlan: null,
+    };
+    const plan = buildPlan({...options, state: previewState, reserveCapacity: false});
+    configure({state: live});
+    return plan;
   }
 
   function ensurePlan(options = {}) {
@@ -237,5 +278,5 @@
       && leg.departureAbsMinute < Number(routeArrivalAbsMinute) && leg.vehicleIds?.some(id => vehicleIds.has(id)));
   }
 
-  window.HFV2FleetDispatch = {DEFAULT_HORIZON_DAYS, configure, invalidate, ensurePlan, buildPlan, plannedTrip, consumeTrip, canBundleOrders};
+  window.HFV2FleetDispatch = {DEFAULT_HORIZON_DAYS, configure, invalidate, ensurePlan, buildPlan, previewOrder, plannedTrip, consumeTrip, canBundleOrders};
 })();

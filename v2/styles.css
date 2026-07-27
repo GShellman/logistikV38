@@ -801,15 +801,15 @@ code {
   gap: 0;
   overflow: hidden;
 }
-.hf-v2-network-option__rows span {
+.hf-v2-network-option__rows > span {
   align-items: center;
   border-bottom: 1px solid rgba(202, 220, 234, .72);
   display: flex;
   justify-content: space-between;
   padding: 8px 10px;
 }
-.hf-v2-network-option__rows span:last-child { border-bottom: 0; }
-.hf-v2-network-option__rows em {
+.hf-v2-network-option__rows > span:last-child { border-bottom: 0; }
+.hf-v2-network-option__rows > span em {
   color: var(--hf-muted);
   font-size: 10px;
   font-style: normal;
@@ -817,11 +817,17 @@ code {
   letter-spacing: .06em;
   text-transform: uppercase;
 }
-.hf-v2-network-option__rows strong {
+.hf-v2-network-option__rows > span strong {
   font-size: 12px;
   font-weight: 900;
   text-align: right;
 }
+.hf-v2-order-preview-calendar {
+  border-top: 1px solid rgba(202, 220, 234, .8);
+  min-width: 0;
+  padding: 10px;
+}
+.hf-v2-order-preview-calendar h4 { margin: 0 0 8px; }
 .hf-v2-network-badges {
   display: flex;
   flex-wrap: wrap;

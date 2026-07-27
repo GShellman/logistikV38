@@ -157,3 +157,33 @@ test('Dispatch-Plan speichert und reserviert die reduzierte Liefermenge', () => 
   assert.equal(leg.vehicleIds.length, 1);
   assert.ok(plan.unplanned.some(entry => entry.reason === 'stock-limited'));
 });
+
+test('Dispatch-Plan reserviert die Rückfahrt und führt die Fahrzeug-Zeitleiste zum Ausgangsort zurück', () => {
+  const reservations = [];
+  const {window, state} = logisticsHarness({stock: 100});
+  window.HFNetwork.reservePathCapacity = (_path, options) => { reservations.push(options); return {ok: true}; };
+  state.orders = [dueOrder(1, 100)];
+  window.HFV2Logistics.configure({state});
+  load('v2/fleet-dispatch-logic.js', window);
+  const plan = window.HFV2FleetDispatch.buildPlan({state, horizonDays: 3});
+  const returnLeg = plan.legs.find(leg => leg.type === 'return');
+  assert.ok(returnLeg);
+  assert.equal(returnLeg.fromCityId, 'b');
+  assert.equal(returnLeg.toCityId, 'a');
+  assert.ok(reservations.some(item => item.reservationId.includes('-return-')));
+});
+
+test('Bestellvorschau erzeugt Lieferung und Rückfahrt ohne Spielstand oder Reservierungen zu verändern', () => {
+  const {window, state} = logisticsHarness({stock: 100});
+  state.orders = [];
+  window.HFV2Logistics.configure({state});
+  let reservations = 0;
+  window.HFNetwork.reservePathCapacity = () => { reservations += 1; return {ok: true}; };
+  load('v2/fleet-dispatch-logic.js', window);
+  const before = JSON.stringify(state);
+  const plan = window.HFV2FleetDispatch.previewOrder({...dueOrder('preview', 100), plannedDepartureAbsMinute: 60}, {state, fromAbsMinute: 0, horizonDays: 3});
+  assert.ok(plan.legs.some(leg => leg.type === 'shipment'));
+  assert.ok(plan.legs.some(leg => leg.type === 'return'));
+  assert.equal(JSON.stringify(state), before);
+  assert.equal(reservations, 0);
+});
