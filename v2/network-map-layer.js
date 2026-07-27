@@ -74,8 +74,10 @@
       const typeName = spec.name || connection.type || 'Verbindung';
       const capacity = formatCapacity(connection, spec);
       const baseWeight = Number(spec.weight) || 4;
+      const isRail = /rail|train|schiene/i.test(`${connection.type} ${spec.name || ''}`);
       const lineOptions = {
-        dashArray: spec.dashArray || null,
+        // Pattern, rather than colour alone, distinguishes rail and road.
+        dashArray: isRail ? '2 8' : (spec.dashArray || null),
         lineCap: 'round',
         lineJoin: 'round',
       };
@@ -115,7 +117,13 @@
     return networkLineLayer;
   }
 
-  const api = {initNetworkLayer, renderNetworkLines, clearNetworkLines};
+  function setNetworkLayerVisible(visible, map) {
+    if (!networkLineLayer || !map) return;
+    if (visible && !map.hasLayer(networkLineLayer)) networkLineLayer.addTo(map);
+    if (!visible && map.hasLayer(networkLineLayer)) map.removeLayer(networkLineLayer);
+  }
+
+  const api = {initNetworkLayer, renderNetworkLines, clearNetworkLines, setNetworkLayerVisible};
   window.HFNetworkLayer = api;
   window.HFNetwork = {...(window.HFNetwork || {}), ...api};
 })();

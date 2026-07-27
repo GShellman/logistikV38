@@ -107,7 +107,7 @@
     return `Tag ${day} · ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
   }
 
-  function vehicleIcon(shipment, isMovingRight = false) {
+  function vehicleIcon(shipment, isMovingRight = false, progress = 0) {
     const vehicleType = String(shipment?.vehicleType || '').trim();
     const src = window.HFV2VehicleAssets?.roadVehicleImage?.(vehicleType) || window.HFV2VehicleAssets?.vehicleImage?.(vehicleType) || '';
     const fallbackSrc = window.HFV2VehicleAssets?.vehicleImage?.(vehicleType) || '';
@@ -115,9 +115,10 @@
     const directionClass = isMovingRight ? ' hf-v2-shipment-asset--right' : '';
     const markerDirectionClass = isMovingRight ? ' hf-v2-shipment-marker--right' : '';
     const transportKind = shipment?.type === 'repositioning' ? 'empty' : (shipment?.type === 'waiting' ? 'waiting' : 'loaded');
+    const arrow = isMovingRight ? '→' : '←';
     const html = `<div class="hf-v2-transport-marker hf-v2-transport-marker--${transportKind}">${src
       ? `<img class="hf-v2-shipment-asset${directionClass}" src="${escapeHtml(src)}"${fallbackSrc && fallbackSrc !== src ? ` onerror="this.onerror=null;this.src='${escapeHtml(fallbackSrc)}';"` : ''} alt="" aria-hidden="true">`
-      : `<div class="hf-v2-shipment-marker${markerDirectionClass}"><span class="hf-v2-shipment-marker__emoji" aria-hidden="true">${escapeHtml(fallback)}</span></div>`}<span class="hf-v2-transport-marker__badge" aria-hidden="true">${transportKind === 'loaded' ? '●' : (transportKind === 'empty' ? '○' : 'P')}</span></div>`;
+      : `<div class="hf-v2-shipment-marker${markerDirectionClass}"><span class="hf-v2-shipment-marker__emoji" aria-hidden="true">${escapeHtml(fallback)}</span></div>`}<span class="hf-v2-transport-direction" aria-hidden="true">${arrow}</span><span class="hf-v2-transport-progress" aria-hidden="true"><i style="width:${Math.round(clamp01(progress) * 100)}%"></i></span><span class="hf-v2-transport-marker__badge" aria-hidden="true">${transportKind === 'loaded' ? '●' : (transportKind === 'empty' ? '○' : 'P')}</span></div>`;
     return L.divIcon({className: '', html, iconSize: [50, 50], iconAnchor: [25, 25]});
   }
 
@@ -193,10 +194,9 @@
     return isMovingRight(coords[0], coords[coords.length - 1]);
   }
 
-  function updateMarkerIcon(marker, shipment, direction) {
+  function updateMarkerIcon(marker, shipment, direction, progress) {
     const vehicleType = String(shipment?.vehicleType || '').trim();
-    if (marker._hfV2VehicleType === vehicleType && marker._hfV2DirectionRight === direction) return;
-    marker.setIcon?.(vehicleIcon(shipment, direction));
+    marker.setIcon?.(vehicleIcon(shipment, direction, progress));
     marker._hfV2VehicleType = vehicleType;
     marker._hfV2DirectionRight = direction;
   }
@@ -261,7 +261,7 @@
       let marker = shipmentMarkers.get(id);
       if (!marker) {
         const direction = initialDirection(coords);
-        marker = L.marker(position, {icon: vehicleIcon(shipment, direction), title, zIndexOffset: 700}).addTo(logisticsVehicleLayer);
+        marker = L.marker(position, {icon: vehicleIcon(shipment, direction, progress), title: `${title}, Fahrtrichtung ${direction ? 'Osten' : 'Westen'}, ${Math.round(progress * 100)} Prozent`, zIndexOffset: 700}).addTo(logisticsVehicleLayer);
         marker._hfV2VehicleType = String(shipment?.vehicleType || '').trim();
         marker._hfV2DirectionRight = direction;
         marker.bindTooltip(shipmentTooltip(shipment, fromCity, toCity), {direction: 'top', sticky: true, className: 'city-label'});
@@ -273,7 +273,7 @@
       const hasHorizontalMovement = Math.abs(Number(position[1]) - Number(currentLatLng?.lng)) > 0.000001;
       const direction = hasHorizontalMovement ? isMovingRight(currentLatLng, position) : Boolean(marker._hfV2DirectionRight);
       marker.options.title = title;
-      updateMarkerIcon(marker, shipment, direction);
+      updateMarkerIcon(marker, shipment, direction, progress);
       marker.setTooltipContent?.(shipmentTooltip(shipment, fromCity, toCity));
       animateMarkerTo(marker, position);
     });
@@ -310,5 +310,11 @@
     return logisticsVehicleLayer;
   }
 
-  window.HFV2LogisticsLayer = {initLogisticsLayer, renderActiveShipments, clearLogisticsVehicles, animateMarkerTo};
+  function setLogisticsLayerVisible(visible, map) {
+    if (!logisticsVehicleLayer || !map) return;
+    if (visible && !map.hasLayer(logisticsVehicleLayer)) logisticsVehicleLayer.addTo(map);
+    if (!visible && map.hasLayer(logisticsVehicleLayer)) map.removeLayer(logisticsVehicleLayer);
+  }
+
+  window.HFV2LogisticsLayer = {initLogisticsLayer, renderActiveShipments, clearLogisticsVehicles, animateMarkerTo, setLogisticsLayerVisible};
 })();
