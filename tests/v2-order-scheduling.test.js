@@ -46,6 +46,17 @@ test('Terminfindung wählt ein freies Zeitfenster und berücksichtigt Reposition
   assert.ok(result.arrivalAbsMinute > result.departureAbsMinute);
 });
 
+test('fehlender aktueller Bestand wird durch den nächsten Produktionszyklus eingeplant', () => {
+  const {window, state} = logisticsHarness({stock: 0});
+  const result = window.HFV2Logistics.findOrderSchedule({fromCityId: 'a', toCityId: 'b', goodId: 'food', frequency: 'daily', vehicleType: 'van'});
+  assert.equal(result.ok, true);
+  assert.equal(result.stockProducedBeforeDeparture, true);
+  assert.ok(result.departureAbsMinute >= 1440);
+  const order = window.HFV2Logistics.createOrder({fromCityId: 'a', toCityId: 'b', goodId: 'food', frequency: 'daily', vehicleType: 'van'});
+  assert.equal(state.orders[0], order);
+  assert.ok(order.plannedDepartureAbsMinute >= 1440);
+});
+
 test('Terminfindung lehnt Straßenüberlastung und fehlende Termine ab', () => {
   const {window} = logisticsHarness({capacity: false});
   const result = window.HFV2Logistics.findOrderSchedule({fromCityId: 'a', toCityId: 'b', goodId: 'food', frequency: 'daily', vehicleType: 'van', horizonDays: 1});

@@ -406,12 +406,19 @@
     const path = window.HFNetwork?.findPath?.(fromCityId, toCityId, {mode: 'road'});
     if (!path?.reachable) return {ok: false, reason: 'no-route'};
     if (!vehicleCount) return {ok: false, reason: 'capacity-invalid'};
-    if (sourceStockKg(fromCityId, goodId) < amountKg) return {ok: false, reason: 'stock-limited'};
     const now = absoluteMinute(options.time || currentTime());
+    const currentStockKg = sourceStockKg(fromCityId, goodId);
+    // Creating the order itself adds its amount to outgoing production demand.
+    // If it is not on hand yet, plan no earlier than the next daily production
+    // cycle instead of making an otherwise valid first order impossible.
+    const stockReadyAbsMinute = currentStockKg >= amountKg
+      ? now
+      : (Math.floor(now / MINUTES_PER_DAY) + 1) * MINUTES_PER_DAY;
     const horizonDays = Math.max(frequency === 'weekly' ? 14 : 7, Math.trunc(Number(options.horizonDays) || 0));
     const first = Math.ceil((now + 1) / 15) * 15;
     const vehicles = window.HFFleet?.getState?.().vehicles || [];
     for (let departureAbsMinute = first; departureAbsMinute <= now + horizonDays * MINUTES_PER_DAY; departureAbsMinute += 15) {
+      if (departureAbsMinute < stockReadyAbsMinute) continue;
       const day = Math.floor(departureAbsMinute / MINUTES_PER_DAY) + 1;
       if (frequency === 'weekly' && (day - 1) % DAYS_PER_WEEK !== weekday) continue;
       const duration = shipmentDurationMinutes(path, vehicleType);
@@ -431,7 +438,7 @@
       if (feasibleVehicles.length < vehicleCount) continue;
       const candidate = {fromCityId, toCityId, goodId, frequency, weekday, vehicleType, amountKg};
       const bundles = compatibleBundles(candidate, departureAbsMinute, capacityKg);
-      return {ok: true, departureAbsMinute, arrivalAbsMinute, vehicleCount, vehicleIds: feasibleVehicles.slice(0, vehicleCount).map(vehicle => vehicle.id), path, bundles, bundle: bundles[0] || null};
+      return {ok: true, departureAbsMinute, arrivalAbsMinute, vehicleCount, vehicleIds: feasibleVehicles.slice(0, vehicleCount).map(vehicle => vehicle.id), path, bundles, bundle: bundles[0] || null, expectedStockKg: Math.max(currentStockKg, amountKg), stockProducedBeforeDeparture: currentStockKg < amountKg};
     }
     return {ok: false, reason: vehicles.some(vehicle => vehicle.vehicleType === vehicleType) ? 'no-feasible-slot' : 'no-vehicle'};
   }
