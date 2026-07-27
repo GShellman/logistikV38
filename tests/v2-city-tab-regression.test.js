@@ -17,16 +17,16 @@ test('Produktion bleibt nach einem Live-Refresh als Stadttab ausgewählt und sic
   let clickHandler;
   const makeNode = (kind, name) => ({
     dataset: kind === 'tab' ? {hfV2Tab: name} : {hfV2Panel: name},
-    hidden: kind === 'panel' && name !== 'overview',
-    tabIndex: name === 'overview' ? 0 : -1,
-    attributes: {['aria-selected']: String(name === 'overview')},
+    hidden: kind === 'panel' && name !== 'goods',
+    tabIndex: name === 'goods' ? 0 : -1,
+    attributes: {['aria-selected']: String(name === 'goods')},
     setAttribute(attribute, value) { this.attributes[attribute] = value; },
     focus() { this.focused = true; },
   });
   const facts = {
     render() {
-      this.tabs = ['overview', 'goods', 'production', 'transporte'].map(name => makeNode('tab', name));
-      this.panels = ['overview', 'goods', 'production', 'transporte'].map(name => makeNode('panel', name));
+      this.tabs = ['goods', 'production', 'transporte'].map(name => makeNode('tab', name));
+      this.panels = ['goods', 'production', 'transporte'].map(name => makeNode('panel', name));
     },
     querySelectorAll(selector) { return selector.includes('panel') ? this.panels : this.tabs; },
     querySelector(selector) {
@@ -51,7 +51,7 @@ test('Produktion bleibt nach einem Live-Refresh als Stadttab ausgewählt und sic
   });
 
   vm.runInContext(`
-    let activeCityTab = 'overview';
+    let activeCityTab = 'goods';
     let selectedId = 'zurich';
     const citiesById = {zurich: {id: 'zurich'}};
     ${functionSource('applyCityTabState', 'selectCity')}
@@ -71,4 +71,16 @@ test('Produktion bleibt nach einem Live-Refresh als Stadttab ausgewählt und sic
   assert.equal(selectedTab.dataset.hfV2Tab, 'production');
   assert.equal(selectedTab.tabIndex, 0);
   assert.equal(productionPanel.hidden, false);
+});
+
+test('Waren ist der Standardtab und die Stadtansicht enthält keinen Übersicht-Tab mehr', () => {
+  assert.match(source, /let activeCityTab = 'goods';/);
+  assert.doesNotMatch(source, /hfV2TabOverview|hfV2PanelOverview|data-hf-v2-tab="overview"|data-hf-v2-panel="overview"/);
+
+  const selectCitySource = functionSource('selectCity', 'openNetworkModalForCity');
+  assert.match(selectCitySource, /selectedId !== city\.id\) activeCityTab = 'goods';/);
+  assert.doesNotMatch(selectCitySource, /Aktuelle Probleme|Nächste sinnvolle Aktion|financeSummaryMarkup/);
+
+  const tabNames = [...selectCitySource.matchAll(/data-hf-v2-tab="([^"]+)"/g)].map(match => match[1]);
+  assert.deepEqual(tabNames, ['goods', 'production', 'transporte']);
 });

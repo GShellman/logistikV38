@@ -6,7 +6,7 @@
   const MARKER_SIZE = {normal: 30, small: 22};
 
   let selectedId = null;
-  let activeCityTab = 'overview';
+  let activeCityTab = 'goods';
   let map = null;
   let savePackage = null;
   let networkState = null;
@@ -283,29 +283,6 @@
     if (!check?.ok) return {disabled: true, title: 'Upgrade derzeit nicht möglich.'};
     return {disabled: false, title: `Für ${formatCurrency(upgradeCost)} auf Stufe ${level + 1} ausbauen.`};
   }
-
-  function factoryOperatingDailyCost() {
-    const factoryApi = window.HFV2Factories;
-    const catalog = window.HFV2FactoryCatalog || [];
-    const state = factoryApi?.getState?.();
-    const cityFactories = state?.cityFactories || {};
-    return Object.values(cityFactories).flat().reduce((sum, factoryId) => {
-      const factory = catalog.find(item => item.id === factoryId);
-      return sum + Math.max(0, Number(factory?.maintenance ?? factory?.dailyCost ?? factory?.operatingCost ?? 0) || 0);
-    }, 0);
-  }
-
-  function networkDailyCost() {
-    return (networkState?.connections || []).reduce((sum, connection) => sum + Math.max(0, Number(connection?.maintenance) || 0), 0);
-  }
-
-  function financeSummaryMarkup() {
-    const cash = window.HFV2Save?.getCash?.() ?? 0;
-    const networkCost = networkDailyCost();
-    const factoryCost = factoryOperatingDailyCost();
-    return `<section class="hf-v2-finance-hero" aria-label="Finanzübersicht"><div><p class="hf-v2-kicker">Finanzen</p><h3>Kontostand</h3><strong>${formatCurrency(cash)}</strong></div><div class="hf-v2-city-kpi-grid"><span><small>Netzunterhalt</small><b>${formatCurrency(networkCost)}/Tag</b></span><span><small>Fabrikbetrieb</small><b>${formatCurrency(factoryCost)}/Tag</b></span></div></section>`;
-  }
-
 
   function productionDebugMarkup(city) {
     if (!window.HFV2_DEBUG_PRODUCTION) return '';
@@ -693,9 +670,9 @@
   }
 
   function selectCity(city, cities) {
-    // A deliberate city change starts on the overview; re-rendering the same city
+    // A deliberate city change starts on goods; re-rendering the same city
     // (including live ticks) retains the user's current tab.
-    if (selectedId !== null && selectedId !== city.id) activeCityTab = 'overview';
+    if (selectedId !== null && selectedId !== city.id) activeCityTab = 'goods';
     selectedId = city.id;
     refreshMarkers(cities);
 
@@ -704,9 +681,8 @@
     const usedKg = window.HFV2Goods?.getUsedCapacityKg?.(city.id) || 0;
     const capacityKg = window.HFV2Goods?.getCapacityKg?.(city.id) || 0;
     const factories = window.HFV2Factories?.getCityFactoryInstances?.(city.id) || [];
-    const problems = '<p class="hf-v2-city-ok"><span aria-hidden="true">✓</span> Keine akuten Probleme erkannt.</p>';
     document.getElementById('hfV2SelectedIntro').textContent = `${state.symbol} ${state.label}`;
-    document.getElementById('hfV2Facts').innerHTML = `<div class="hf-v2-city-summary" aria-label="Kennzahlen für ${escapeHtml(city.name)}"><div class="hf-v2-city-kpi-grid">${fact('Einwohner', formatPopulation(city.population))}${fact('Lager', capacityKg ? `${Math.round(usedKg / capacityKg * 100)} %` : '–')}${fact('Fabriken', factories.length.toLocaleString('de-CH'))}${fact('Bauplätze', city.slots.toLocaleString('de-CH'))}</div></div><div class="hf-v2-city-tabs" role="tablist" aria-label="Stadtbereiche"><button type="button" role="tab" id="hfV2TabOverview" aria-controls="hfV2PanelOverview" ${cityTabAttributes('overview')} data-hf-v2-tab="overview">Übersicht</button><button type="button" role="tab" id="hfV2TabGoods" aria-controls="hfV2PanelGoods" ${cityTabAttributes('goods')} data-hf-v2-tab="goods">Waren</button><button type="button" role="tab" id="hfV2TabProduction" aria-controls="hfV2PanelProduction" ${cityTabAttributes('production')} data-hf-v2-tab="production">Produktion</button><button type="button" role="tab" id="hfV2TabTransport" aria-controls="hfV2PanelTransport" ${cityTabAttributes('transporte')} data-hf-v2-tab="transporte">Transporte</button></div><section id="hfV2PanelOverview" role="tabpanel" aria-labelledby="hfV2TabOverview" data-hf-v2-panel="overview"${cityPanelHidden('overview')}><h3>Aktuelle Probleme</h3>${problems}<section class="hf-v2-next-action" aria-labelledby="hfV2NextAction"><h3 id="hfV2NextAction">Nächste sinnvolle Aktion</h3><p>Kapazitäten und laufende Kosten prüfen.</p><button class="hf-v2-action-primary" type="button" data-hf-v2-show-tab="production">Produktion prüfen</button></section>${financeSummaryMarkup()}</section><section id="hfV2PanelGoods" role="tabpanel" aria-labelledby="hfV2TabGoods" data-hf-v2-panel="goods"${cityPanelHidden('goods')}>${inventorySectionMarkup(city)}${demandPanel(city)}</section><section id="hfV2PanelProduction" role="tabpanel" aria-labelledby="hfV2TabProduction" data-hf-v2-panel="production"${cityPanelHidden('production')}>${factoryProductionMarkup(city)}</section><section id="hfV2PanelTransport" role="tabpanel" aria-labelledby="hfV2TabTransport" data-hf-v2-panel="transporte"${cityPanelHidden('transporte')}>${cityLogisticsSectionMarkup(city)}</section>`;
+    document.getElementById('hfV2Facts').innerHTML = `<div class="hf-v2-city-summary" aria-label="Kennzahlen für ${escapeHtml(city.name)}"><div class="hf-v2-city-kpi-grid">${fact('Einwohner', formatPopulation(city.population))}${fact('Lager', capacityKg ? `${Math.round(usedKg / capacityKg * 100)} %` : '–')}${fact('Fabriken', factories.length.toLocaleString('de-CH'))}${fact('Bauplätze', city.slots.toLocaleString('de-CH'))}</div></div><div class="hf-v2-city-tabs" role="tablist" aria-label="Stadtbereiche"><button type="button" role="tab" id="hfV2TabGoods" aria-controls="hfV2PanelGoods" ${cityTabAttributes('goods')} data-hf-v2-tab="goods">Waren</button><button type="button" role="tab" id="hfV2TabProduction" aria-controls="hfV2PanelProduction" ${cityTabAttributes('production')} data-hf-v2-tab="production">Produktion</button><button type="button" role="tab" id="hfV2TabTransport" aria-controls="hfV2PanelTransport" ${cityTabAttributes('transporte')} data-hf-v2-tab="transporte">Transporte</button></div><section id="hfV2PanelGoods" role="tabpanel" aria-labelledby="hfV2TabGoods" data-hf-v2-panel="goods"${cityPanelHidden('goods')}>${inventorySectionMarkup(city)}${demandPanel(city)}</section><section id="hfV2PanelProduction" role="tabpanel" aria-labelledby="hfV2TabProduction" data-hf-v2-panel="production"${cityPanelHidden('production')}>${factoryProductionMarkup(city)}</section><section id="hfV2PanelTransport" role="tabpanel" aria-labelledby="hfV2TabTransport" data-hf-v2-panel="transporte"${cityPanelHidden('transporte')}>${cityLogisticsSectionMarkup(city)}</section>`;
     applyCityTabState();
   }
 
