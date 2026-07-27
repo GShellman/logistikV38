@@ -512,6 +512,13 @@
     return Math.max(0, Number(window.HFV2Goods?.getCityInventory?.(cityId)?.[goodId]) || 0);
   }
 
+  function exportableStockKg(cityId, goodId) {
+    const exportableKg = window.HFV2Goods?.getExportableStockKg?.(cityId, goodId);
+    if (Number.isFinite(Number(exportableKg))) return Math.max(0, Number(exportableKg));
+    const reserveKg = Math.max(0, Number(window.HFV2Goods?.getCityDailyDemandMap?.(cityId)?.[goodId]) || 0);
+    return Math.max(0, sourceStockKg(cityId, goodId) - reserveKg);
+  }
+
   function markOrderDispatchResult(order, result) {
     order.lastDispatchResult = result;
     order.lastDispatchAbsMinute = absoluteMinute(currentTime());
@@ -707,7 +714,7 @@
     const requestedAmountKg = Number.isFinite(plannedAmountKg) && plannedAmountKg > 0
       ? Math.min(Number(order.amountKg), plannedAmountKg)
       : Number(order.amountKg);
-    const amountKg = Math.min(requestedAmountKg, sourceStockKg(order.fromCityId, order.goodId));
+    const amountKg = Math.min(requestedAmountKg, exportableStockKg(order.fromCityId, order.goodId));
     if (amountKg <= 0) {
       markOrderDispatchResult(order, 'stock-limited');
       return null;
@@ -820,7 +827,7 @@
     const remainingByGood = new Map();
     const dispatches = [];
     for (const order of orders) {
-      if (!remainingByGood.has(order.goodId)) remainingByGood.set(order.goodId, sourceStockKg(order.fromCityId, order.goodId));
+      if (!remainingByGood.has(order.goodId)) remainingByGood.set(order.goodId, exportableStockKg(order.fromCityId, order.goodId));
       const plannedTrip = window.HFV2FleetDispatch?.plannedTrip?.(order.id, nowAbsMinute);
       const plannedAmountKg = Number(plannedTrip?.amountKg);
       const requestedAmountKg = Number.isFinite(plannedAmountKg) && plannedAmountKg > 0

@@ -132,7 +132,12 @@
       const order = occurrence.order;
       const type = order.vehicleType || DEFAULT_VEHICLE_TYPE;
       const stockKey = `${order.fromCityId}|${order.goodId}`;
-      if (!plannedStock.has(stockKey)) plannedStock.set(stockKey, Math.max(0, Number(window.HFV2Goods?.getCityInventory?.(order.fromCityId)?.[order.goodId]) || 0));
+      if (!plannedStock.has(stockKey)) {
+        const exportableKg = window.HFV2Goods?.getExportableStockKg?.(order.fromCityId, order.goodId);
+        const stockKg = Math.max(0, Number(window.HFV2Goods?.getCityInventory?.(order.fromCityId)?.[order.goodId]) || 0);
+        const reserveKg = Math.max(0, Number(window.HFV2Goods?.getCityDailyDemandMap?.(order.fromCityId)?.[order.goodId]) || 0);
+        plannedStock.set(stockKey, Number.isFinite(Number(exportableKg)) ? Math.max(0, Number(exportableKg)) : Math.max(0, stockKg - reserveKg));
+      }
       const amountKg = Math.min(Math.max(0, Number(order.amountKg) || 0), plannedStock.get(stockKey));
       if (amountKg <= 0) {
         unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: 'stock-limited'});

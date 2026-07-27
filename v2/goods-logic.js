@@ -187,6 +187,22 @@
     return mergeDemandMaps(localDemand, exportDemand);
   }
 
+  function getLocalReserveKg(cityId, goodId) {
+    const id = assertCityId(cityId);
+    const good = assertGoodId(goodId);
+    const city = citiesById[id] || window.HFV2CitiesById?.[id] || null;
+    const configuredReserve = Number(city?.localReserveKg?.[good]);
+    if (Number.isFinite(configuredReserve) && configuredReserve >= 0) return configuredReserve;
+    return Math.max(0, Number(getCityDailyDemandMap(id)[good]) || 0);
+  }
+
+  function getExportableStockKg(cityId, goodId) {
+    const id = assertCityId(cityId);
+    const good = assertGoodId(goodId);
+    const stockKg = Math.max(0, Number(ensureCityInventory(id)[good]) || 0);
+    return Math.round(Math.max(0, stockKg - getLocalReserveKg(id, good)) * 1000) / 1000;
+  }
+
 
   function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
@@ -512,10 +528,12 @@
       const targetKg = Math.max(0, Number(target[goodId]) || 0);
       const stockKg = Math.max(0, Number(inventory[goodId]) || 0);
       const plannedKg = Math.max(0, Number(planned[goodId]) || 0);
+      const localReserveKg = getLocalReserveKg(id, goodId);
+      const exportableStockKg = getExportableStockKg(id, goodId);
       const rowBlockers = blockers[goodId] || [];
       if (localKg > 0 && stockKg <= localKg + 0.001) rowBlockers.push('lokaler Reservebestand');
       if (exportKg > 0 && stockKg <= targetKg + 0.001) rowBlockers.push('Exportauftrag offen');
-      return {goodId, localDemandKg: localKg, exportDemandKg: exportKg, targetDemandKg: targetKg, stockKg, plannedProductionKg: plannedKg, blockers: Array.from(new Set(rowBlockers))};
+      return {goodId, localDemandKg: localKg, localReserveKg, exportableStockKg, openExportDemandKg: exportKg, exportDemandKg: exportKg, targetDemandKg: targetKg, stockKg, plannedProductionKg: plannedKg, blockers: Array.from(new Set(rowBlockers))};
     });
   }
 
@@ -600,5 +618,5 @@
     return summary;
   }
 
-  window.HFV2Goods = {createGoodsState, configure, getState, ensureCityInventory, getCityInventory, addToInventory, removeFromInventory, getUsedCapacityKg, getCapacityKg, salePriceForCity, getCityDailyDemandMap, getOutgoingLogisticsDemandMap, getCityProductionTargetDemandMap, mergeDemandMaps, productionDebugRows, estimateCityFactoryProduction, runDailyProduction, runDailySales, sellCityDemandAtMidnight};
+  window.HFV2Goods = {createGoodsState, configure, getState, ensureCityInventory, getCityInventory, addToInventory, removeFromInventory, getUsedCapacityKg, getCapacityKg, salePriceForCity, getCityDailyDemandMap, getLocalReserveKg, getExportableStockKg, getOutgoingLogisticsDemandMap, getCityProductionTargetDemandMap, mergeDemandMaps, productionDebugRows, estimateCityFactoryProduction, runDailyProduction, runDailySales, sellCityDemandAtMidnight};
 })();
