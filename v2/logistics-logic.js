@@ -81,7 +81,8 @@
     const departureAbsMinute = Number(shipment.departureAbsMinute);
     const arrivalAbsMinute = Number(shipment.arrivalAbsMinute);
     if (!id || !orderId || !fromCityId || !toCityId || !goodId || amountKg <= 0 || !Number.isFinite(departureAbsMinute) || !Number.isFinite(arrivalAbsMinute)) return null;
-    const vehicleCount = positiveInteger(shipment.vehicleCount, 1);
+    const vehicleIds = Array.isArray(shipment.vehicleIds) ? [...new Set(shipment.vehicleIds.map(value => Number(value)).filter(Number.isFinite))] : [];
+    const vehicleCount = vehicleIds.length || positiveInteger(shipment.vehicleCount, 1);
     const status = ['active', 'returning', 'returned', 'delivered', 'failed', 'partial'].includes(shipment.status) ? shipment.status : 'active';
     const createdAtAbsMinute = Number.isFinite(Number(shipment.createdAtAbsMinute)) ? Number(shipment.createdAtAbsMinute) : departureAbsMinute;
     const pathNodeIds = Array.isArray(shipment.pathNodeIds) ? shipment.pathNodeIds.map(normalizeId).filter(Boolean) : [];
@@ -108,7 +109,7 @@
         undeliveredKg,
       };
     }).filter(stop => stop.toCityId && stop.goodId && stop.amountKg > 0 && stop.orderId) : null;
-    return {...shipment, id, orderId, fromCityId, toCityId, goodId, amountKg, vehicleCount, pathNodeIds, pathEdgeIds, geometry, routeGeometry: geometry, returnGeometry, departureAbsMinute, arrivalAbsMinute, returnDepartureAbsMinute, returnArrivalAbsMinute, status, createdAtAbsMinute, ...(stops ? {stops} : {})};
+    return {...shipment, id, orderId, fromCityId, toCityId, goodId, amountKg, vehicleIds, vehicleCount, pathNodeIds, pathEdgeIds, geometry, routeGeometry: geometry, returnGeometry, departureAbsMinute, arrivalAbsMinute, returnDepartureAbsMinute, returnArrivalAbsMinute, status, createdAtAbsMinute, ...(stops ? {stops} : {})};
   }
 
   function configure(options = {}) {
@@ -494,22 +495,27 @@
   function reserveRouteCapacity(route, options) {
     const reservationIds = [];
     let cursorAbsMinute = Number(options.startAbsMinute);
-    for (let index = 0; index < route.segments.length; index += 1) {
-      const segment = route.segments[index];
-      const endAbsMinute = cursorAbsMinute + segment.durationMinutes;
-      const reservationId = `${options.reservationId}-segment-${index + 1}`;
-      const capacityStatus = window.HFNetwork?.pathCapacityStatus?.(segment.path, {startAbsMinute: cursorAbsMinute, endAbsMinute, units: options.units});
-      if (capacityStatus && capacityStatus.ok === false) {
-        for (const id of reservationIds) window.HFNetwork?.releaseCapacityReservation?.(id);
-        return {ok: false, reason: capacityStatus.reason || 'route-overloaded'};
+    try {
+      for (let index = 0; index < route.segments.length; index += 1) {
+        const segment = route.segments[index];
+        const endAbsMinute = cursorAbsMinute + segment.durationMinutes;
+        const reservationId = `${options.reservationId}-segment-${index + 1}`;
+        const capacityStatus = window.HFNetwork?.pathCapacityStatus?.(segment.path, {startAbsMinute: cursorAbsMinute, endAbsMinute, units: options.units});
+        if (capacityStatus && capacityStatus.ok === false) {
+          for (const id of reservationIds) window.HFNetwork?.releaseCapacityReservation?.(id);
+          return {ok: false, reason: capacityStatus.reason || 'route-overloaded'};
+        }
+        const reservation = window.HFNetwork?.reservePathCapacity?.(segment.path, {startAbsMinute: cursorAbsMinute, endAbsMinute, units: options.units, reservationId});
+        if (reservation && reservation.ok === false) {
+          for (const id of reservationIds) window.HFNetwork?.releaseCapacityReservation?.(id);
+          return {ok: false, reason: reservation.reason || 'route-overloaded'};
+        }
+        reservationIds.push(reservation?.reservationId || reservationId);
+        cursorAbsMinute = endAbsMinute;
       }
-      const reservation = window.HFNetwork?.reservePathCapacity?.(segment.path, {startAbsMinute: cursorAbsMinute, endAbsMinute, units: options.units, reservationId});
-      if (reservation && reservation.ok === false) {
-        for (const id of reservationIds) window.HFNetwork?.releaseCapacityReservation?.(id);
-        return {ok: false, reason: reservation.reason || 'route-overloaded'};
-      }
-      reservationIds.push(reservation?.reservationId || reservationId);
-      cursorAbsMinute = endAbsMinute;
+    } catch (error) {
+      for (const id of reservationIds) window.HFNetwork?.releaseCapacityReservation?.(id);
+      throw error;
     }
     return {ok: true, reservationIds, arrivalAbsMinute: cursorAbsMinute};
   }
@@ -520,6 +526,25 @@
       return;
     }
     if (reservation?.reservationId) window.HFNetwork?.releaseCapacityReservation?.(reservation.reservationId);
+  }
+
+  function reserveShipmentVehicles({shipmentId, cityId, vehicleType, count, departureAbsMinute, finalAvailableAbsMinute, toCityId}) {
+    const assigned = window.HFFleet?.assignVehicles?.({
+      cityId,
+      vehicleType,
+      count,
+      assignmentId: shipmentId,
+      departureAbsMinute,
+      availableAbsMinute: finalAvailableAbsMinute,
+      routeSegment: {fromCityId: cityId, toCityId},
+    }) || [];
+    if (assigned.length === count) return assigned;
+    window.HFFleet?.releaseAssignment?.(shipmentId, cityId, departureAbsMinute);
+    return [];
+  }
+
+  function rollbackVehicleReservation(shipmentId, cityId, departureAbsMinute) {
+    window.HFFleet?.releaseAssignment?.(shipmentId, cityId, departureAbsMinute);
   }
 
   function createSingleShipment(order, time, nowAbsMinute, created) {
@@ -539,15 +564,39 @@
 
     const {path, vehicleCount, arrivalAbsMinute} = validation;
     const reservationId = `shipment-${state.nextShipmentId}`;
-    const reservation = window.HFNetwork?.reservePathCapacity?.(path, {startAbsMinute: departureAbsMinute, endAbsMinute: arrivalAbsMinute, units: vehicleCount, reservationId});
+    const returnArrivalAbsMinute = arrivalAbsMinute + Math.max(1, arrivalAbsMinute - departureAbsMinute);
+    const assigned = reserveShipmentVehicles({shipmentId: state.nextShipmentId, cityId: order.fromCityId, vehicleType, count: vehicleCount, departureAbsMinute, finalAvailableAbsMinute: returnArrivalAbsMinute, toCityId: order.toCityId});
+    if (assigned.length !== vehicleCount) {
+      markOrderDispatchResult(order, 'not-enough-vehicles');
+      return null;
+    }
+    let reservation;
+    try {
+      reservation = window.HFNetwork?.reservePathCapacity?.(path, {startAbsMinute: departureAbsMinute, endAbsMinute: arrivalAbsMinute, units: vehicleCount, reservationId});
+    } catch (error) {
+      rollbackVehicleReservation(state.nextShipmentId, order.fromCityId, departureAbsMinute);
+      markOrderDispatchResult(order, error?.reason || 'route-reservation-failed');
+      return null;
+    }
     if (reservation && reservation.ok === false) {
+      rollbackVehicleReservation(state.nextShipmentId, order.fromCityId, departureAbsMinute);
       markOrderDispatchResult(order, reservation.reason || 'route-overloaded');
       return null;
     }
 
-    const removed = window.HFV2Goods?.removeFromInventory?.(order.fromCityId, order.goodId, order.amountKg);
+    let removed;
+    try {
+      removed = window.HFV2Goods?.removeFromInventory?.(order.fromCityId, order.goodId, order.amountKg);
+    } catch (error) {
+      releaseRouteReservations({reservationId: reservation?.reservationId || reservationId});
+      rollbackVehicleReservation(state.nextShipmentId, order.fromCityId, departureAbsMinute);
+      markOrderDispatchResult(order, error?.reason || 'stock-removal-failed');
+      return null;
+    }
     if (!removed?.ok || Number(removed.removedKg) !== order.amountKg) {
-      releaseRouteReservations({reservationId});
+      releaseRouteReservations({reservationId: reservation?.reservationId || reservationId});
+      rollbackVehicleReservation(state.nextShipmentId, order.fromCityId, departureAbsMinute);
+      if (Number(removed?.removedKg) > 0) window.HFV2Goods?.addToInventory?.(order.fromCityId, order.goodId, Number(removed.removedKg));
       markOrderDispatchResult(order, removed?.reason || 'stock-limited');
       return null;
     }
@@ -561,7 +610,8 @@
       goodId: order.goodId,
       amountKg: order.amountKg,
       vehicleType,
-      vehicleCount,
+      vehicleIds: assigned.map(vehicle => vehicle.id),
+      vehicleCount: assigned.length,
       pathNodeIds: Array.isArray(path.nodes) ? path.nodes.map(normalizeId).filter(Boolean) : [],
       pathEdgeIds: Array.isArray(path.edges) ? path.edges.map(pathEdgeId).filter(Boolean) : [],
       geometry,
@@ -573,8 +623,6 @@
       createdAtAbsMinute: nowAbsMinute,
     };
     state.shipments.push(shipment);
-    const assigned = window.HFFleet?.assignVehicles?.({cityId: order.fromCityId, vehicleType, count: vehicleCount, assignmentId: shipment.id, departureAbsMinute, availableAbsMinute: arrivalAbsMinute, routeSegment: {fromCityId: order.fromCityId, toCityId: order.toCityId}}) || [];
-    shipment.vehicleIds = assigned.map(vehicle => vehicle.id);
     created.push(shipment);
     order.lastDispatchedDay = Math.max(1, Math.trunc(Number(time.day) || 1));
     markOrderDispatchResult(order, 'created');
@@ -602,15 +650,37 @@
     if (!route) return false;
     const routeStops = route.stops;
     const reservationId = `shipment-${state.nextShipmentId}`;
-    const reservation = reserveRouteCapacity(route, {startAbsMinute: nowAbsMinute, units: 1, reservationId});
-    if (!reservation.ok) return false;
+    const expectedReturnAbsMinute = nowAbsMinute + route.durationMinutes * 2;
+    const assigned = reserveShipmentVehicles({shipmentId: state.nextShipmentId, cityId: orders[0].fromCityId, vehicleType, count: 1, departureAbsMinute: nowAbsMinute, finalAvailableAbsMinute: expectedReturnAbsMinute, toCityId: routeStops[routeStops.length - 1].toCityId});
+    if (assigned.length !== 1) return false;
+    let reservation;
+    try {
+      reservation = reserveRouteCapacity(route, {startAbsMinute: nowAbsMinute, units: 1, reservationId});
+    } catch (error) {
+      rollbackVehicleReservation(state.nextShipmentId, orders[0].fromCityId, nowAbsMinute);
+      return false;
+    }
+    if (!reservation.ok) {
+      rollbackVehicleReservation(state.nextShipmentId, orders[0].fromCityId, nowAbsMinute);
+      return false;
+    }
 
     const removedStops = [];
     for (const stop of routeStops) {
-      const removed = window.HFV2Goods?.removeFromInventory?.(orders[0].fromCityId, stop.goodId, stop.amountKg);
+      let removed;
+      try {
+        removed = window.HFV2Goods?.removeFromInventory?.(orders[0].fromCityId, stop.goodId, stop.amountKg);
+      } catch (error) {
+        releaseRouteReservations(reservation);
+        rollbackVehicleReservation(state.nextShipmentId, orders[0].fromCityId, nowAbsMinute);
+        for (const removedStop of removedStops) window.HFV2Goods?.addToInventory?.(orders[0].fromCityId, removedStop.goodId, removedStop.amountKg);
+        return false;
+      }
       if (!removed?.ok || Number(removed.removedKg) !== stop.amountKg) {
         releaseRouteReservations(reservation);
+        rollbackVehicleReservation(state.nextShipmentId, orders[0].fromCityId, nowAbsMinute);
         for (const removedStop of removedStops) window.HFV2Goods?.addToInventory?.(orders[0].fromCityId, removedStop.goodId, removedStop.amountKg);
+        if (Number(removed?.removedKg) > 0) window.HFV2Goods?.addToInventory?.(orders[0].fromCityId, stop.goodId, Number(removed.removedKg));
         return false;
       }
       removedStops.push(stop);
@@ -624,7 +694,8 @@
       goodId: routeStops[0].goodId,
       amountKg,
       vehicleType,
-      vehicleCount: 1,
+      vehicleIds: assigned.map(vehicle => vehicle.id),
+      vehicleCount: assigned.length,
       stops: routeStops,
       routeStops,
       pathNodeIds: route.pathNodeIds,
@@ -638,8 +709,6 @@
       createdAtAbsMinute: nowAbsMinute,
     };
     state.shipments.push(shipment);
-    const assigned = window.HFFleet?.assignVehicles?.({cityId: orders[0].fromCityId, vehicleType, count: 1, assignmentId: shipment.id, departureAbsMinute: nowAbsMinute, availableAbsMinute: reservation.arrivalAbsMinute, routeSegment: {fromCityId: orders[0].fromCityId, toCityId: shipment.toCityId}}) || [];
-    shipment.vehicleIds = assigned.map(vehicle => vehicle.id);
     created.push(shipment);
     for (const order of orders) {
       order.lastDispatchedDay = Math.max(1, Math.trunc(Number(time.day) || 1));
@@ -703,10 +772,56 @@
 
   function beginReturnTrip(shipment, nowAbsMinute) {
     const outboundDuration = Math.max(1, Math.ceil(Number(shipment.arrivalAbsMinute) - Number(shipment.departureAbsMinute)));
-    shipment.returnDepartureAbsMinute = nowAbsMinute;
-    shipment.returnArrivalAbsMinute = nowAbsMinute + outboundDuration;
+    const scheduledDeparture = Number(shipment.arrivalAbsMinute) || Number(nowAbsMinute) || 0;
+    shipment.returnDepartureAbsMinute = scheduledDeparture;
+    shipment.returnArrivalAbsMinute = scheduledDeparture + outboundDuration;
     shipment.returnGeometry = Array.isArray(shipment.routeGeometry) ? [...shipment.routeGeometry].reverse() : [];
     shipment.status = 'returning';
+    window.HFFleet?.updateAssignment?.(shipment.id, {
+      status: 'returning',
+      currentCityId: shipment.toCityId,
+      availableAbsMinute: shipment.returnArrivalAbsMinute,
+      routeSegment: {fromCityId: shipment.toCityId, toCityId: shipment.fromCityId},
+    });
+  }
+
+  function syncAssignedVehicles(shipment, nowAbsMinute) {
+    if (!Array.isArray(shipment.vehicleIds) || !shipment.vehicleIds.length) return;
+    if (shipment.status === 'returning') {
+      window.HFFleet?.updateAssignment?.(shipment.id, {
+        status: 'returning',
+        currentCityId: shipment.toCityId,
+        availableAbsMinute: shipment.returnArrivalAbsMinute,
+        routeSegment: {fromCityId: shipment.toCityId, toCityId: shipment.fromCityId},
+      });
+      return;
+    }
+    if (shipment.status !== 'active') return;
+    let currentCityId = shipment.fromCityId;
+    let nextCityId = shipment.toCityId;
+    if (Array.isArray(shipment.stops)) {
+      for (const stop of shipment.stops) {
+        if (Number(stop.arrivalAbsMinute) <= nowAbsMinute) currentCityId = stop.toCityId;
+        else {
+          nextCityId = stop.toCityId;
+          break;
+        }
+      }
+    }
+    window.HFFleet?.updateAssignment?.(shipment.id, {
+      status: 'assigned',
+      currentCityId,
+      routeSegment: {fromCityId: currentCityId, toCityId: nextCityId},
+    });
+  }
+
+  function finishReturnIfDue(shipment, nowAbsMinute) {
+    const returnArrivalAbsMinute = Number(shipment.returnArrivalAbsMinute);
+    if (shipment.status !== 'returning' || !Number.isFinite(returnArrivalAbsMinute) || returnArrivalAbsMinute > nowAbsMinute) return false;
+    shipment.status = 'returned';
+    shipment.returnedAbsMinute = returnArrivalAbsMinute;
+    window.HFFleet?.releaseAssignment?.(shipment.id, shipment.fromCityId, returnArrivalAbsMinute);
+    return true;
   }
 
   function markStopDelivered(stop, nowAbsMinute) {
@@ -732,6 +847,7 @@
     const nowAbsMinute = absoluteMinute(currentTime());
     const completed = [];
     for (const shipment of state.shipments) {
+      syncAssignedVehicles(shipment, nowAbsMinute);
       if (shipment.status === 'active') {
         if (Array.isArray(shipment.stops) && shipment.stops.length) {
           let processedStop = false;
@@ -750,6 +866,7 @@
           if (allStopsProcessed && Number.isFinite(finalArrivalAbsMinute) && finalArrivalAbsMinute <= nowAbsMinute) {
             shipment.deliveredAbsMinute = nowAbsMinute;
             beginReturnTrip(shipment, nowAbsMinute);
+            finishReturnIfDue(shipment, nowAbsMinute);
             completed.push(shipment);
           } else if (processedStop) {
             completed.push(shipment);
@@ -764,16 +881,13 @@
           shipment.undeliveredKg = stop.undeliveredKg;
           shipment.deliveredAbsMinute = nowAbsMinute;
           beginReturnTrip(shipment, nowAbsMinute);
+          finishReturnIfDue(shipment, nowAbsMinute);
           completed.push(shipment);
           continue;
         }
       }
 
-      const returnArrivalAbsMinute = Number(shipment.returnArrivalAbsMinute);
-      if (shipment.status === 'returning' && Number.isFinite(returnArrivalAbsMinute) && returnArrivalAbsMinute <= nowAbsMinute) {
-        shipment.status = 'returned';
-        shipment.returnedAbsMinute = nowAbsMinute;
-        window.HFFleet?.releaseAssignment?.(shipment.id, shipment.fromCityId, nowAbsMinute);
+      if (finishReturnIfDue(shipment, nowAbsMinute)) {
         completed.push(shipment);
       }
     }
