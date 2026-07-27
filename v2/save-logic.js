@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const SCHEMA_VERSION = 4;
+  const SCHEMA_VERSION = 5;
   const SAVE_FILE_PREFIX = 'helvetic-freight-v2';
   const STARTING_CASH = 500000;
 
@@ -118,8 +118,12 @@
         availableAbsMinute: Math.max(0, Number(rawVehicle.availableAbsMinute) || 0),
         activeAssignmentId,
       };
-      if (Array.isArray(rawVehicle.position) && rawVehicle.position.length >= 2) normalized.position = [Number(rawVehicle.position[0]), Number(rawVehicle.position[1])];
-      if (rawVehicle.routeSegment && typeof rawVehicle.routeSegment === 'object') normalized.routeSegment = {...rawVehicle.routeSegment};
+      if (Array.isArray(rawVehicle.position) && rawVehicle.position.length >= 2 && rawVehicle.position.slice(0, 2).every(value => Number.isFinite(Number(value)))) normalized.position = rawVehicle.position.slice(0, 2).map(Number);
+      if (rawVehicle.routeSegment && typeof rawVehicle.routeSegment === 'object' && !Array.isArray(rawVehicle.routeSegment)) {
+        const fromCityId = String(rawVehicle.routeSegment.fromCityId || '').trim();
+        const toCityId = String(rawVehicle.routeSegment.toCityId || '').trim();
+        if (fromCityId && toCityId) normalized.routeSegment = {fromCityId, toCityId};
+      }
       normalizedVehicles.push(normalized);
     };
     if (Array.isArray(fleet.vehicles)) fleet.vehicles.forEach(vehicle => addVehicle(vehicle));
@@ -184,6 +188,22 @@
     logistics.orders = Array.isArray(logistics.orders) ? logistics.orders : [];
     logistics.shipments = Array.isArray(logistics.shipments) ? logistics.shipments : [];
     logistics.assignments = Array.isArray(logistics.assignments) ? logistics.assignments : [];
+    logistics.assignments = logistics.assignments.filter(assignment => {
+      if (!assignment || typeof assignment !== 'object' || Array.isArray(assignment)) return false;
+      if (!String(assignment.id || '').trim() || assignment.type !== 'repositioning') return false;
+      if (!String(assignment.fromCityId || '').trim() || !String(assignment.toCityId || '').trim()) return false;
+      if (!Array.isArray(assignment.vehicleIds) || !assignment.vehicleIds.length) return false;
+      return Number.isFinite(Number(assignment.departureAbsMinute)) && Number.isFinite(Number(assignment.arrivalAbsMinute));
+    }).map(assignment => ({
+      ...assignment,
+      id: String(assignment.id).trim(),
+      fromCityId: String(assignment.fromCityId).trim(),
+      toCityId: String(assignment.toCityId).trim(),
+      vehicleIds: [...new Set(assignment.vehicleIds.map(Number).filter(Number.isFinite))],
+      departureAbsMinute: Math.max(0, Number(assignment.departureAbsMinute)),
+      arrivalAbsMinute: Math.max(0, Number(assignment.arrivalAbsMinute)),
+      status: ['planned', 'active', 'completed', 'cancelled'].includes(assignment.status) ? assignment.status : 'active',
+    })).filter(assignment => assignment.vehicleIds.length && assignment.arrivalAbsMinute >= assignment.departureAbsMinute);
     logistics.dispatchPlan = logistics.dispatchPlan && typeof logistics.dispatchPlan === 'object' && !Array.isArray(logistics.dispatchPlan) ? logistics.dispatchPlan : null;
     logistics.nextOrderId = Math.max(1, Math.trunc(Number(logistics.nextOrderId) || 1));
     logistics.nextShipmentId = Math.max(1, Math.trunc(Number(logistics.nextShipmentId) || 1));
