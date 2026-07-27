@@ -23,6 +23,7 @@
     'no-vehicle': 'Kein passendes Fahrzeug.',
     'stock-limited': 'Quelle hat nicht genug Ware.',
     'route-overloaded': 'Straße zur gewünschten Zeit voll.',
+    'no-feasible-slot': 'Im Planungshorizont ist kein ausführbarer Termin frei.',
     'unknown-frequency': 'Unbekannte Frequenz.',
   });
 
@@ -117,6 +118,13 @@
     return dayOffset ? `${label} (+${dayOffset} Tag${dayOffset === 1 ? '' : 'e'})` : label;
   }
 
+  function formatAbsMinute(value) {
+    const minute = Math.max(0, Math.trunc(Number(value) || 0));
+    const day = Math.floor(minute / 1440) + 1;
+    const dayMinute = minute % 1440;
+    return `Tag ${day}, ${String(Math.floor(dayMinute / 60)).padStart(2, '0')}:${String(dayMinute % 60).padStart(2, '0')}`;
+  }
+
   function currentAbsMinute(hour, minute) {
     const time = window.HFV2Time?.getState?.() || window.HFV2Save?.getState?.().time || {day: 1};
     const day = Math.max(1, Math.trunc(Number(time.day) || 1));
@@ -202,8 +210,8 @@
         <label>Quellstadt<select name="fromCityId">${sources.map(city => option(city.id, city.name)).join('')}</select></label>
         <label>Ware<select name="goodId">${demands.map(([goodId, kg]) => option(goodId, `${goodById(goodId).name} · Tagesbedarf ${formatWeightKg(kg)}`)).join('')}</select></label>
         ${demandHint}
-        <label>Frequenz<select name="frequency">${option('daily', 'daily = Tagesbedarf', true)}${option('weekly', 'weekly = 7x Tagesbedarf')}</select></label>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;"><label>Stunde<input name="departureHour" type="number" min="0" max="23" step="1" value="8"></label><label>Minute<input name="departureMinute" type="number" min="0" max="59" step="1" list="hfV2OrderMinutes" value="0"><datalist id="hfV2OrderMinutes"><option value="0"><option value="15"><option value="30"><option value="45"></datalist></label></div>
+        <label>Frequenz<select name="frequency">${option('daily', 'Täglich', true)}${option('weekly', 'Wöchentlich')}</select></label>
+        <label id="hfV2OrderWeekday" hidden>Wochentag<select name="weekday" required disabled>${['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag'].map((label, index) => option(index, label)).join('')}</select></label>
         <label>Fahrzeugtyp<select name="vehicleType">${vehicles.map(item => option(item.type, `${item.spec.icon || '🚚'} ${item.spec.name || item.type} · ${item.count} verfügbar · ${formatWeightKg(window.HFV2Logistics?.vehicleCapacityKg?.(item.type) || 0)}`)).join('')}</select></label>
         <div class="hf-v2-network-option__rows" id="hfV2OrderPreview"></div>
         <p class="hf-v2-network-empty" id="hfV2OrderError" hidden></p>
@@ -221,8 +229,7 @@
       toCityId: form.dataset.targetId || '',
       goodId: form.elements.goodId?.value || '',
       frequency: form.elements.frequency?.value || 'daily',
-      departureHour: Math.max(0, Math.min(23, Math.trunc(Number(form.elements.departureHour?.value) || 0))),
-      departureMinute: Math.max(0, Math.min(59, Math.trunc(Number(form.elements.departureMinute?.value) || 0))),
+      weekday: form.elements.frequency?.value === 'weekly' ? Number(form.elements.weekday?.value) : null,
       vehicleType: form.elements.vehicleType?.value || '',
     };
   }
@@ -231,6 +238,9 @@
     const data = collectOrderForm(form);
     const error = form.querySelector('#hfV2OrderError');
     const preview = form.querySelector('#hfV2OrderPreview');
+    const weekdayField = form.querySelector('#hfV2OrderWeekday');
+    if (weekdayField) weekdayField.hidden = data.frequency !== 'weekly';
+    if (form.elements.weekday) form.elements.weekday.disabled = data.frequency !== 'weekly';
     const vehicles = vehicleOptions(data.fromCityId);
     setSelectOptions(form.elements.vehicleType, vehicles.map(item => option(item.type, `${item.spec.icon || '🚚'} ${item.spec.name || item.type} · ${item.count} verfügbar · ${formatWeightKg(window.HFV2Logistics?.vehicleCapacityKg?.(item.type) || 0)}`, item.type === data.vehicleType)));
     if (!form.elements.vehicleType?.value && vehicles[0]) form.elements.vehicleType.value = vehicles[0].type;
@@ -242,24 +252,19 @@
     } catch (error) {
       amountKg = 0;
     }
-    const path = window.HFNetwork?.findPath?.(data.fromCityId, data.toCityId, {mode: 'road'});
-    const capacity = window.HFV2Logistics?.vehicleCapacityKg?.(data.vehicleType) || 0;
-    const trips = capacity > 0 ? Math.ceil(amountKg / capacity) : 0;
-    const start = currentAbsMinute(data.departureHour, data.departureMinute);
-    const end = start + Math.round((Number(path?.duration) || 0) * 60);
-    const stock = Math.max(0, Number(window.HFV2Goods?.getCityInventory?.(data.fromCityId)?.[data.goodId]) || 0);
-    const capacityStatus = path?.reachable ? window.HFNetwork?.pathCapacityStatus?.(path, {startAbsMinute: start, endAbsMinute: end, units: Math.max(1, trips)}) : null;
+    const schedule = amountKg > 0 && data.vehicleType ? window.HFV2Logistics?.findOrderSchedule?.({...data, amountKg}) : {ok: false, reason: demand <= 0 ? 'no-demand' : 'no-vehicle'};
+    const path = schedule?.path;
+    const trips = schedule?.vehicleCount || 0;
     const warnings = [];
-    if (!path?.reachable) warnings.push('no-route');
     if (demand <= 0) warnings.push('no-demand');
-    if (!vehicles.length || !data.vehicleType || capacity <= 0) warnings.push('no-vehicle');
-    if (amountKg > stock) warnings.push('stock-limited');
-    if (capacityStatus?.ok === false) warnings.push('route-overloaded');
+    if (!schedule?.ok && !warnings.includes(schedule?.reason)) warnings.push(schedule?.reason || 'no-feasible-slot');
     if (preview) preview.innerHTML = `
       <span><em>Menge</em><strong>${formatWeightKg(amountKg)}</strong></span>
-      <span><em>Fahrten</em><strong>${trips || '–'}</strong></span>
+      <span><em>Fahrzeuge</em><strong>${trips || '–'}</strong></span>
       <span><em>Route</em><strong>${path?.reachable ? `${(Number(path.distance) || 0).toLocaleString('de-CH', {maximumFractionDigits: 1})} km · ${formatDurationHours(path.duration)}` : ERROR_TEXTS['no-route']}</strong></span>
-      <span><em>Ankunft</em><strong>${path?.reachable ? formatTime(data.departureHour, data.departureMinute, (Number(path.duration) || 0) * 60) : '–'}</strong></span>
+      <span><em>Abfahrt</em><strong>${schedule?.ok ? formatAbsMinute(schedule.departureAbsMinute) : '–'}</strong></span>
+      <span><em>Ankunft</em><strong>${schedule?.ok ? formatAbsMinute(schedule.arrivalAbsMinute) : '–'}</strong></span>
+      <span><em>Bündelung</em><strong>${schedule?.bundle ? `Mit Bestellung #${schedule.bundle.orderId} · Score ${schedule.bundle.score}` : 'Keine kompatible Bündelung'}</strong></span>
       ${warnings.length ? `<span><em>Warnungen</em><strong>${warnings.map(code => ERROR_TEXTS[code]).join(' ')}</strong></span>` : ''}`;
     if (error) {
       error.hidden = !warnings.length;
@@ -276,7 +281,7 @@
     form.addEventListener('submit', event => {
       event.preventDefault();
       const {data, warnings} = previewOrder(form);
-      if (warnings.includes('no-route') || warnings.includes('no-demand') || warnings.includes('no-vehicle')) return;
+      if (warnings.length) return;
       try {
         window.HFV2Logistics?.createOrder?.(data);
         window.HFV2Modal?.closeModal?.();

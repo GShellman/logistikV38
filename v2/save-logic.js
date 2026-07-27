@@ -114,7 +114,7 @@
 
   function defaultLogisticsState() {
     if (window.HFV2Logistics?.createLogisticsState) return window.HFV2Logistics.createLogisticsState();
-    return {orders: [], shipments: [], assignments: [], dispatchPlan: null, nextOrderId: 1, nextShipmentId: 1, nextAssignmentId: 1, schemaVersion: 2, shipmentSemantics: 'destination-fleet-v2'};
+    return {orders: [], shipments: [], assignments: [], dispatchPlan: null, nextOrderId: 1, nextShipmentId: 1, nextAssignmentId: 1, schemaVersion: 3, shipmentSemantics: 'destination-fleet-v2'};
   }
 
   function normalizeTimeUnit(value, fallback, min, max) {
@@ -235,7 +235,16 @@
     goods.lastSalesAt = typeof goods.lastSalesAt === 'string' && goods.lastSalesAt ? goods.lastSalesAt : null;
     delete goods.dailySalesHistory;
     goods.schemaVersion = Number.isFinite(Number(goods.schemaVersion)) ? Number(goods.schemaVersion) : 1;
-    logistics.orders = Array.isArray(logistics.orders) ? logistics.orders : [];
+    logistics.orders = Array.isArray(logistics.orders) ? logistics.orders.map(order => {
+      if (!order || typeof order !== 'object') return order;
+      const frequency = order.frequency === 'weekly' ? 'weekly' : order.frequency;
+      // Stable v2 -> v3 migration: old weekly orders implicitly ran on Monday.
+      const rawWeekday = Math.trunc(Number(order.weekday));
+      const weekday = frequency === 'weekly' && Number.isFinite(rawWeekday) && rawWeekday >= 0 && rawWeekday <= 6 ? rawWeekday : (frequency === 'weekly' ? 0 : null);
+      const legacyMinute = Math.max(0, Math.min(1439, Math.trunc(Number(order.departureHour) || 0) * 60 + Math.trunc(Number(order.departureMinute) || 0)));
+      const plannedDepartureAbsMinute = Number.isFinite(Number(order.plannedDepartureAbsMinute)) ? Math.max(0, Math.trunc(Number(order.plannedDepartureAbsMinute))) : legacyMinute;
+      return {...order, weekday, plannedDepartureAbsMinute};
+    }) : [];
     logistics.shipments = Array.isArray(logistics.shipments) ? logistics.shipments : [];
     logistics.assignments = Array.isArray(logistics.assignments) ? logistics.assignments : [];
     logistics.assignments = logistics.assignments.filter(assignment => {
@@ -254,11 +263,13 @@
       arrivalAbsMinute: Math.max(0, Number(assignment.arrivalAbsMinute)),
       status: ['planned', 'active', 'completed', 'cancelled'].includes(assignment.status) ? assignment.status : 'active',
     })).filter(assignment => assignment.vehicleIds.length && assignment.arrivalAbsMinute >= assignment.departureAbsMinute);
-    logistics.dispatchPlan = logistics.dispatchPlan && typeof logistics.dispatchPlan === 'object' && !Array.isArray(logistics.dispatchPlan) ? logistics.dispatchPlan : null;
+    // Plans depend on live network capacity, inventory and fleet positions. They
+    // are cheap to rebuild and are intentionally never trusted after hydration.
+    logistics.dispatchPlan = null;
     logistics.nextOrderId = Math.max(1, Math.trunc(Number(logistics.nextOrderId) || 1));
     logistics.nextShipmentId = Math.max(1, Math.trunc(Number(logistics.nextShipmentId) || 1));
     logistics.nextAssignmentId = Math.max(1, Math.trunc(Number(logistics.nextAssignmentId) || 1));
-    logistics.schemaVersion = 2;
+    logistics.schemaVersion = 3;
     logistics.shipmentSemantics = 'destination-fleet-v2';
     delete network.cash;
     delete fleet.cash;
