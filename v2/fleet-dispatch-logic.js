@@ -53,9 +53,13 @@
     for (const order of orders) {
       if (!order?.enabled) continue;
       for (let day = firstDay; day <= lastDay; day += 1) {
-        if (order.frequency === 'weekly' && (day - 1) % 7 !== 0) continue;
+        const weekday = Number.isFinite(Number(order.weekday)) ? Math.max(0, Math.min(6, Math.trunc(Number(order.weekday)))) : 0;
+        if (order.frequency === 'weekly' && (day - 1) % 7 !== weekday) continue;
         if (order.lastDispatchedDay === day) continue;
-        const departureAbsMinute = (day - 1) * MINUTES_PER_DAY + Number(order.departureHour) * 60 + Number(order.departureMinute);
+        const minuteOfDay = Number.isFinite(Number(order.plannedDepartureAbsMinute))
+          ? Math.trunc(Number(order.plannedDepartureAbsMinute)) % MINUTES_PER_DAY
+          : Number(order.departureHour) * 60 + Number(order.departureMinute);
+        const departureAbsMinute = (day - 1) * MINUTES_PER_DAY + minuteOfDay;
         if (departureAbsMinute < start || departureAbsMinute > end) continue;
         result.push({order, day, departureAbsMinute, priority: departureAbsMinute});
       }
@@ -211,7 +215,7 @@
 
   function plannedTrip(orderId, departureAbsMinute) {
     const plan = ensurePlan();
-    return plan?.legs?.find(leg => leg.type === 'shipment' && leg.orderId === Number(orderId) && leg.status === 'planned' && leg.departureAbsMinute <= Number(departureAbsMinute)) || null;
+    return plan?.legs?.find(leg => leg.type === 'shipment' && leg.orderId === Number(orderId) && leg.status === 'planned' && Math.abs(leg.departureAbsMinute - Number(departureAbsMinute)) <= 1) || null;
   }
 
   function consumeTrip(orderId, departureAbsMinute) {

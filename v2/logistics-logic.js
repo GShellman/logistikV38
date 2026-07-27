@@ -5,6 +5,10 @@
   const DEFAULT_VEHICLE_TYPE = 'van';
 
   const MINUTES_PER_DAY = 1440;
+  const DAYS_PER_WEEK = 7;
+  // 0 = Monday … 6 = Sunday. Legacy weekly orders ran on day 1 and therefore
+  // deliberately migrate to Monday when their saved weekday is absent.
+  const LEGACY_WEEKDAY = 0;
 
   let state = null;
   let cities = [];
@@ -19,7 +23,7 @@
       nextOrderId: 1,
       nextShipmentId: 1,
       nextAssignmentId: 1,
-      schemaVersion: 2,
+      schemaVersion: 3,
       shipmentSemantics: 'destination-fleet-v2',
       bundleWindowMinutes: 60,
       ...overrides,
@@ -47,6 +51,12 @@
     return String(value || '').trim();
   }
 
+  function normalizeWeekday(value, frequency = 'weekly') {
+    if (frequency !== 'weekly') return null;
+    const weekday = Math.trunc(Number(value));
+    return Number.isFinite(weekday) && weekday >= 0 && weekday < DAYS_PER_WEEK ? weekday : LEGACY_WEEKDAY;
+  }
+
   function normalizeOrder(order) {
     if (!order || typeof order !== 'object') return null;
     const id = positiveInteger(order.id, null);
@@ -54,10 +64,16 @@
     const toCityId = normalizeId(order.toCityId);
     const goodId = normalizeId(order.goodId);
     const frequency = String(order.frequency || '').trim();
-    const departureHour = normalizeHour(order.departureHour);
-    const departureMinute = normalizeMinute(order.departureMinute);
+    const planned = Number(order.plannedDepartureAbsMinute);
+    const legacyHour = normalizeHour(order.departureHour);
+    const legacyMinute = normalizeMinute(order.departureMinute);
+    const plannedDepartureAbsMinute = Number.isFinite(planned) && planned >= 0
+      ? Math.trunc(planned)
+      : (legacyHour ?? 8) * 60 + (legacyMinute ?? 0);
+    const departureHour = Math.floor((plannedDepartureAbsMinute % MINUTES_PER_DAY) / 60);
+    const departureMinute = plannedDepartureAbsMinute % 60;
     const amountKg = Math.max(0, Number(order.amountKg) || 0);
-    if (!id || !fromCityId || !toCityId || !goodId || !FREQUENCIES.has(frequency) || departureHour === null || departureMinute === null || amountKg <= 0) return null;
+    if (!id || !fromCityId || !toCityId || !goodId || !FREQUENCIES.has(frequency) || amountKg <= 0) return null;
     return {
       ...order,
       id,
@@ -65,6 +81,8 @@
       toCityId,
       goodId,
       frequency,
+      weekday: normalizeWeekday(order.weekday, frequency),
+      plannedDepartureAbsMinute,
       departureHour,
       departureMinute,
       vehicleType: normalizeId(order.vehicleType) || null,
@@ -139,11 +157,12 @@
     state.nextOrderId = Math.max(positiveInteger(state.nextOrderId), ...state.orders.map(order => order.id + 1), 1);
     state.nextShipmentId = Math.max(positiveInteger(state.nextShipmentId), ...state.shipments.map(shipment => shipment.id + 1), 1);
     state.nextAssignmentId = Math.max(positiveInteger(state.nextAssignmentId), ...state.assignments.map(assignment => Number(String(assignment.id).match(/\d+$/)?.[0] || 0) + 1), 1);
-    state.schemaVersion = 2;
+    state.schemaVersion = 3;
     state.shipmentSemantics = 'destination-fleet-v2';
     state.bundleWindowMinutes = Math.max(0, Math.trunc(Number(state.bundleWindowMinutes) || 60));
     cities = Array.isArray(options.cities) ? options.cities : cities;
-    citiesById = options.citiesById && typeof options.citiesById === 'object' ? options.citiesById : Object.fromEntries(cities.map(city => [String(city.id), city]));
+    if (options.citiesById && typeof options.citiesById === 'object') citiesById = options.citiesById;
+    else if (Array.isArray(options.cities)) citiesById = Object.fromEntries(cities.map(city => [String(city.id), city]));
     window.HFV2FleetDispatch?.configure?.({state});
     return state;
   }
@@ -163,7 +182,7 @@
     if (!order?.enabled) return false;
     const currentDay = Math.max(1, Math.trunc(Number(time?.day) || 1));
     if (order.lastDispatchedDay === currentDay) return false;
-    if (order.frequency === 'weekly' && ((currentDay - 1) % 7) !== 0) return false;
+    if (order.frequency === 'weekly' && ((currentDay - 1) % DAYS_PER_WEEK) !== normalizeWeekday(order.weekday)) return false;
     const currentDayMinute = Math.max(0, Math.trunc(Number(time?.hour) || 0) * 60 + Math.trunc(Number(time?.minute) || 0));
     return currentDayMinute >= order.departureHour * 60 + order.departureMinute;
   }
@@ -213,7 +232,9 @@
   function nextOrderDueAbsMinute(order, time = currentTime()) {
     if (!order?.enabled) return null;
     const currentDay = Math.max(1, Math.trunc(Number(time?.day) || 1));
-    const departureDayMinute = order.departureHour * 60 + order.departureMinute;
+    const departureDayMinute = Number.isFinite(Number(order.plannedDepartureAbsMinute))
+      ? Math.trunc(Number(order.plannedDepartureAbsMinute)) % MINUTES_PER_DAY
+      : order.departureHour * 60 + order.departureMinute;
     const currentDayMinute = Math.max(0, Math.trunc(Number(time?.hour) || 0) * 60 + Math.trunc(Number(time?.minute) || 0));
 
     if (order.frequency === 'daily') {
@@ -223,7 +244,8 @@
     }
 
     if (order.frequency === 'weekly') {
-      let dueDay = currentDay + ((7 - ((currentDay - 1) % 7)) % 7);
+      const weekday = normalizeWeekday(order.weekday);
+      let dueDay = currentDay + ((weekday - ((currentDay - 1) % DAYS_PER_WEEK) + DAYS_PER_WEEK) % DAYS_PER_WEEK);
       if ((order.lastDispatchedDay === dueDay) || (dueDay === currentDay && currentDayMinute >= departureDayMinute)) dueDay += 7;
       return (dueDay - 1) * MINUTES_PER_DAY + departureDayMinute;
     }
@@ -353,16 +375,83 @@
     return {ok: true, path, capacityKg, vehicleCount, departureAbsMinute: startAbsMinute, arrivalAbsMinute: endAbsMinute};
   }
 
+  function compatibleBundles(candidate, departureAbsMinute, capacityKg) {
+    const candidates = (state?.orders || []).filter(order => order.enabled && order.fromCityId === candidate.fromCityId
+      && (order.vehicleType || DEFAULT_VEHICLE_TYPE) === candidate.vehicleType
+      && Math.abs(nextOrderDueAbsMinute(order, currentTime()) - departureAbsMinute) <= bundleWindowMinutes());
+    const bundles = [];
+    for (const order of candidates) {
+      if (Number(order.amountKg) + Number(candidate.amountKg) > capacityKg) continue;
+      const route = buildMultiStopRoute(candidate.fromCityId, [candidate, order].map(item => ({toCityId: item.toCityId, goodId: item.goodId, amountKg: item.amountKg, orderId: item.id})), {vehicleType: candidate.vehicleType, departureAbsMinute});
+      if (!route) continue;
+      const utilization = (Number(order.amountKg) + Number(candidate.amountKg)) / capacityKg;
+      bundles.push({orderId: order.id, route, score: Math.round((1000 + utilization * 1000 - route.distance) * 100) / 100});
+    }
+    return bundles.sort((a, b) => b.score - a.score);
+  }
+
+  // Single source of truth used by the modal and createOrder. It scans stable
+  // 15-minute slots and includes deadheading, fleet timelines, stock and road capacity.
+  function findOrderSchedule(options = {}) {
+    configure();
+    const fromCityId = normalizeId(options.fromCityId);
+    const toCityId = normalizeId(options.toCityId);
+    const goodId = normalizeId(options.goodId);
+    const frequency = String(options.frequency || 'daily');
+    const weekday = normalizeWeekday(options.weekday, frequency);
+    const vehicleType = normalizeId(options.vehicleType) || DEFAULT_VEHICLE_TYPE;
+    const amountKg = Number(options.amountKg) > 0 ? Number(options.amountKg) : plannedOrderAmountKg(toCityId, goodId, frequency);
+    const capacityKg = vehicleCapacityKg(vehicleType);
+    const vehicleCount = capacityKg > 0 ? Math.ceil(amountKg / capacityKg) : 0;
+    const path = window.HFNetwork?.findPath?.(fromCityId, toCityId, {mode: 'road'});
+    if (!path?.reachable) return {ok: false, reason: 'no-route'};
+    if (!vehicleCount) return {ok: false, reason: 'capacity-invalid'};
+    const now = absoluteMinute(options.time || currentTime());
+    const currentStockKg = sourceStockKg(fromCityId, goodId);
+    // Creating the order itself adds its amount to outgoing production demand.
+    // If it is not on hand yet, plan no earlier than the next daily production
+    // cycle instead of making an otherwise valid first order impossible.
+    const stockReadyAbsMinute = currentStockKg >= amountKg
+      ? now
+      : (Math.floor(now / MINUTES_PER_DAY) + 1) * MINUTES_PER_DAY;
+    const horizonDays = Math.max(frequency === 'weekly' ? 14 : 7, Math.trunc(Number(options.horizonDays) || 0));
+    const first = Math.ceil((now + 1) / 15) * 15;
+    const vehicles = window.HFFleet?.getState?.().vehicles || [];
+    for (let departureAbsMinute = first; departureAbsMinute <= now + horizonDays * MINUTES_PER_DAY; departureAbsMinute += 15) {
+      if (departureAbsMinute < stockReadyAbsMinute) continue;
+      const day = Math.floor(departureAbsMinute / MINUTES_PER_DAY) + 1;
+      if (frequency === 'weekly' && (day - 1) % DAYS_PER_WEEK !== weekday) continue;
+      const duration = shipmentDurationMinutes(path, vehicleType);
+      const arrivalAbsMinute = departureAbsMinute + duration;
+      const capacityStatus = window.HFNetwork?.pathCapacityStatus?.(path, {startAbsMinute: departureAbsMinute, endAbsMinute: arrivalAbsMinute, units: vehicleCount});
+      if (capacityStatus?.ok === false) continue;
+      const feasibleVehicles = vehicles.filter(vehicle => {
+        if (vehicle.vehicleType !== vehicleType || Number(vehicle.availableAbsMinute || 0) > departureAbsMinute) return false;
+        const cityId = vehicle.routeSegment?.toCityId || vehicle.currentCityId;
+        if (cityId === fromCityId) return true;
+        const repositionPath = window.HFNetwork?.findPath?.(cityId, fromCityId, {mode: 'road'});
+        if (!repositionPath?.reachable) return false;
+        const repositionDuration = shipmentDurationMinutes(repositionPath, vehicleType);
+        if (Number(vehicle.availableAbsMinute || 0) + repositionDuration > departureAbsMinute) return false;
+        return window.HFNetwork?.pathCapacityStatus?.(repositionPath, {startAbsMinute: departureAbsMinute - repositionDuration, endAbsMinute: departureAbsMinute, units: 1})?.ok !== false;
+      });
+      if (feasibleVehicles.length < vehicleCount) continue;
+      const candidate = {fromCityId, toCityId, goodId, frequency, weekday, vehicleType, amountKg};
+      const bundles = compatibleBundles(candidate, departureAbsMinute, capacityKg);
+      return {ok: true, departureAbsMinute, arrivalAbsMinute, vehicleCount, vehicleIds: feasibleVehicles.slice(0, vehicleCount).map(vehicle => vehicle.id), path, bundles, bundle: bundles[0] || null, expectedStockKg: Math.max(currentStockKg, amountKg), stockProducedBeforeDeparture: currentStockKg < amountKg};
+    }
+    return {ok: false, reason: vehicles.some(vehicle => vehicle.vehicleType === vehicleType) ? 'no-feasible-slot' : 'no-vehicle'};
+  }
+
   function createOrder(options = {}) {
     configure();
     const fromCityId = normalizeId(options.fromCityId);
     const toCityId = normalizeId(options.toCityId);
     const goodId = normalizeId(options.goodId);
     const frequency = String(options.frequency || '').trim();
-    const departureHour = normalizeHour(options.departureHour);
-    const departureMinute = normalizeMinute(options.departureMinute);
     const vehicleType = normalizeId(options.vehicleType) || null;
-    if (!fromCityId || !toCityId || !goodId || departureHour === null || departureMinute === null) throw new Error('Missing or invalid order fields');
+    const weekday = normalizeWeekday(options.weekday, frequency);
+    if (!fromCityId || !toCityId || !goodId || !FREQUENCIES.has(frequency) || (frequency === 'weekly' && options.weekday == null)) throw new Error('Missing or invalid order fields');
     if (fromCityId === toCityId) throw new Error('Source and target city must be different');
     if (citiesById[fromCityId] === undefined && window.HFV2CitiesById?.[fromCityId] === undefined) throw new Error('Unknown source city');
     if (citiesById[toCityId] === undefined && window.HFV2CitiesById?.[toCityId] === undefined) throw new Error('Unknown target city');
@@ -372,9 +461,11 @@
       error.reason = 'no-demand';
       throw error;
     }
-    validateRoute(fromCityId, toCityId);
-    assertFleetVehicle(fromCityId, vehicleType);
-    const order = {id: state.nextOrderId++, fromCityId, toCityId, goodId, frequency, departureHour, departureMinute, vehicleType, amountKg, enabled: true, lastDispatchedDay: null};
+    const schedule = findOrderSchedule({...options, fromCityId, toCityId, goodId, frequency, weekday, vehicleType, amountKg});
+    if (!schedule.ok) { const error = new Error(schedule.reason); error.reason = schedule.reason; throw error; }
+    const departureHour = Math.floor((schedule.departureAbsMinute % MINUTES_PER_DAY) / 60);
+    const departureMinute = schedule.departureAbsMinute % 60;
+    const order = {id: state.nextOrderId++, fromCityId, toCityId, goodId, frequency, weekday, plannedDepartureAbsMinute: schedule.departureAbsMinute, plannedArrivalAbsMinute: schedule.arrivalAbsMinute, plannedVehicleCount: schedule.vehicleCount, departureHour, departureMinute, vehicleType, amountKg, enabled: true, lastDispatchedDay: null};
     state.orders.push(order);
     window.HFV2FleetDispatch?.invalidate?.('order-created');
     window.HFV2Save?.dispatchStateChanged?.('logistics-order-created');
@@ -1069,5 +1160,5 @@
     return completed;
   }
 
-  window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, createRepositioningAssignment, absoluteMinute, orderDueToday, nextOrderDueAbsMinute, getOutgoingProductionDemandMap, vehicleCapacityKg, splitIntoVehicleLoads, plannedOrderAmountKg, validateRoadShipment, buildMultiStopRoute};
+  window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, createRepositioningAssignment, absoluteMinute, orderDueToday, nextOrderDueAbsMinute, getOutgoingProductionDemandMap, vehicleCapacityKg, splitIntoVehicleLoads, plannedOrderAmountKg, validateRoadShipment, findOrderSchedule, buildMultiStopRoute};
 })();

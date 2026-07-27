@@ -287,7 +287,9 @@
       activeShipmentIds.add(id);
       let marker = shipmentMarkers.get(id);
       if (!marker) {
-        marker = L.marker(position, {icon: vehicleIcon(display), title: `${city.name || vehicle.currentCityId}: Fahrzeug wartet`, zIndexOffset: 450}).addTo(logisticsVehicleLayer);
+        // Parked vehicles are informational decoration. Keeping their Leaflet
+        // marker non-interactive lets clicks reach the city marker underneath.
+        marker = L.marker(position, {icon: vehicleIcon(display), title: `${city.name || vehicle.currentCityId}: Fahrzeug wartet`, zIndexOffset: 450, interactive: false, keyboard: false}).addTo(logisticsVehicleLayer);
         marker._hfV2VehicleType = vehicle.vehicleType;
         marker._hfV2DirectionRight = false;
         marker.bindTooltip(shipmentTooltip(display, city, city), {direction: 'top', sticky: true, className: 'city-label'});
