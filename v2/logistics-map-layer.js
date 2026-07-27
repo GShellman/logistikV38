@@ -112,13 +112,27 @@
   const MAX_VISIBLE_CARGO_ICONS = 3;
   const FINISHED_STOP_STATUSES = new Set(['delivered', 'failed', 'partial']);
 
+  function returnGoodIds(shipment) {
+    if (Array.isArray(shipment?.returnStops)) {
+      return [...new Set(shipment.returnStops
+        .filter(stop => stop?.goodId && Number(stop.amountKg) > 0 && !FINISHED_STOP_STATUSES.has(String(stop.status || '').toLowerCase()))
+        .map(stop => stop.goodId))];
+    }
+    return shipment?.returnGoodId && Number(shipment.returnAmountKg) > 0 ? [shipment.returnGoodId] : [];
+  }
+
   function loadedGoodIds(shipment) {
+    if (shipment?.status === 'returning') return returnGoodIds(shipment);
     if (Array.isArray(shipment?.stops) && shipment.stops.length > 0) {
       return [...new Set(shipment.stops
         .filter(stop => stop?.goodId && !FINISHED_STOP_STATUSES.has(String(stop.status || '').toLowerCase()))
         .map(stop => stop.goodId))];
     }
     return shipment?.goodId ? [shipment.goodId] : [];
+  }
+
+  function isEmptyTransport(shipment) {
+    return shipment?.type === 'repositioning' || (shipment?.status === 'returning' && loadedGoodIds(shipment).length === 0);
   }
 
   function loadedGoodNames(shipment) {
@@ -148,7 +162,7 @@
     const fallback = window.HFVehicleCatalog?.VEHICLE_CATALOG?.[vehicleType]?.icon || '🚚';
     const directionClass = isMovingRight ? ' hf-v2-shipment-asset--right' : '';
     const markerDirectionClass = isMovingRight ? ' hf-v2-shipment-marker--right' : '';
-    const transportKind = shipment?.type === 'repositioning' ? 'empty' : (shipment?.type === 'waiting' ? 'waiting' : 'loaded');
+    const transportKind = isEmptyTransport(shipment) ? 'empty' : (shipment?.type === 'waiting' ? 'waiting' : 'loaded');
     const groupCount = Math.max(1, Number(options.groupCount) || 1);
     const grouped = groupCount > 1;
     const arrow = isMovingRight ? '→' : '←';
@@ -287,10 +301,15 @@
   }
 
   function stopsMarkup(shipment) {
-    const stops = shipmentStops(shipment);
+    const isReturnTrip = shipment?.status === 'returning';
+    const stops = isReturnTrip && Array.isArray(shipment.returnStops)
+      ? shipment.returnStops.filter(stop => stop?.toCityId && stop?.goodId && Number(stop.amountKg) > 0)
+      : shipmentStops(shipment);
     if (!stops.length) {
-      const good = goodById(shipment.goodId);
-      return `<dl><div><dt>Ware</dt><dd>${escapeHtml(good.name || shipment.goodId || '–')}</dd></div><div><dt>Menge</dt><dd>${escapeHtml(formatGoodAmount(shipment.goodId, shipment.amountKg))}</dd></div></dl>`;
+      const goodId = isReturnTrip ? shipment.returnGoodId : shipment.goodId;
+      const amountKg = isReturnTrip ? shipment.returnAmountKg : shipment.amountKg;
+      const good = goodById(goodId);
+      return `<dl><div><dt>Ware</dt><dd>${escapeHtml(good.name || goodId || '–')}</dd></div><div><dt>Menge</dt><dd>${escapeHtml(formatGoodAmount(goodId, amountKg))}</dd></div></dl>`;
     }
     return `<ol class="hf-v2-transport-stops">${stops.map(stop => {
       const good = goodById(stop.goodId);
@@ -309,7 +328,7 @@
     return `<article class="hf-v2-transport-detail" tabindex="-1" aria-label="Transportdetails ${escapeHtml(from)} nach ${escapeHtml(to)}">
       <header><span class="hf-v2-transport-detail__kind hf-v2-transport-detail__kind--${escapeHtml(status.toLowerCase())}">${escapeHtml(status)}</span><h3>${escapeHtml(from)} <span aria-hidden="true">→</span> ${escapeHtml(to)}</h3></header>
       <section aria-label="Route und Status"><h4>Route &amp; Status</h4><dl><div><dt>Status</dt><dd>${escapeHtml(shipment.status || status)}</dd></div><div><dt>Fortschritt</dt><dd><strong>${percent}%</strong></dd></div></dl><div class="hf-v2-transport-detail__progress" role="progressbar" aria-label="Fortschritt" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><i style="width:${percent}%"></i></div></section>
-      <section aria-label="Ladung"><h4>Ladung</h4>${shipment.type === 'repositioning' ? '<p>Keine Ladung · Repositionierung</p>' : shipment.type === 'waiting' ? '<p>Keine Ladung · verfügbar</p>' : stopsMarkup(shipment)}</section>
+      <section aria-label="Ladung"><h4>Ladung</h4>${isEmptyTransport(shipment) ? `<p>Keine Ladung · ${shipment.status === 'returning' ? 'Rückfahrt' : 'Repositionierung'}</p>` : shipment.type === 'waiting' ? '<p>Keine Ladung · verfügbar</p>' : stopsMarkup(shipment)}</section>
       <section aria-label="Fahrzeugdaten"><h4>Fahrzeugdaten</h4>${vehiclesSection(shipment, fleet)}</section>
       <section aria-label="Zeitplan"><h4>Zeitplan</h4><dl><div><dt>Abfahrt</dt><dd><strong>${escapeHtml(Number.isFinite(Number(departure)) ? formatAbsMinute(departure) : '–')}</strong></dd></div><div><dt>Erwartete Ankunft</dt><dd><strong>${escapeHtml(Number.isFinite(Number(arrival)) ? formatAbsMinute(arrival) : '–')}</strong></dd></div></dl></section>
     </article>`;
@@ -320,7 +339,8 @@
     const {shipment, fromCity, toCity} = group[0];
     const from = fromCity?.name || shipment.fromCityId || shipment.currentCityId || '–';
     const to = toCity?.name || shipment.toCityId || shipment.currentCityId || '–';
-    return `<strong>${escapeHtml(from)} → ${escapeHtml(to)}</strong><br><span>${escapeHtml(tripLabel(shipment))} · Klicken für Details</span>`;
+    const status = shipment.status === 'returning' && isEmptyTransport(shipment) ? 'Rückfahrt · Leerfahrt' : tripLabel(shipment);
+    return `<strong>${escapeHtml(from)} → ${escapeHtml(to)}</strong><br><span>${escapeHtml(status)} · Klicken für Details</span>`;
   }
 
   const SHIPMENT_GROUP_DISTANCE_PX = 36;
@@ -381,7 +401,8 @@
       if (!position) return;
 
       const goodsTitle = loadedGoodNames(shipment);
-      const title = `${fromCity?.name || shipment.fromCityId} → ${toCity?.name || shipment.toCityId}${goodsTitle.length ? `, geladen: ${goodsTitle.join(', ')}` : ''}`;
+      const emptyReturnTitle = isReturnTrip && isEmptyTransport(shipment) ? ', Rückfahrt · Leerfahrt' : '';
+      const title = `${fromCity?.name || shipment.fromCityId} → ${toCity?.name || shipment.toCityId}${goodsTitle.length ? `, geladen: ${goodsTitle.join(', ')}` : emptyReturnTitle}`;
       entries.push({id, shipment, fromCity, toCity, coords, position, progress, title, zIndexOffset: 700, interactive: true});
     });
 
