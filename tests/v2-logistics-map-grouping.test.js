@@ -5,7 +5,7 @@ const vm = require('node:vm');
 
 const source = readFileSync('v2/logistics-map-layer.js', 'utf8');
 
-function setup() {
+function setup({goods, goodImage} = {}) {
   const layers = new Set();
   const map = {latLngToLayerPoint: ([lat, lng]) => ({x: lng * 10, y: lat * 10})};
   const L = {
@@ -32,7 +32,8 @@ function setup() {
     L,
     HFV2Time: {getState: () => ({day: 1, hour: 0, minute: 5})},
     HFV2Logistics: {absoluteMinute: () => 5},
-    HFV2GoodsCatalog: [{id: 'wood', name: 'Holz', unit: {unit: 'kg', kgPerUnit: 1}}],
+    HFV2GoodsCatalog: goods || [{id: 'wood', name: 'Holz', icon: '🪵', unit: {unit: 'kg', kgPerUnit: 1}}],
+    HFV2GoodsAssets: {goodImage: goodImage || (goodId => goodId === 'wood' ? '/goods/wood.png' : '')},
     HFV2VehicleAssets: {},
     HFVehicleCatalog: {VEHICLE_CATALOG: {truck: {name: 'Lastwagen', icon: '🚚'}}},
   };
@@ -59,6 +60,76 @@ test('ein einzelner Transport behält Fahrzeug, Richtung und Fortschritt', () =>
   assert.match(marker.options.icon.html, /hf-v2-transport-direction/);
   assert.match(marker.options.icon.html, /width:50%/);
   assert.doesNotMatch(marker.options.icon.html, /× 1/);
+  assert.match(marker.options.icon.html, /class="hf-v2-transport-marker__good-icon" src="\/goods\/wood\.png"/);
+  assert.match(marker.options.icon.html, /Geladene Waren: Holz/);
+  assert.match(marker.options.title, /geladen: Holz/);
+});
+
+test('Sammellieferungen zeigen eindeutige Waren und einen kompakten Überlauf', () => {
+  const goods = ['wood', 'apples', 'fish', 'tools', 'ore'].map(id => ({id, name: id.toUpperCase(), icon: '📦'}));
+  const {api, layers} = setup({goods, goodImage: id => `/goods/${id}.png`});
+  const bundled = {...shipment('bundle', [[0, 0], [0, 10]]), stops: [
+    {toCityId: 'b', goodId: 'wood', amountKg: 10},
+    {toCityId: 'b', goodId: 'apples', amountKg: 10},
+    {toCityId: 'b', goodId: 'fish', amountKg: 10},
+    {toCityId: 'b', goodId: 'tools', amountKg: 10},
+    {toCityId: 'b', goodId: 'ore', amountKg: 10},
+    {toCityId: 'b', goodId: 'wood', amountKg: 10},
+  ]};
+  api.renderActiveShipments([bundled], cities);
+  const [marker] = layers;
+  assert.equal((marker.options.icon.html.match(/<img class="hf-v2-transport-marker__good-icon"/g) || []).length, 3);
+  assert.match(marker.options.icon.html, /hf-v2-transport-marker__badge--multiple/);
+  assert.match(marker.options.icon.html, />\+2<\/span>/);
+  assert.match(marker.options.title, /WOOD, APPLES, FISH, TOOLS, ORE/);
+});
+
+test('bereits ausgeladene oder gescheiterte Stopps verschwinden aus dem Marker', () => {
+  const goods = [
+    {id: 'wood', name: 'Holz', icon: '🪵'},
+    {id: 'apples', name: 'Äpfel', icon: '🍎'},
+    {id: 'fish', name: 'Fisch', icon: '🐟'},
+    {id: 'tools', name: 'Werkzeug', icon: '🛠️'},
+  ];
+  const {api, layers} = setup({goods, goodImage: () => ''});
+  const bundled = {...shipment('unloaded', [[0, 0], [0, 10]]), stops: [
+    {toCityId: 'b', goodId: 'wood', amountKg: 10, status: 'delivered'},
+    {toCityId: 'b', goodId: 'apples', amountKg: 10, status: 'failed'},
+    {toCityId: 'b', goodId: 'fish', amountKg: 10, status: 'partial'},
+    {toCityId: 'b', goodId: 'tools', amountKg: 10, status: 'pending'},
+  ]};
+  api.renderActiveShipments([bundled], cities);
+  const [marker] = layers;
+  assert.match(marker.options.icon.html, /🛠️/);
+  assert.doesNotMatch(marker.options.icon.html, /🪵|🍎|🐟/);
+  assert.match(marker.options.title, /geladen: Werkzeug/);
+});
+
+test('fehlende Warenbilder verwenden Katalog-Icon und Paket-Fallback', () => {
+  const {api, layers} = setup({goods: [
+    {id: 'wood', name: 'Holz', icon: '🪵'},
+    {id: 'unknown', name: 'Unbekannt'},
+  ], goodImage: () => ''});
+  api.renderActiveShipments([
+    shipment('icon', [[0, 0], [0, 10]], 'b', 'wood'),
+    shipment('box', [[10, 0], [10, 10]], 'c', 'unknown'),
+  ], cities);
+  const html = [...layers].map(marker => marker.options.icon.html).join('');
+  assert.match(html, /🪵/);
+  assert.match(html, /📦/);
+});
+
+test('Leerfahrten und wartende Fahrzeuge behalten nicht-blaue Statusindikatoren', () => {
+  const {api, layers} = setup();
+  api.renderActiveShipments([], cities, [{
+    id: 'empty', type: 'repositioning', status: 'active', fromCityId: 'a', toCityId: 'b',
+    vehicleType: 'truck', departureAbsMinute: 0, arrivalAbsMinute: 10, routeGeometry: [[0, 0], [0, 10]],
+  }], [{id: 'idle', status: 'available', currentCityId: 'c', vehicleType: 'truck'}]);
+  const html = [...layers].map(marker => marker.options.icon.html).join('');
+  assert.match(html, /hf-v2-transport-marker--empty[\s\S]*hf-v2-transport-marker__badge--status[\s\S]*>○</);
+  assert.match(html, /hf-v2-transport-marker--waiting[\s\S]*hf-v2-transport-marker__badge--status[\s\S]*>P</);
+  assert.match(html, /aria-label="Leerfahrt"/);
+  assert.match(html, /aria-label="Fahrzeug wartet"/);
 });
 
 test('nahe Transporte werden mit Anzahl und Lieferdetails gruppiert', () => {

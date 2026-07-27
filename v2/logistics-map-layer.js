@@ -107,6 +107,38 @@
     return `Tag ${day} · ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
   }
 
+  const MAX_VISIBLE_CARGO_ICONS = 3;
+  const FINISHED_STOP_STATUSES = new Set(['delivered', 'failed', 'partial']);
+
+  function loadedGoodIds(shipment) {
+    if (Array.isArray(shipment?.stops) && shipment.stops.length > 0) {
+      return [...new Set(shipment.stops
+        .filter(stop => stop?.goodId && !FINISHED_STOP_STATUSES.has(String(stop.status || '').toLowerCase()))
+        .map(stop => stop.goodId))];
+    }
+    return shipment?.goodId ? [shipment.goodId] : [];
+  }
+
+  function loadedGoodNames(shipment) {
+    return loadedGoodIds(shipment).map(goodId => goodById(goodId).name || goodId);
+  }
+
+  function cargoIcon(goodId) {
+    const good = goodById(goodId);
+    const src = window.HFV2GoodsAssets?.goodImage?.(goodId) || '';
+    if (src) return `<img class="hf-v2-transport-marker__good-icon" src="${escapeHtml(src)}" alt="" aria-hidden="true" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="hf-v2-transport-marker__good-icon hf-v2-transport-marker__good-icon--fallback" aria-hidden="true" hidden>${escapeHtml(good.icon || '📦')}</span>`;
+    return `<span class="hf-v2-transport-marker__good-icon hf-v2-transport-marker__good-icon--fallback" aria-hidden="true">${escapeHtml(good.icon || '📦')}</span>`;
+  }
+
+  function cargoBadge(shipment) {
+    const goodIds = loadedGoodIds(shipment);
+    const visible = goodIds.slice(0, MAX_VISIBLE_CARGO_ICONS);
+    const overflow = goodIds.length - visible.length;
+    const modifier = goodIds.length > 1 ? ' hf-v2-transport-marker__badge--multiple' : ' hf-v2-transport-marker__badge--single';
+    const icons = visible.length ? visible.map(cargoIcon).join('') : cargoIcon('');
+    return `<span class="hf-v2-transport-marker__badge${modifier}" aria-hidden="true">${icons}${overflow > 0 ? `<span class="hf-v2-transport-marker__overflow">+${overflow}</span>` : ''}</span>`;
+  }
+
   function vehicleIcon(shipment, isMovingRight = false, progress = 0, options = {}) {
     const vehicleType = String(shipment?.vehicleType || '').trim();
     const src = window.HFV2VehicleAssets?.roadVehicleImage?.(vehicleType) || window.HFV2VehicleAssets?.vehicleImage?.(vehicleType) || '';
@@ -118,9 +150,14 @@
     const groupCount = Math.max(1, Number(options.groupCount) || 1);
     const grouped = groupCount > 1;
     const arrow = isMovingRight ? '→' : '←';
-    const html = `<div class="hf-v2-transport-marker hf-v2-transport-marker--${transportKind}${grouped ? ' hf-v2-transport-marker--group' : ''}">${src
+    const cargoNames = loadedGoodNames(shipment);
+    const accessibleStatus = transportKind === 'loaded' ? `Geladene Waren: ${cargoNames.join(', ') || 'unbekannt'}` : (transportKind === 'empty' ? 'Leerfahrt' : 'Fahrzeug wartet');
+    const badge = grouped
+      ? `<span class="hf-v2-transport-marker__group-count" aria-hidden="true">× ${groupCount}</span>`
+      : (transportKind === 'loaded' ? cargoBadge(shipment) : `<span class="hf-v2-transport-marker__badge hf-v2-transport-marker__badge--status" aria-hidden="true">${transportKind === 'empty' ? '○' : 'P'}</span>`);
+    const html = `<div class="hf-v2-transport-marker hf-v2-transport-marker--${transportKind}${grouped ? ' hf-v2-transport-marker--group' : ''}" role="img" aria-label="${escapeHtml(accessibleStatus)}" title="${escapeHtml(accessibleStatus)}">${src
       ? `<img class="hf-v2-shipment-asset${directionClass}" src="${escapeHtml(src)}"${fallbackSrc && fallbackSrc !== src ? ` onerror="this.onerror=null;this.src='${escapeHtml(fallbackSrc)}';"` : ''} alt="" aria-hidden="true">`
-      : `<div class="hf-v2-shipment-marker${markerDirectionClass}"><span class="hf-v2-shipment-marker__emoji" aria-hidden="true">${escapeHtml(fallback)}</span></div>`}${grouped ? '' : `<span class="hf-v2-transport-direction" aria-hidden="true">${arrow}</span>`}<span class="hf-v2-transport-progress" aria-hidden="true"><i style="width:${Math.round(clamp01(progress) * 100)}%"></i></span><span class="hf-v2-transport-marker__badge${grouped ? ' hf-v2-transport-marker__badge--count' : ''}" aria-hidden="true">${grouped ? `× ${groupCount}` : (transportKind === 'loaded' ? '●' : (transportKind === 'empty' ? '○' : 'P'))}</span></div>`;
+      : `<div class="hf-v2-shipment-marker${markerDirectionClass}"><span class="hf-v2-shipment-marker__emoji" aria-hidden="true">${escapeHtml(fallback)}</span></div>`}${grouped ? '' : `<span class="hf-v2-transport-direction" aria-hidden="true">${arrow}</span>`}<span class="hf-v2-transport-progress" aria-hidden="true"><i style="width:${Math.round(clamp01(progress) * 100)}%"></i></span>${badge}</div>`;
     return L.divIcon({className: '', html, iconSize: [50, 50], iconAnchor: [25, 25]});
   }
 
@@ -304,7 +341,8 @@
       const position = interpolateAlongPolyline(coords, progress);
       if (!position) return;
 
-      const title = `${fromCity?.name || shipment.fromCityId} → ${toCity?.name || shipment.toCityId}`;
+      const goodsTitle = loadedGoodNames(shipment);
+      const title = `${fromCity?.name || shipment.fromCityId} → ${toCity?.name || shipment.toCityId}${goodsTitle.length ? `, geladen: ${goodsTitle.join(', ')}` : ''}`;
       entries.push({id, shipment, fromCity, toCity, coords, position, progress, title, zIndexOffset: 700, interactive: true});
     });
 
