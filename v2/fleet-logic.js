@@ -128,5 +128,19 @@
     return released;
   }
 
-  window.HFFleet = {VEHICLES, VEHICLE_TYPES, STARTING_CASH, createFleetState, configure, getState, getVehiclesAtCity, getAvailableVehicles, getOwnedCountByType, getFleetSummary, buyVehicle, sellVehicle, assignVehicles, releaseAssignment};
+  function updateAssignment(assignmentId, updates = {}) {
+    const id = normalizeId(assignmentId);
+    if (!id) return [];
+    const assigned = getState().vehicles.filter(vehicle => vehicle.activeAssignmentId === id);
+    for (const vehicle of assigned) {
+      if (updates.status === 'assigned' || updates.status === 'returning') vehicle.status = updates.status;
+      if (updates.currentCityId !== undefined) vehicle.currentCityId = normalizeId(updates.currentCityId) || vehicle.currentCityId;
+      if (Number.isFinite(Number(updates.availableAbsMinute))) vehicle.availableAbsMinute = Math.max(0, Number(updates.availableAbsMinute));
+      if (updates.routeSegment === null) delete vehicle.routeSegment;
+      else if (updates.routeSegment && typeof updates.routeSegment === 'object') vehicle.routeSegment = {...updates.routeSegment};
+    }
+    return assigned;
+  }
+
+  window.HFFleet = {VEHICLES, VEHICLE_TYPES, STARTING_CASH, createFleetState, configure, getState, getVehiclesAtCity, getAvailableVehicles, getOwnedCountByType, getFleetSummary, buyVehicle, sellVehicle, assignVehicles, releaseAssignment, updateAssignment};
 })();
