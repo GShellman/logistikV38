@@ -264,7 +264,7 @@
     return Math.round(Math.max(basePrice * minimumFactor, price) * 100) / 100;
   }
 
-  function addToInventory(cityId, goodId, kg) {
+  function addToInventory(cityId, goodId, kg, options = {}) {
     const id = assertGoodId(goodId);
     const amount = normalizeKg(kg);
     const free = Math.max(0, getCapacityKg(cityId) - getUsedCapacityKg(cityId));
@@ -272,7 +272,7 @@
     const added = Math.min(amount, free);
     if (added <= 0) return {ok: false, reason: 'capacity-full', addedKg: 0, requestedKg: amount, freeCapacityKg: free, inventory};
     inventory[id] = (Number(inventory[id]) || 0) + added;
-    window.HFV2Save?.dispatchStateChanged?.('goods-inventory-added');
+    if (options.notify !== false) window.HFV2Save?.dispatchStateChanged?.('goods-inventory-added');
     return {ok: added === amount, reason: added === amount ? null : 'capacity-limited', addedKg: added, requestedKg: amount, freeCapacityKg: free, inventory};
   }
 

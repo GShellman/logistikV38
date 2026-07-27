@@ -105,7 +105,7 @@
     if (!id || !orderId || !fromCityId || !toCityId || !goodId || amountKg <= 0 || !Number.isFinite(departureAbsMinute) || !Number.isFinite(arrivalAbsMinute)) return null;
     const vehicleIds = Array.isArray(shipment.vehicleIds) ? [...new Set(shipment.vehicleIds.map(value => Number(value)).filter(Number.isFinite))] : [];
     const vehicleCount = vehicleIds.length || positiveInteger(shipment.vehicleCount, 1);
-    const status = ['active', 'returning', 'returned', 'delivered', 'failed', 'partial'].includes(shipment.status) ? shipment.status : 'active';
+    const status = ['active', 'delivering', 'returning', 'returned', 'delivered', 'failed', 'partial'].includes(shipment.status) ? shipment.status : 'active';
     const createdAtAbsMinute = Number.isFinite(Number(shipment.createdAtAbsMinute)) ? Number(shipment.createdAtAbsMinute) : departureAbsMinute;
     const pathNodeIds = Array.isArray(shipment.pathNodeIds) ? shipment.pathNodeIds.map(normalizeId).filter(Boolean) : [];
     const pathEdgeIds = Array.isArray(shipment.pathEdgeIds) ? shipment.pathEdgeIds.map(normalizeId).filter(Boolean) : [];
@@ -117,7 +117,7 @@
       const amountKg = Math.max(0, Number(stop?.amountKg) || 0);
       const deliveredKg = Math.max(0, Math.min(amountKg, Number(stop?.deliveredKg) || 0));
       const undeliveredKg = Number.isFinite(Number(stop?.undeliveredKg)) ? Math.max(0, Number(stop.undeliveredKg)) : Math.max(0, amountKg - deliveredKg);
-      const status = ['pending', 'delivered', 'failed', 'partial'].includes(stop?.status) ? stop.status : (deliveredKg > 0 ? (deliveredKg >= amountKg ? 'delivered' : 'partial') : 'pending');
+      const status = ['pending', 'processing', 'delivered', 'failed', 'partial'].includes(stop?.status) ? stop.status : (deliveredKg > 0 ? (deliveredKg >= amountKg ? 'delivered' : 'partial') : 'pending');
       const stopArrivalAbsMinute = Number(stop?.arrivalAbsMinute);
       return {
         ...stop,
@@ -150,10 +150,13 @@
   }
 
   function configure(options = {}) {
+    const mustNormalize = Boolean(options.state) || !state;
     state = options.state || state || createLogisticsState();
-    state.orders = Array.isArray(state.orders) ? state.orders.map(normalizeOrder).filter(Boolean) : [];
-    state.shipments = Array.isArray(state.shipments) ? state.shipments.map(normalizeShipment).filter(Boolean) : [];
-    state.assignments = Array.isArray(state.assignments) ? state.assignments.map(normalizeAssignment).filter(Boolean) : [];
+    if (mustNormalize) {
+      state.orders = Array.isArray(state.orders) ? state.orders.map(normalizeOrder).filter(Boolean) : [];
+      state.shipments = Array.isArray(state.shipments) ? state.shipments.map(normalizeShipment).filter(Boolean) : [];
+      state.assignments = Array.isArray(state.assignments) ? state.assignments.map(normalizeAssignment).filter(Boolean) : [];
+    }
     state.nextOrderId = Math.max(positiveInteger(state.nextOrderId), ...state.orders.map(order => order.id + 1), 1);
     state.nextShipmentId = Math.max(positiveInteger(state.nextShipmentId), ...state.shipments.map(shipment => shipment.id + 1), 1);
     state.nextAssignmentId = Math.max(positiveInteger(state.nextAssignmentId), ...state.assignments.map(assignment => Number(String(assignment.id).match(/\d+$/)?.[0] || 0) + 1), 1);
@@ -168,7 +171,7 @@
   }
 
   function getState() {
-    return configure();
+    return state || configure();
   }
 
   function absoluteMinute(time) {
@@ -1111,14 +1114,19 @@
 
   function markStopDelivered(stop, nowAbsMinute) {
     const amountKg = Math.max(0, Number(stop.amountKg) || 0);
-    const result = window.HFV2Goods?.addToInventory?.(stop.toCityId, stop.goodId, amountKg);
+    // Inventory and transport form one logical update. Suppress the goods event so
+    // observers cannot inspect (or normalize) logistics halfway through it.
+    const result = window.HFV2Goods?.addToInventory?.(stop.toCityId, stop.goodId, amountKg, {notify: false});
     const deliveredKg = Math.max(0, Math.min(amountKg, Number(result?.addedKg) || 0));
-    stop.deliveredKg = Math.round(deliveredKg * 1000) / 1000;
-    stop.undeliveredKg = Math.max(0, Math.round((amountKg - stop.deliveredKg) * 1000) / 1000);
-    stop.deliveredAbsMinute = nowAbsMinute;
-    stop.status = stop.deliveredKg >= amountKg ? 'delivered' : (stop.deliveredKg > 0 ? 'partial' : 'failed');
-    if (stop.status === 'failed') window.HFV2FleetDispatch?.invalidate?.('shipment-failed', nowAbsMinute);
-    return stop.deliveredKg;
+    const addedKg = Math.round(deliveredKg * 1000) / 1000;
+    const undeliveredKg = Math.max(0, Math.round((amountKg - addedKg) * 1000) / 1000);
+    const status = addedKg >= amountKg ? 'delivered' : (addedKg > 0 ? 'partial' : 'failed');
+    return {addedKg, deliveredKg: addedKg, undeliveredKg, deliveredAbsMinute: nowAbsMinute, status};
+  }
+
+  function applyStopDelivery(stop, delivery, nowAbsMinute) {
+    Object.assign(stop, delivery);
+    if (delivery.status === 'failed') window.HFV2FleetDispatch?.invalidate?.('shipment-failed', nowAbsMinute);
   }
 
   function refreshShipmentDeliveryTotals(shipment) {
@@ -1141,7 +1149,12 @@
             const stopStatus = ['delivered', 'failed', 'partial'].includes(stop.status) ? stop.status : 'pending';
             const arrivalAbsMinute = Number.isFinite(Number(stop.arrivalAbsMinute)) ? Number(stop.arrivalAbsMinute) : Number(shipment.arrivalAbsMinute);
             if (stopStatus === 'pending' && Number.isFinite(arrivalAbsMinute) && arrivalAbsMinute <= nowAbsMinute) {
-              markStopDelivered(stop, nowAbsMinute);
+              stop.status = 'processing';
+              const stopIndex = shipment.stops.indexOf(stop);
+              const delivery = markStopDelivered(stop, nowAbsMinute);
+              const currentShipment = state.shipments.find(candidate => candidate.id === shipment.id);
+              const currentStop = currentShipment?.stops?.[stopIndex];
+              if (currentStop) applyStopDelivery(currentStop, delivery, nowAbsMinute);
               processedStop = true;
             }
           }
@@ -1161,12 +1174,17 @@
 
         if (shipment.arrivalAbsMinute <= nowAbsMinute) {
           const stop = {toCityId: shipment.toCityId, goodId: shipment.goodId, amountKg: shipment.amountKg, orderId: shipment.orderId};
-          markStopDelivered(stop, nowAbsMinute);
-          shipment.deliveredKg = stop.deliveredKg;
-          shipment.undeliveredKg = stop.undeliveredKg;
-          shipment.deliveredAbsMinute = nowAbsMinute;
-          completeShipmentAtDestination(shipment, shipment.toCityId, Number(shipment.arrivalAbsMinute));
-          completed.push(shipment);
+          shipment.status = 'delivering';
+          const delivery = markStopDelivered(stop, nowAbsMinute);
+          const currentShipment = state.shipments.find(candidate => candidate.id === shipment.id);
+          if (!currentShipment) continue;
+          currentShipment.addedKg = delivery.addedKg;
+          currentShipment.deliveredKg = delivery.deliveredKg;
+          currentShipment.undeliveredKg = delivery.undeliveredKg;
+          currentShipment.deliveredAbsMinute = delivery.deliveredAbsMinute;
+          if (delivery.status === 'failed') window.HFV2FleetDispatch?.invalidate?.('shipment-failed', nowAbsMinute);
+          completeShipmentAtDestination(currentShipment, currentShipment.toCityId, Number(currentShipment.arrivalAbsMinute));
+          completed.push(currentShipment);
           continue;
         }
       }

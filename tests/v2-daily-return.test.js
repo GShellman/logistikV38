@@ -58,3 +58,41 @@ test('keine automatische Rückkehr, wenn sie nicht bis 23:59 abgeschlossen werde
   assert.equal(state.shipments[0].status, 'delivered');
   assert.equal(window.HFFleet.getState().vehicles[0].currentCityId, 'bern');
 });
+
+test('reduzierte Auslieferung bleibt bei synchronem State-Listener atomar und wird nur einmal verarbeitet', () => {
+  const {window, state} = harness({alternativeVehicles: 1});
+  let destinationStockKg = 0;
+  let inventoryCalls = 0;
+  let stateChangedCalls = 0;
+  let observedShipment = null;
+
+  window.HFV2Save.dispatchStateChanged = () => {
+    stateChangedCalls += 1;
+    observedShipment = window.HFV2Logistics.getState().shipments[0];
+  };
+  window.HFV2Goods.addToInventory = (_cityId, _goodId, amountKg, options = {}) => {
+    inventoryCalls += 1;
+    const addedKg = Math.min(40, amountKg);
+    destinationStockKg += addedKg;
+    if (options.notify !== false) window.HFV2Save.dispatchStateChanged('goods-inventory-added');
+    return {ok: false, reason: 'capacity-limited', addedKg};
+  };
+
+  const shipmentBeforeAdvance = window.HFV2Logistics.getState().shipments[0];
+  window.HFV2Logistics.advanceShipments();
+  window.HFV2Logistics.advanceShipments();
+  window.HFV2Logistics.advanceShipments();
+
+  const shipment = state.shipments[0];
+  assert.equal(destinationStockKg, 40);
+  assert.equal(inventoryCalls, 1);
+  assert.equal(stateChangedCalls, 1);
+  assert.strictEqual(observedShipment, shipmentBeforeAdvance);
+  assert.strictEqual(window.HFV2Logistics.getState().shipments[0], shipmentBeforeAdvance);
+  assert.equal(shipment.addedKg, 40);
+  assert.equal(shipment.deliveredKg, 40);
+  assert.equal(shipment.undeliveredKg, 60);
+  assert.equal(shipment.status, 'partial');
+  assert.equal(window.HFFleet.getState().vehicles[0].currentCityId, 'bern');
+  assert.equal(window.HFFleet.getState().vehicles[0].status, 'available');
+});
