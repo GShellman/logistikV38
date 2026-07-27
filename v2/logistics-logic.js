@@ -875,7 +875,63 @@
     return completed;
   }
 
+  function shipmentOrders(shipment) {
+    const orderIds = Array.isArray(shipment.stops) && shipment.stops.length
+      ? shipment.stops.map(stop => positiveInteger(stop.orderId, null)).filter(Boolean)
+      : [positiveInteger(shipment.orderId, null)].filter(Boolean);
+    return [...new Set(orderIds)].map(orderId => state.orders.find(order => order.id === orderId)).filter(Boolean);
+  }
+
+  function beginRequiredDailyReturn(shipment, destinationCityId, arrivalAbsMinute) {
+    const dailyOrders = shipmentOrders(shipment).filter(order => order.frequency === 'daily' && order.fromCityId === shipment.fromCityId);
+    if (!dailyOrders.length || destinationCityId === shipment.fromCityId) return false;
+
+    const nextDepartureAbsMinute = Math.min(...dailyOrders.map(order => {
+      const arrivalDay = Math.floor(arrivalAbsMinute / MINUTES_PER_DAY) + 1;
+      return arrivalDay * MINUTES_PER_DAY + order.departureHour * 60 + order.departureMinute;
+    }));
+    const requiredCount = Math.max(1, Math.trunc(Number(shipment.vehicleCount) || shipment.vehicleIds?.length || 1));
+    const alternatives = window.HFFleet?.getAvailableVehicles?.({
+      cityId: shipment.fromCityId,
+      vehicleType: shipment.vehicleType,
+      atAbsMinute: nextDepartureAbsMinute,
+    }) || [];
+    if (alternatives.length >= requiredCount) return false;
+
+    const path = window.HFNetwork?.findPath?.(destinationCityId, shipment.fromCityId, {mode: 'road'});
+    if (!path?.reachable) return false;
+    const returnDepartureAbsMinute = arrivalAbsMinute;
+    const returnArrivalAbsMinute = returnDepartureAbsMinute + shipmentDurationMinutes(path, shipment.vehicleType);
+    const endOfDayAbsMinute = (Math.floor(arrivalAbsMinute / MINUTES_PER_DAY) + 1) * MINUTES_PER_DAY - 1;
+    if (returnArrivalAbsMinute > endOfDayAbsMinute) return false;
+
+    const reservationId = `shipment-${shipment.id}-daily-return`;
+    const reservation = window.HFNetwork?.reservePathCapacity?.(path, {
+      startAbsMinute: returnDepartureAbsMinute,
+      endAbsMinute: returnArrivalAbsMinute,
+      units: requiredCount,
+      reservationId,
+    });
+    if (reservation?.ok === false) return false;
+
+    shipment.returnDepartureAbsMinute = returnDepartureAbsMinute;
+    shipment.returnArrivalAbsMinute = returnArrivalAbsMinute;
+    shipment.returnGeometry = pathRouteGeometry(path);
+    shipment.returnPathNodeIds = Array.isArray(path.nodes) ? path.nodes.map(normalizeId).filter(Boolean) : [];
+    shipment.returnPathEdgeIds = Array.isArray(path.edges) ? path.edges.map(pathEdgeId).filter(Boolean) : [];
+    shipment.returnReservationId = reservation?.reservationId || reservationId;
+    shipment.status = 'returning';
+    window.HFFleet?.updateAssignment?.(shipment.id, {
+      status: 'returning',
+      currentCityId: destinationCityId,
+      availableAbsMinute: returnArrivalAbsMinute,
+      routeSegment: {fromCityId: destinationCityId, toCityId: shipment.fromCityId},
+    });
+    return true;
+  }
+
   function completeShipmentAtDestination(shipment, destinationCityId, arrivalAbsMinute) {
+    if (beginRequiredDailyReturn(shipment, destinationCityId, arrivalAbsMinute)) return;
     shipment.status = shipment.undeliveredKg > 0 ? (shipment.deliveredKg > 0 ? 'partial' : 'failed') : 'delivered';
     window.HFFleet?.releaseAssignment?.(shipment.id, destinationCityId, arrivalAbsMinute);
   }
