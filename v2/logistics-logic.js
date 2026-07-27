@@ -114,7 +114,8 @@
       };
     }).filter(stop => stop.toCityId && stop.goodId && stop.amountKg > 0 && stop.orderId) : null;
     const shipmentSemantics = normalizeId(shipment.shipmentSemantics) || 'legacy-return-v1';
-    return {...shipment, id, orderId, fromCityId, toCityId, goodId, amountKg, vehicleIds, vehicleCount, pathNodeIds, pathEdgeIds, geometry, routeGeometry: geometry, returnGeometry, departureAbsMinute, arrivalAbsMinute, returnDepartureAbsMinute, returnArrivalAbsMinute, status, createdAtAbsMinute, shipmentSemantics, ...(stops ? {stops} : {})};
+    const costs = shipment.costs && typeof shipment.costs === 'object' ? {...shipment.costs, booked: shipment.costs.booked === true} : undefined;
+    return {...shipment, id, orderId, fromCityId, toCityId, goodId, amountKg, vehicleIds, vehicleCount, pathNodeIds, pathEdgeIds, geometry, routeGeometry: geometry, returnGeometry, departureAbsMinute, arrivalAbsMinute, returnDepartureAbsMinute, returnArrivalAbsMinute, status, createdAtAbsMinute, shipmentSemantics, ...(costs ? {costs} : {}), ...(stops ? {stops} : {})};
   }
 
   function normalizeAssignment(assignment) {
@@ -126,7 +127,8 @@
     const arrivalAbsMinute = Number(assignment.arrivalAbsMinute);
     const vehicleIds = Array.isArray(assignment.vehicleIds) ? [...new Set(assignment.vehicleIds.map(Number).filter(Number.isFinite))] : [];
     if (!id || !fromCityId || !toCityId || !vehicleIds.length || !Number.isFinite(departureAbsMinute) || !Number.isFinite(arrivalAbsMinute)) return null;
-    return {...assignment, id, type: 'repositioning', fromCityId, toCityId, vehicleIds, departureAbsMinute, arrivalAbsMinute, route: assignment.route && typeof assignment.route === 'object' ? assignment.route : {}, capacityReservationIds: Array.isArray(assignment.capacityReservationIds) ? assignment.capacityReservationIds.map(normalizeId).filter(Boolean) : [], costs: assignment.costs && typeof assignment.costs === 'object' ? assignment.costs : {total: Math.max(0, Number(assignment.cost) || 0)}, status: ['planned', 'active', 'completed', 'cancelled'].includes(assignment.status) ? assignment.status : 'active'};
+    const costs = assignment.costs && typeof assignment.costs === 'object' ? {...assignment.costs, booked: assignment.costs.booked === true} : {total: Math.max(0, Number(assignment.cost) || 0), booked: false};
+    return {...assignment, id, type: 'repositioning', fromCityId, toCityId, vehicleIds, departureAbsMinute, arrivalAbsMinute, route: assignment.route && typeof assignment.route === 'object' ? assignment.route : {}, capacityReservationIds: Array.isArray(assignment.capacityReservationIds) ? assignment.capacityReservationIds.map(normalizeId).filter(Boolean) : [], costs, status: ['planned', 'active', 'completed', 'cancelled'].includes(assignment.status) ? assignment.status : 'active'};
   }
 
   function configure(options = {}) {
@@ -168,6 +170,23 @@
 
   function vehicleSpec(vehicleType) {
     return window.HFFleet?.VEHICLES?.[vehicleType] || window.HFVehicleCatalog?.VEHICLE_CATALOG?.[vehicleType] || null;
+  }
+
+  function tripCosts(distanceKm, vehicleType, vehicleCount) {
+    const distance = Math.max(0, Number(distanceKm) || 0);
+    const perVehicleKm = Math.max(0, Number(vehicleSpec(vehicleType)?.kmCost) || 0);
+    const count = Math.max(1, Math.trunc(Number(vehicleCount) || 1));
+    return {distanceKm: distance, perVehicleKm, vehicleCount: count, total: Math.round(distance * perVehicleKm * count * 100) / 100, booked: false};
+  }
+
+  function bookTripCosts(record, category, prefix) {
+    if (!record?.costs || record.costs.booked) return false;
+    const bookingId = record.costBookingId || `${prefix}:${record.id}`;
+    record.costBookingId = bookingId;
+    const total = Math.max(0, Number(record.costs.total) || 0);
+    if (total) window.HFV2Save?.changeCash?.(-total, category, {bookingId, absMinute: record.departureAbsMinute, reference: prefix === 'shipment' ? {shipmentId: record.id} : {assignmentId: record.id}});
+    record.costs.booked = true;
+    return true;
   }
 
   function vehicleCapacityKg(vehicleType) {
@@ -652,8 +671,10 @@
       status: 'active',
       shipmentSemantics: 'destination-fleet-v2',
       createdAtAbsMinute: nowAbsMinute,
+      costs: tripCosts(path.distance, vehicleType, assigned.length),
     };
     state.shipments.push(shipment);
+    bookTripCosts(shipment, 'logistics-shipment-cost', 'shipment');
     created.push(shipment);
     order.lastDispatchedDay = Math.max(1, Math.trunc(Number(time.day) || 1));
     markOrderDispatchResult(order, 'created');
@@ -740,8 +761,10 @@
       status: 'active',
       shipmentSemantics: 'destination-fleet-v2',
       createdAtAbsMinute: nowAbsMinute,
+      costs: tripCosts(route.distance, vehicleType, assigned.length),
     };
     state.shipments.push(shipment);
+    bookTripCosts(shipment, 'logistics-shipment-cost', 'shipment');
     created.push(shipment);
     for (const order of orders) {
       order.lastDispatchedDay = Math.max(1, Math.trunc(Number(time.day) || 1));
@@ -822,9 +845,11 @@
     const durationMinutes = shipmentDurationMinutes(path, vehicleType);
     const arrivalAbsMinute = departureAbsMinute + durationMinutes;
     const id = `repositioning-${state.nextAssignmentId}`;
+    const nowAbsMinute = absoluteMinute(currentTime());
+    const isPlanned = departureAbsMinute > nowAbsMinute;
     const reservation = window.HFNetwork?.reservePathCapacity?.(path, {startAbsMinute: departureAbsMinute, endAbsMinute: arrivalAbsMinute, units: selected.length, reservationId: id});
     if (reservation?.ok === false) return {ok: false, reason: reservation.reason || 'route-overloaded'};
-    const assigned = window.HFFleet?.assignVehicles?.({cityId: fromCityId, vehicleType, vehicleIds: requestedIds, count: selected.length, assignmentId: id, departureAbsMinute, availableAbsMinute: arrivalAbsMinute, routeSegment: {fromCityId, toCityId}}) || [];
+    const assigned = isPlanned ? selected : (window.HFFleet?.assignVehicles?.({cityId: fromCityId, vehicleType, vehicleIds: requestedIds, count: selected.length, assignmentId: id, departureAbsMinute, availableAbsMinute: arrivalAbsMinute, routeSegment: {fromCityId, toCityId}}) || []);
     if (assigned.length !== selected.length) {
       window.HFFleet?.releaseAssignment?.(id, fromCityId, departureAbsMinute);
       window.HFNetwork?.releaseCapacityReservation?.(reservation?.reservationId || id);
@@ -833,10 +858,10 @@
     const spec = vehicleSpec(vehicleType) || {};
     const distanceKm = Math.max(0, Number(path.distance) || 0);
     const total = Math.round(distanceKm * Math.max(0, Number(spec.kmCost) || 0) * selected.length * 100) / 100;
-    const assignment = {id, type: 'repositioning', reason: normalizeId(options.reason) || 'future-demand', fromCityId, toCityId, vehicleType, vehicleIds: assigned.map(vehicle => vehicle.id), departureAbsMinute, arrivalAbsMinute, route: {pathNodeIds: Array.isArray(path.nodes) ? path.nodes.map(normalizeId).filter(Boolean) : [], pathEdgeIds: Array.isArray(path.edges) ? path.edges.map(pathEdgeId).filter(Boolean) : [], geometry: pathRouteGeometry(path), distance: distanceKm, durationMinutes}, capacityReservationIds: [reservation?.reservationId || id], costs: {distanceKm, perVehicleKm: Math.max(0, Number(spec.kmCost) || 0), vehicleCount: selected.length, total}, status: 'active', createdAtAbsMinute: absoluteMinute(currentTime())};
+    const assignment = {id, type: 'repositioning', reason: normalizeId(options.reason) || 'future-demand', fromCityId, toCityId, vehicleType, vehicleIds: assigned.map(vehicle => vehicle.id), departureAbsMinute, arrivalAbsMinute, route: {pathNodeIds: Array.isArray(path.nodes) ? path.nodes.map(normalizeId).filter(Boolean) : [], pathEdgeIds: Array.isArray(path.edges) ? path.edges.map(pathEdgeId).filter(Boolean) : [], geometry: pathRouteGeometry(path), distance: distanceKm, durationMinutes}, capacityReservationIds: [reservation?.reservationId || id], costs: {...tripCosts(distanceKm, vehicleType, selected.length), total}, status: isPlanned ? 'planned' : 'active', createdAtAbsMinute: nowAbsMinute};
     state.nextAssignmentId += 1;
     state.assignments.push(assignment);
-    if (total > 0) window.HFV2Save?.changeCash?.(-total, 'logistics-repositioning-cost');
+    if (!isPlanned) bookTripCosts(assignment, 'logistics-repositioning-cost', 'repositioning');
     window.HFV2Save?.dispatchStateChanged?.('logistics-repositioning-created');
     return {ok: true, assignment};
   }
@@ -863,8 +888,7 @@
         }
         assignment.status = 'active';
         assignment.startedAbsMinute = Math.max(assignment.departureAbsMinute, nowAbsMinute);
-        const cost = Math.max(0, Number(assignment.costs?.total) || 0);
-        if (cost) window.HFV2Save?.changeCash?.(-cost, 'logistics-repositioning-cost');
+        bookTripCosts(assignment, 'logistics-repositioning-cost', 'repositioning');
       }
       if (assignment.type !== 'repositioning' || assignment.status !== 'active' || assignment.arrivalAbsMinute > nowAbsMinute) continue;
       assignment.status = 'completed';

@@ -180,7 +180,7 @@
           vehicleIds: [entry.candidate.vehicle.id], departureAbsMinute: entry.departure,
           arrivalAbsMinute: occurrence.departureAbsMinute, capacityReservationIds: [entry.id],
           route: {pathNodeIds: entry.candidate.deadheadPath.nodes || [], pathEdgeIds: (entry.candidate.deadheadPath.edges || []).map(edge => String(edge.id || '')), distance: Number(entry.candidate.deadheadPath.distance) || 0},
-          costs: {total: Math.round((Number(entry.candidate.deadheadPath.distance) || 0) * (Number(vehicleSpec(type).kmCost) || 0) * 100) / 100},
+          costs: {distanceKm: Number(entry.candidate.deadheadPath.distance) || 0, perVehicleKm: Number(vehicleSpec(type).kmCost) || 0, vehicleCount: 1, total: Math.round((Number(entry.candidate.deadheadPath.distance) || 0) * (Number(vehicleSpec(type).kmCost) || 0) * 100) / 100, booked: false},
         };
         state.assignments.push(assignment);
         legs.push({...assignment, orderId: order.id});

@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const SCHEMA_VERSION = 5;
+  const SCHEMA_VERSION = 6;
   const SAVE_FILE_PREFIX = 'helvetic-freight-v2';
   const STARTING_CASH = 500000;
 
@@ -28,8 +28,58 @@
     return nextCash;
   }
 
-  function changeCash(delta, reason = 'cash-changed') {
-    return setCash(getCash() + (Number(delta) || 0), reason);
+  const REASON_CATEGORIES = Object.freeze({
+    'goods-daily-sales': 'sales',
+    'network-maintenance': 'network-maintenance',
+    'factory-operation': 'factory-operation',
+    'fleet-daily': 'fleet-daily',
+    'logistics-shipment-cost': 'shipment-distance',
+    'logistics-repositioning-cost': 'repositioning-distance',
+    'fleet-buy': 'vehicle-purchase',
+    'fleet-sell': 'vehicle-sale',
+    'factory-built': 'factory-build',
+    'factory-upgraded': 'factory-upgrade',
+    'network-build': 'network-build',
+  });
+
+  function changeCash(delta, reason = 'cash-changed', details = {}) {
+    const amount = Math.round((Number(delta) || 0) * 100) / 100;
+    const current = getState();
+    current.finance = normalizeFinanceState(current.finance);
+    const bookingId = String(details.bookingId || '').trim();
+    if (bookingId && current.finance.journal.some(entry => entry.bookingId === bookingId)) return getCash();
+    const absMinute = Number.isFinite(Number(details.absMinute)) ? Math.max(0, Math.trunc(Number(details.absMinute))) : absoluteMinute(current.time);
+    const entry = {
+      id: `finance-${current.finance.nextEntryId++}`,
+      bookingId: bookingId || undefined,
+      day: Math.floor(absMinute / 1440) + 1,
+      absMinute,
+      amount,
+      category: String(details.category || REASON_CATEGORIES[reason] || 'other'),
+      reason: String(reason || 'cash-changed'),
+      reference: details.reference && typeof details.reference === 'object' ? deepClone(details.reference) : undefined,
+    };
+    current.cash = Math.round((getCash() + amount) * 100) / 100;
+    current.finance.journal.push(entry);
+    dispatchStateChanged(reason);
+    return current.cash;
+  }
+
+  function absoluteMinute(time = {}) {
+    return (Math.max(1, Math.trunc(Number(time.day) || 1)) - 1) * 1440 + Math.max(0, Math.trunc(Number(time.hour) || 0)) * 60 + Math.max(0, Math.trunc(Number(time.minute) || 0));
+  }
+
+  function normalizeFinanceState(finance = {}) {
+    const journal = Array.isArray(finance?.journal) ? finance.journal.filter(entry => entry && typeof entry === 'object').map((entry, index) => ({
+      ...entry,
+      id: String(entry.id || `finance-${index + 1}`),
+      day: Math.max(1, Math.trunc(Number(entry.day) || (Math.floor((Number(entry.absMinute) || 0) / 1440) + 1))),
+      absMinute: Math.max(0, Math.trunc(Number(entry.absMinute) || 0)),
+      amount: Math.round((Number(entry.amount) || 0) * 100) / 100,
+      category: String(entry.category || REASON_CATEGORIES[entry.reason] || 'other'),
+      reason: String(entry.reason || 'cash-changed'),
+    })) : [];
+    return {journal, nextEntryId: Math.max(1, Math.trunc(Number(finance?.nextEntryId) || 1), journal.length + 1), lastClosedDay: Math.max(0, Math.trunc(Number(finance?.lastClosedDay) || 0))};
   }
 
   function deepClone(value) {
@@ -219,10 +269,11 @@
     const legacyCash = Number.isFinite(Number(sourceState.cash)) ? Number(sourceState.cash) : Number(sourceState.fleet?.cash ?? sourceState.network?.cash);
     const cash = Number.isFinite(legacyCash) ? legacyCash : STARTING_CASH;
 
+    const finance = normalizeFinanceState(sourceState.finance);
     return {
       schemaVersion: SCHEMA_VERSION,
       savedAt: source.savedAt || new Date().toISOString(),
-      state: {cash, network, fleet, factories, goods, time, logistics},
+      state: {cash, network, fleet, factories, goods, time, logistics, finance},
     };
   }
 
@@ -237,7 +288,7 @@
     const liveGoods = window.HFV2Goods?.getState?.();
     const liveTime = window.HFV2Time?.getState?.();
     const liveLogistics = window.HFV2Logistics?.getState?.();
-    const source = savePackage || {state: {network: liveNetwork, fleet: liveFleet, factories: liveFactories || getState().factories, goods: liveGoods || getState().goods, time: liveTime || getState().time, logistics: liveLogistics || getState().logistics, cash: getCash()}};
+    const source = savePackage || {state: {network: liveNetwork, fleet: liveFleet, factories: liveFactories || getState().factories, goods: liveGoods || getState().goods, time: liveTime || getState().time, logistics: liveLogistics || getState().logistics, finance: getState().finance, cash: getCash()}};
     const normalized = normalizePackage(source);
     normalized.savedAt = new Date().toISOString();
     return deepClone(normalized);
