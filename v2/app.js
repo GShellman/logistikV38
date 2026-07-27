@@ -201,20 +201,35 @@
     return Math.max(1, Math.trunc(Number(time?.day) || 1));
   }
 
-  function limitedEntriesMarkup(entries, renderEntry, limit = 4, className = '', stateKey = '') {
+  function limitedEntriesMarkup(entries, renderEntry, limit = 4, className = '', stateKey = '', summaryCount = entries.length) {
     const visible = entries.slice(0, limit).map(renderEntry).join('');
     const remainder = entries.slice(limit).map(renderEntry).join('');
     const content = `<div class="${className}">${visible}</div>`;
     if (!remainder) return content;
     const keyAttribute = stateKey ? ` data-hf-v2-list-key="${escapeHtml(stateKey)}"` : '';
     const openAttribute = stateKey && expandedListState.get(stateKey) ? ' open' : '';
-    return `${content}<details class="hf-v2-more"${keyAttribute}${openAttribute}><summary>Alle anzeigen (${entries.length.toLocaleString('de-CH')})</summary><div class="${className}">${remainder}</div></details>`;
+    return `${content}<details class="hf-v2-more"${keyAttribute}${openAttribute}><summary>Alle anzeigen (${summaryCount.toLocaleString('de-CH')})</summary><div class="${className}">${remainder}</div></details>`;
   }
 
   function demandPanel(city) {
     const rows = v2DemandRows(city);
     const total = rows.reduce((sum, row) => sum + row.dailyKg, 0);
     const inventory = window.HFV2Goods?.getCityInventory?.(city.id) || {};
+    const logisticsShipments = window.HFV2Logistics?.getState?.().shipments;
+    const shipments = Array.isArray(logisticsShipments) ? logisticsShipments : [];
+    const deliveredGoodIds = new Set();
+    for (const shipment of shipments) {
+      if (shipment?.status !== 'active') continue;
+      if (Array.isArray(shipment.stops) && shipment.stops.length) {
+        for (const stop of shipment.stops) {
+          if (stop?.toCityId === city.id && stop.goodId && !['delivered', 'failed', 'partial'].includes(stop.status)) deliveredGoodIds.add(stop.goodId);
+        }
+      } else if (shipment.toCityId === city.id && shipment.goodId) {
+        deliveredGoodIds.add(shipment.goodId);
+      }
+    }
+    const currentlyDeliveredRows = rows.filter(row => deliveredGoodIds.has(row.good.id));
+    const remainingRows = rows.filter(row => !deliveredGoodIds.has(row.good.id));
     const renderRow = row => {
       const inventoryKg = Math.max(0, Number(inventory[row.good.id]) || 0);
       const salePricePerKg = window.HFV2Goods?.salePriceForCity?.(city, row.good.id, {stockKg: inventoryKg}) || 0;
@@ -222,7 +237,8 @@
       const coveragePercent = dailyDemandKg > 0 ? Math.min(100, inventoryKg / dailyDemandKg * 100) : 100;
       return `<article class="hf-v2-demand-tile"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-tile__body"><b>${escapeHtml(row.good.name)}</b><small>Bestand: ${formatGoodAmount(row.good.id, inventoryKg)} · Tagesbedarf: ${formatDailyKg(dailyDemandKg)} · Verkaufspreis: ${formatSalePrice(row.good, salePricePerKg)}</small><span class="hf-v2-demand-tile__bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${coveragePercent}"><i style="width:${coveragePercent}%"></i></span></div></article>`;
     };
-    return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">Waren und Tagesbedarf</h3></div><strong>${formatDailyKg(total)}</strong></div>${rows.length ? limitedEntriesMarkup(rows, renderRow, 4, 'hf-v2-demand-compact-grid', `${city.id}:demand`) : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
+    const orderedRows = [...currentlyDeliveredRows, ...remainingRows];
+    return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">Waren und Tagesbedarf</h3></div><strong>${formatDailyKg(total)}</strong></div>${rows.length ? limitedEntriesMarkup(orderedRows, renderRow, currentlyDeliveredRows.length, 'hf-v2-demand-compact-grid', `${city.id}:demand`, remainingRows.length) : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
   }
 
   function factoryById(factoryId) {
