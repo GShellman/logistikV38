@@ -167,6 +167,14 @@
     return `${amount.toLocaleString('de-CH', {maximumFractionDigits: amount >= 10 ? 0 : 1})} ${unit.unit}`;
   }
 
+  function formatSalePrice(good, pricePerKg) {
+    const unit = good?.unit || {unit: 'kg', kgPerUnit: 1};
+    const unitName = String(unit.unit || 'kg');
+    const kgPerUnit = Math.max(Number(unit.kgPerUnit) || 1, 0.000001);
+    const price = unitName === 'kg' ? pricePerKg : pricePerKg * kgPerUnit;
+    return `${formatCurrency(price)} / ${escapeHtml(unitName)}`;
+  }
+
   function cityInventoryMarkup(cityId) {
     const inventory = window.HFV2Goods?.getCityInventory?.(cityId) || {};
     const rows = Object.entries(inventory).filter(([, kg]) => Number(kg) > 0.001).sort(([a], [b]) => goodById(a).name.localeCompare(goodById(b).name, 'de-CH'));
@@ -206,9 +214,10 @@
     const inventory = window.HFV2Goods?.getCityInventory?.(city.id) || {};
     const renderRow = row => {
       const inventoryKg = Math.max(0, Number(inventory[row.good.id]) || 0);
+      const salePricePerKg = window.HFV2Goods?.salePriceForCity?.(city, row.good.id, {stockKg: inventoryKg}) || 0;
       const dailyDemandKg = row.dailyKg;
       const coveragePercent = dailyDemandKg > 0 ? Math.min(100, inventoryKg / dailyDemandKg * 100) : 100;
-      return `<article class="hf-v2-demand-tile"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-tile__body"><b>${escapeHtml(row.good.name)}</b><small>Bestand: ${formatGoodAmount(row.good.id, inventoryKg)} · Tagesbedarf: ${formatDailyKg(dailyDemandKg)}</small><span class="hf-v2-demand-tile__bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${coveragePercent}"><i style="width:${coveragePercent}%"></i></span></div></article>`;
+      return `<article class="hf-v2-demand-tile"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-tile__body"><b>${escapeHtml(row.good.name)}</b><small>Bestand: ${formatGoodAmount(row.good.id, inventoryKg)} · Tagesbedarf: ${formatDailyKg(dailyDemandKg)} · Verkaufspreis: ${formatSalePrice(row.good, salePricePerKg)}</small><span class="hf-v2-demand-tile__bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${coveragePercent}"><i style="width:${coveragePercent}%"></i></span></div></article>`;
     };
     return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">Waren und Tagesbedarf</h3></div><strong>${formatDailyKg(total)}</strong></div>${rows.length ? limitedEntriesMarkup(rows, renderRow, 4, 'hf-v2-demand-compact-grid') : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
   }
