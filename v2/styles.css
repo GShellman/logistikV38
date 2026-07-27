@@ -561,6 +561,18 @@ code {
   justify-content: space-between;
   padding-bottom: 18px;
 }
+.hf-v2-receipt__identity { align-items: center; display: flex; gap: 12px; }
+.hf-v2-receipt__icon {
+  align-items: center;
+  border: 2px solid #172433;
+  color: #172433;
+  display: inline-flex;
+  flex: 0 0 34px;
+  font-size: 19px;
+  height: 34px;
+  justify-content: center;
+  line-height: 1;
+}
 .hf-v2-receipt__head span {
   color: #5b6875;
   display: block;
@@ -599,14 +611,35 @@ code {
 .hf-v2-receipt__balance span { color: #dfe7ed; }
 .hf-v2-receipt__balance strong { font-size: 17px; }
 .hf-v2-receipt__note { color: #7a858e; font-size: 9px; letter-spacing: .06em; margin: 16px 0 0; text-align: center; text-transform: uppercase; }
+.hf-v2-receipt__actions { display: flex; justify-content: flex-end; margin-top: 18px; }
+.hf-v2-receipt__actions button { font-size: 14px; min-height: 44px; min-width: 150px; padding: 10px 22px; }
+.hf-v2-receipt + .hf-v2-receipt { margin-top: 20px; }
 
 @media (max-width: 540px) {
   .hf-v2-receipt-modal .hf-v2-modal-scroll { padding: 12px; }
   .hf-v2-receipt { padding: 22px 16px 18px; }
   .hf-v2-receipt__head { display: grid; }
   .hf-v2-receipt__head dl { min-width: 0; width: 100%; }
+  .hf-v2-receipt__table thead {
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    height: 1px;
+    overflow: hidden;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+  }
+  .hf-v2-receipt__table tbody,
+  .hf-v2-receipt__table tr,
   .hf-v2-receipt__table th,
-  .hf-v2-receipt__table td { padding-left: 3px; padding-right: 3px; }
+  .hf-v2-receipt__table td { display: block; width: auto; }
+  .hf-v2-receipt__table tr { border-bottom: 1px solid #cbd2d8; padding: 8px 0; }
+  .hf-v2-receipt__table th,
+  .hf-v2-receipt__table td { border: 0; padding: 4px 0; }
+  .hf-v2-receipt__table td { align-items: baseline; display: flex; justify-content: space-between; text-align: right; }
+  .hf-v2-receipt__table td::before { color: #65717c; content: attr(data-label); font-family: var(--font-ui, sans-serif); font-size: 10px; font-weight: 700; letter-spacing: .06em; margin-right: 16px; text-transform: uppercase; }
+  .hf-v2-receipt__result { border-bottom: 3px double #172433 !important; }
+  .hf-v2-receipt__actions button { width: 100%; }
 }
 
 .hf-v2-network-menu {

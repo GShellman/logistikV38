@@ -15,6 +15,7 @@
   const feedbackLog = [];
   const feedbackWarnings = new Map();
   const deliveredStopKeys = new Set();
+  let receiptSequence = 0;
   const FEEDBACK_META = {
     positive: {icon: '✓', label: 'Erfolg'},
     neutral: {icon: 'ℹ', label: 'Info'},
@@ -882,15 +883,50 @@
     return `Tagesabschluss: ${rows.join(' · ')}.`;
   }
 
-  function receiptAmount(value) {
-    const amount = Math.abs(Number(value) || 0);
-    return amount ? amount.toLocaleString('de-CH', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '–';
+  function receiptAmount(value, {empty = '–', signed = false} = {}) {
+    const amount = Number(value) || 0;
+    if (!amount && empty != null) return empty;
+    const formatted = Math.abs(amount).toLocaleString('de-CH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    return `${signed ? (amount < 0 ? '−' : '+') + ' ' : ''}CHF ${formatted}`;
+  }
+
+  function receiptDateLabel() {
+    const time = window.HFV2Time?.getState?.() || window.HFV2Save?.getState?.().time || {};
+    const day = Math.max(1, Math.trunc(Number(time.day) || 1));
+    const hour = Math.max(0, Math.trunc(Number(time.hour) || 0));
+    const minute = Math.max(0, Math.trunc(Number(time.minute) || 0));
+    return `Tag ${day.toLocaleString('de-CH')} · ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+
+  function receiptNumber(prefix) {
+    const day = Math.max(1, Math.trunc(Number(window.HFV2Time?.getState?.().day) || 1));
+    receiptSequence += 1;
+    return `${prefix}-${String(day).padStart(5, '0')}-${String(receiptSequence).padStart(3, '0')}`;
+  }
+
+  function receiptPositionRow({label, detail = '', amount, className = ''}) {
+    return `<tr class="${escapeHtml(className)}"><th scope="row" data-label="Position">${escapeHtml(label)}${detail ? `<small>${escapeHtml(detail)}</small>` : ''}</th><td data-label="Betrag">${receiptAmount(amount, {empty: 'CHF 0.00'})}</td></tr>`;
+  }
+
+  function renderReceipt({icon, documentLabel, number, date = receiptDateLabel(), positions = [], total = 0, closingCash, caption = 'Positionen', bodyMarkup = '', note = 'Automatisch verbucht · Beträge in Schweizer Franken', actionLabel = 'Schließen'}) {
+    const positionsMarkup = bodyMarkup || `<table class="hf-v2-receipt__table hf-v2-receipt__table--positions"><caption>${escapeHtml(caption)}</caption><thead><tr><th scope="col">Position</th><th scope="col">Betrag <small>CHF</small></th></tr></thead><tbody>${positions.map(receiptPositionRow).join('')}</tbody></table>`;
+    return `<article class="hf-v2-receipt">
+      <header class="hf-v2-receipt__head"><div class="hf-v2-receipt__identity"><span class="hf-v2-receipt__icon" aria-hidden="true">${escapeHtml(icon)}</span><div><span>Helvetic Freight</span><strong>${escapeHtml(documentLabel)}</strong></div></div><dl><div><dt>Beleg</dt><dd>${escapeHtml(number)}</dd></div><div><dt>Datum</dt><dd>${escapeHtml(date)}</dd></div></dl></header>
+      ${positionsMarkup}
+      <footer class="hf-v2-receipt__footer"><div><span>Gesamtsumme</span><strong>${receiptAmount(total, {empty: 'CHF 0.00', signed: total < 0})}</strong></div><div class="hf-v2-receipt__balance"><span>Neuer Kontostand</span><strong>${receiptAmount(closingCash, {empty: 'CHF 0.00'})}</strong></div></footer>
+      <p class="hf-v2-receipt__note">${escapeHtml(note)}</p>
+      ${actionLabel ? `<div class="hf-v2-receipt__actions"><button class="hf-v2-action-primary" type="button" data-hf-v2-receipt-close>${escapeHtml(actionLabel)}</button></div>` : ''}
+    </article>`;
+  }
+
+  function openTransactionReceipt(options) {
+    window.HFV2Modal?.openModal?.({className: 'hf-v2-receipt-modal', title: options.documentLabel, subtitle: 'Buchungsbeleg', bodyHtml: renderReceipt(options)});
   }
 
   function receiptRow(label, amount, side, className = '', note = '') {
-    const debit = side === 'debit' ? receiptAmount(amount) : '–';
-    const credit = side === 'credit' ? receiptAmount(amount) : '–';
-    return `<tr class="${className}"><th scope="row">${label}${note ? `<small>${note}</small>` : ''}</th><td>${debit}</td><td>${credit}</td></tr>`;
+    const debit = side === 'debit' ? receiptAmount(amount, {empty: 'CHF 0.00'}) : '–';
+    const credit = side === 'credit' ? receiptAmount(amount, {empty: 'CHF 0.00'}) : '–';
+    return `<tr class="${className}"><th scope="row" data-label="Position">${label}${note ? `<small>${note}</small>` : ''}</th><td data-label="Aufwand">${debit}</td><td data-label="Ertrag">${credit}</td></tr>`;
   }
 
   function dailyCycleReceiptMarkup(summary) {
@@ -911,19 +947,27 @@
       receiptRow(operatingResult >= 0 ? 'Operativer Gewinn' : 'Operativer Verlust', operatingResult, operatingResult >= 0 ? 'credit' : 'debit', `hf-v2-receipt__result ${operatingResult >= 0 ? 'is-positive' : 'is-negative'}`),
     ].join('');
     const investmentRow = investments ? receiptRow('Investitionen, netto', investments, investments >= 0 ? 'debit' : 'credit', 'hf-v2-receipt__investment', 'nicht im operativen Ergebnis enthalten') : '';
-    return `<article class="hf-v2-receipt">
-      <header class="hf-v2-receipt__head"><div><span>Helvetic Freight</span><strong>Tagesabschluss</strong></div><dl><div><dt>Beleg</dt><dd>${documentNumber}</dd></div><div><dt>Periode</dt><dd>${dayLabel}</dd></div></dl></header>
-      <table class="hf-v2-receipt__table"><caption>Erfolgsrechnung</caption><thead><tr><th>Position</th><th>Aufwand<br><small>CHF</small></th><th>Ertrag<br><small>CHF</small></th></tr></thead><tbody>${operatingRows}${investmentRow}</tbody></table>
-      <footer class="hf-v2-receipt__footer"><div><span>Kontoveränderung</span><strong class="${cashChange >= 0 ? 'is-positive' : 'is-negative'}">${cashChange < 0 ? '−' : '+'} CHF ${receiptAmount(cashChange)}</strong></div><div class="hf-v2-receipt__balance"><span>Neuer Kontostand</span><strong>CHF ${receiptAmount(summary?.closingCash)}</strong></div></footer>
-      <p class="hf-v2-receipt__note">Automatisch verbucht · Beträge in Schweizer Franken</p>
-    </article>`;
+    const table = `<table class="hf-v2-receipt__table"><caption>Erfolgsrechnung</caption><thead><tr><th scope="col">Position</th><th scope="col">Aufwand <small>CHF</small></th><th scope="col">Ertrag <small>CHF</small></th></tr></thead><tbody>${operatingRows}${investmentRow}</tbody></table>`;
+    return renderReceipt({icon: '▤', documentLabel: 'Tagesabschluss', number: documentNumber, date: dayLabel, bodyMarkup: table, total: cashChange, closingCash: summary?.closingCash, actionLabel: 'Weiter'});
+  }
+
+  function largeGoodsSaleReceiptMarkup(summary) {
+    const revenue = Math.max(0, Number(summary?.sales?.revenue ?? summary?.revenue?.sales) || 0);
+    if (revenue < 10000) return '';
+    const soldKg = Math.max(0, Number(summary?.sales?.soldKg) || 0);
+    return renderReceipt({
+      icon: '◈', documentLabel: 'Warenverkaufsbeleg', number: receiptNumber('WV'), date: receiptDateLabel(),
+      positions: [{label: 'Warenverkauf', detail: `${soldKg.toLocaleString('de-CH', {maximumFractionDigits: 3})} kg verkauft`, amount: revenue}],
+      total: revenue, closingCash: summary?.closingCash, actionLabel: '',
+    });
   }
 
   function openDailyCycleReceipt(summary) {
     if (!summary) return;
     const result = Number(summary.operatingResult) || 0;
     notify({tone: result < 0 ? 'negative' : 'positive', title: 'Tagesabschluss gebucht', message: `${result < 0 ? 'Verlust' : 'Gewinn'} ${formatCurrency(Math.abs(result))} · Konto ${formatCurrency(summary.closingCash)}`});
-    window.HFV2Modal?.openModal?.({className: 'hf-v2-receipt-modal', title: 'Tagesabschluss', subtitle: 'Buchungsbeleg', bodyHtml: dailyCycleReceiptMarkup(summary)});
+    const salesReceipt = largeGoodsSaleReceiptMarkup(summary);
+    window.HFV2Modal?.openModal?.({className: 'hf-v2-receipt-modal', title: 'Tagesabschluss', subtitle: salesReceipt ? 'Buchungsbelege' : 'Buchungsbeleg', bodyHtml: `${salesReceipt}${dailyCycleReceiptMarkup(summary)}`});
   }
 
   function runWithDailyCycleSummary(action) {
@@ -1134,19 +1178,25 @@
 
     wrap(window.HFFleet, 'buyVehicle', (result) => {
       actionConfirmation('Fahrzeug gekauft', result.cost, `${vehicleLabel(result.vehicleType)} in ${cityName(result.cityId)}`);
+      openTransactionReceipt({icon: '▣', documentLabel: 'Fahrzeugkaufbeleg', number: receiptNumber('FK'), positions: [{label: vehicleLabel(result.vehicleType), detail: `Standort ${cityName(result.cityId)} · Fahrzeug ${result.vehicle?.id || '–'}`, amount: result.cost}], total: result.cost, closingCash: window.HFV2Save?.getCash?.()});
     });
     wrap(window.HFV2Factories, 'buildFactory', (result) => {
       const factory = factoryById(result.factoryId);
       actionConfirmation('Fabrik gebaut', result.cost, `${factory?.name || result.factoryId} in ${cityName(result.cityId)}`);
+      openTransactionReceipt({icon: '▰', documentLabel: 'Fabrikbaubeleg', number: receiptNumber('FB'), positions: [{label: factory?.name || result.factoryId, detail: `Neubau in ${cityName(result.cityId)}`, amount: result.cost}], total: result.cost, closingCash: window.HFV2Save?.getCash?.()});
     });
     wrap(window.HFV2Factories, 'upgradeFactory', (result) => {
       const factory = factoryById(result.factoryId);
       actionConfirmation('Upgrade abgeschlossen', result.cost, `${factory?.name || result.factoryId} erreicht Stufe ${result.level}`);
+      openTransactionReceipt({icon: '▱', documentLabel: 'Fabrikausbaubeleg', number: receiptNumber('FA'), positions: [{label: factory?.name || result.factoryId, detail: `${cityName(result.cityId)} · Stufe ${result.previousLevel} auf ${result.level}`, amount: result.cost}], total: result.cost, closingCash: window.HFV2Save?.getCash?.()});
     });
     wrap(window.HFNetwork, 'confirmProject', (result, args, beforeCash) => {
       const edge = result;
       const cost = Math.max(0, beforeCash - (window.HFV2Save?.getCash?.() || 0));
       actionConfirmation('Netz erweitert', cost, `${cityName(edge?.a)} ↔ ${cityName(edge?.b)} erschlossen`);
+      const spec = window.HFNetwork?.TRANSPORT_TYPES?.[edge?.type] || {};
+      const rail = spec.mode === 'rail';
+      openTransactionReceipt({icon: rail ? '═' : '↔', documentLabel: rail ? 'Schienenbaubeleg' : 'Straßenbaubeleg', number: receiptNumber(rail ? 'SB' : 'ST'), positions: [{label: spec.name || (rail ? 'Bahnstrecke' : 'Straßenverbindung'), detail: `${cityName(edge?.a)} ↔ ${cityName(edge?.b)} · ${(Number(edge?.distance) || 0).toLocaleString('de-CH', {maximumFractionDigits: 1})} km`, amount: cost}], total: cost, closingCash: window.HFV2Save?.getCash?.()});
     });
   }
 
@@ -1185,6 +1235,9 @@
     savePackage = window.HFV2Save?.createDefaultState?.() || {state: {network: window.HFNetwork.createNetworkState({networkOriginNode: 'zurich', selected: 'zurich'}), fleet: window.HFFleet?.createFleetState?.(), factories: window.HFV2Factories?.createFactoryState?.(), goods: window.HFV2Goods?.createGoodsState?.(), time: window.HFV2Save?.defaultTimeState?.() || {day: 1, hour: 8, minute: 0}, logistics: window.HFV2Save?.defaultLogisticsState?.() || window.HFV2Logistics?.createLogisticsState?.() || {orders: [], shipments: [], nextOrderId: 1, nextShipmentId: 1, schemaVersion: 1}}};
     configureGameSystems(cities);
     installActionFeedback();
+    document.addEventListener('click', event => {
+      if (event.target.closest('[data-hf-v2-receipt-close]')) window.HFV2Modal?.closeModal?.();
+    });
     document.getElementById('hfV2CityCount').textContent = `${cities.length.toLocaleString('de-CH')} Orte`;
     bindSaveControls();
     bindTimeControls();
