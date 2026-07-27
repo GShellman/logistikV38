@@ -1749,6 +1749,34 @@ code {
 .hf-v2-transport-marker__badge { position: absolute; right: -2px; bottom: 1px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 3px; border: 2px solid #fff; border-radius: 999px; background: #17324d; color: #fff; font: 700 11px/1 sans-serif; box-shadow: 0 1px 4px #0005; }
 .hf-v2-transport-marker--empty .hf-v2-transport-marker__badge { background: #7a5c28; }
 .hf-v2-transport-marker--waiting .hf-v2-transport-marker__badge { background: #26734d; }
+.hf-v2-transport-marker--group { filter: none; opacity: 1; }
+.hf-v2-transport-marker--group::before {
+  background: rgba(255, 255, 255, .78);
+  border: 2px solid rgba(23, 50, 77, .38);
+  border-radius: 50%;
+  box-shadow: 0 3px 10px rgba(15, 31, 52, .2);
+  content: "";
+  inset: -4px;
+  position: absolute;
+  z-index: -1;
+}
+.hf-v2-transport-marker__badge--count {
+  background: var(--color-dispatch-blue);
+  bottom: -3px;
+  font-size: 12px;
+  min-width: 31px;
+  padding-inline: 6px;
+  white-space: nowrap;
+}
+.hf-v2-shipment-tooltip__group {
+  display: grid;
+  gap: 3px;
+  margin: 5px 0 0;
+  max-height: 190px;
+  overflow-y: auto;
+  padding-left: 18px;
+}
+.hf-v2-shipment-tooltip__group li { line-height: 1.25; }
 
 .hf-v2-shipment-marker__emoji {
   font-size: 22px;

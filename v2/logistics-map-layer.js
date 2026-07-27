@@ -107,7 +107,7 @@
     return `Tag ${day} · ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
   }
 
-  function vehicleIcon(shipment, isMovingRight = false, progress = 0) {
+  function vehicleIcon(shipment, isMovingRight = false, progress = 0, options = {}) {
     const vehicleType = String(shipment?.vehicleType || '').trim();
     const src = window.HFV2VehicleAssets?.roadVehicleImage?.(vehicleType) || window.HFV2VehicleAssets?.vehicleImage?.(vehicleType) || '';
     const fallbackSrc = window.HFV2VehicleAssets?.vehicleImage?.(vehicleType) || '';
@@ -115,10 +115,12 @@
     const directionClass = isMovingRight ? ' hf-v2-shipment-asset--right' : '';
     const markerDirectionClass = isMovingRight ? ' hf-v2-shipment-marker--right' : '';
     const transportKind = shipment?.type === 'repositioning' ? 'empty' : (shipment?.type === 'waiting' ? 'waiting' : 'loaded');
+    const groupCount = Math.max(1, Number(options.groupCount) || 1);
+    const grouped = groupCount > 1;
     const arrow = isMovingRight ? '→' : '←';
-    const html = `<div class="hf-v2-transport-marker hf-v2-transport-marker--${transportKind}">${src
+    const html = `<div class="hf-v2-transport-marker hf-v2-transport-marker--${transportKind}${grouped ? ' hf-v2-transport-marker--group' : ''}">${src
       ? `<img class="hf-v2-shipment-asset${directionClass}" src="${escapeHtml(src)}"${fallbackSrc && fallbackSrc !== src ? ` onerror="this.onerror=null;this.src='${escapeHtml(fallbackSrc)}';"` : ''} alt="" aria-hidden="true">`
-      : `<div class="hf-v2-shipment-marker${markerDirectionClass}"><span class="hf-v2-shipment-marker__emoji" aria-hidden="true">${escapeHtml(fallback)}</span></div>`}<span class="hf-v2-transport-direction" aria-hidden="true">${arrow}</span><span class="hf-v2-transport-progress" aria-hidden="true"><i style="width:${Math.round(clamp01(progress) * 100)}%"></i></span><span class="hf-v2-transport-marker__badge" aria-hidden="true">${transportKind === 'loaded' ? '●' : (transportKind === 'empty' ? '○' : 'P')}</span></div>`;
+      : `<div class="hf-v2-shipment-marker${markerDirectionClass}"><span class="hf-v2-shipment-marker__emoji" aria-hidden="true">${escapeHtml(fallback)}</span></div>`}${grouped ? '' : `<span class="hf-v2-transport-direction" aria-hidden="true">${arrow}</span>`}<span class="hf-v2-transport-progress" aria-hidden="true"><i style="width:${Math.round(clamp01(progress) * 100)}%"></i></span><span class="hf-v2-transport-marker__badge${grouped ? ' hf-v2-transport-marker__badge--count' : ''}" aria-hidden="true">${grouped ? `× ${groupCount}` : (transportKind === 'loaded' ? '●' : (transportKind === 'empty' ? '○' : 'P'))}</span></div>`;
     return L.divIcon({className: '', html, iconSize: [50, 50], iconAnchor: [25, 25]});
   }
 
@@ -194,9 +196,9 @@
     return isMovingRight(coords[0], coords[coords.length - 1]);
   }
 
-  function updateMarkerIcon(marker, shipment, direction, progress) {
+  function updateMarkerIcon(marker, shipment, direction, progress, options) {
     const vehicleType = String(shipment?.vehicleType || '').trim();
-    marker.setIcon?.(vehicleIcon(shipment, direction, progress));
+    marker.setIcon?.(vehicleIcon(shipment, direction, progress, options));
     marker._hfV2VehicleType = vehicleType;
     marker._hfV2DirectionRight = direction;
   }
@@ -206,7 +208,7 @@
   }
 
   function stopCityName(stop) {
-    return citiesById?.[stop.toCityId]?.name || stop.toCityName || stop.toCityId;
+    return stop.toCityName || stop.toCityId;
   }
 
   function shipmentTooltip(shipment, fromCity, toCity) {
@@ -233,10 +235,56 @@
     ].join('<br>');
   }
 
+  const SHIPMENT_GROUP_DISTANCE_PX = 36;
+
+  function groupNearbyShipments(entries, map, threshold = SHIPMENT_GROUP_DISTANCE_PX) {
+    if (!map?.latLngToLayerPoint || entries.length < 2) return entries.map(entry => [entry]);
+    const points = entries.map(entry => map.latLngToLayerPoint(entry.position));
+    const parents = entries.map((entry, index) => index);
+    const root = index => parents[index] === index ? index : (parents[index] = root(parents[index]));
+    for (let left = 0; left < entries.length; left += 1) {
+      for (let right = left + 1; right < entries.length; right += 1) {
+        const dx = Number(points[left]?.x) - Number(points[right]?.x);
+        const dy = Number(points[left]?.y) - Number(points[right]?.y);
+        if (Number.isFinite(dx) && Number.isFinite(dy) && Math.hypot(dx, dy) <= threshold) {
+          const leftRoot = root(left);
+          const rightRoot = root(right);
+          if (leftRoot !== rightRoot) parents[rightRoot] = leftRoot;
+        }
+      }
+    }
+    const groups = new Map();
+    entries.forEach((entry, index) => {
+      const key = root(index);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(entry);
+    });
+    return [...groups.values()];
+  }
+
+  function groupTooltip(group) {
+    if (group.length === 1) return shipmentTooltip(group[0].shipment, group[0].fromCity, group[0].toCity);
+    const rows = group.map(entry => {
+      const shipment = entry.shipment;
+      const destination = entry.toCity?.name || shipment.toCityId || shipment.currentCityId || '–';
+      let cargo = 'wartet / verfügbar';
+      if (shipment.type === 'repositioning') cargo = 'Leerfahrt';
+      else if (shipment.type !== 'waiting') {
+        const stops = shipmentStops(shipment);
+        cargo = stops.length
+          ? stops.map(stop => `${stopCityName(stop)}: ${goodById(stop.goodId).name || stop.goodId} (${formatGoodAmount(stop.goodId, stop.amountKg)})`).join('; ')
+          : `${goodById(shipment.goodId).name || shipment.goodId} (${formatGoodAmount(shipment.goodId, shipment.amountKg)})`;
+      }
+      return `<li><strong>${escapeHtml(destination)}</strong> · ${escapeHtml(cargo)}</li>`;
+    }).join('');
+    return `<strong>${group.length} Transporte</strong><br>Lieferungen, Zielstädte und Waren:<ul class="hf-v2-shipment-tooltip__group">${rows}</ul>`;
+  }
+
   function renderActiveShipments(shipments = [], citiesById = {}, assignments = [], vehicles = []) {
     if (!logisticsVehicleLayer || !window.L) return null;
     const nowAbsMinute = currentAbsMinute();
     const activeShipmentIds = new Set();
+    const entries = [];
 
     const moving = [
       ...shipments.filter(shipment => shipment?.status === 'active' || shipment?.status === 'returning').map(shipment => ({...shipment, _markerId: `shipment-${shipmentId(shipment)}`})),
@@ -256,15 +304,34 @@
       const position = interpolateAlongPolyline(coords, progress);
       if (!position) return;
 
-      activeShipmentIds.add(id);
       const title = `${fromCity?.name || shipment.fromCityId} → ${toCity?.name || shipment.toCityId}`;
+      entries.push({id, shipment, fromCity, toCity, coords, position, progress, title, zIndexOffset: 700, interactive: true});
+    });
+
+    vehicles.filter(vehicle => vehicle?.status === 'available' && vehicle?.currentCityId && citiesById[vehicle.currentCityId]).forEach(vehicle => {
+      const id = `waiting-${vehicle.id}`;
+      const city = citiesById[vehicle.currentCityId];
+      const position = cityCoordinates(city);
+      if (!position) return;
+      const shipment = {...vehicle, id, type: 'waiting'};
+      entries.push({id, shipment, fromCity: city, toCity: city, coords: [position], position, progress: 0, title: `${city.name || vehicle.currentCityId}: Fahrzeug wartet`, zIndexOffset: 450, interactive: false});
+    });
+
+    groupNearbyShipments(entries, logisticsVehicleLayer._map).forEach(group => {
+      const grouped = group.length > 1;
+      const representative = [...group].sort((a, b) => (a.shipment.type === 'waiting') - (b.shipment.type === 'waiting') || (a.shipment.type === 'repositioning') - (b.shipment.type === 'repositioning'))[0];
+      const id = grouped ? `group-${group.map(entry => entry.id).sort().join('|')}` : representative.id;
+      const position = [group.reduce((sum, entry) => sum + entry.position[0], 0) / group.length, group.reduce((sum, entry) => sum + entry.position[1], 0) / group.length];
+      const progress = group.reduce((sum, entry) => sum + entry.progress, 0) / group.length;
+      const title = grouped ? `${group.length} Transporte an dieser Position` : representative.title;
+      activeShipmentIds.add(id);
       let marker = shipmentMarkers.get(id);
       if (!marker) {
-        const direction = initialDirection(coords);
-        marker = L.marker(position, {icon: vehicleIcon(shipment, direction, progress), title: `${title}, Fahrtrichtung ${direction ? 'Osten' : 'Westen'}, ${Math.round(progress * 100)} Prozent`, zIndexOffset: 700}).addTo(logisticsVehicleLayer);
-        marker._hfV2VehicleType = String(shipment?.vehicleType || '').trim();
+        const direction = initialDirection(representative.coords);
+        marker = L.marker(position, {icon: vehicleIcon(representative.shipment, direction, progress, {groupCount: group.length}), title: grouped ? title : `${title}, Fahrtrichtung ${direction ? 'Osten' : 'Westen'}, ${Math.round(progress * 100)} Prozent`, zIndexOffset: Math.max(...group.map(entry => entry.zIndexOffset)), interactive: grouped || representative.interactive, keyboard: grouped || representative.interactive}).addTo(logisticsVehicleLayer);
+        marker._hfV2VehicleType = String(representative.shipment?.vehicleType || '').trim();
         marker._hfV2DirectionRight = direction;
-        marker.bindTooltip(shipmentTooltip(shipment, fromCity, toCity), {direction: 'top', sticky: true, className: 'city-label'});
+        marker.bindTooltip(groupTooltip(group), {direction: 'top', sticky: true, className: 'city-label'});
         shipmentMarkers.set(id, marker);
         return;
       }
@@ -273,31 +340,9 @@
       const hasHorizontalMovement = Math.abs(Number(position[1]) - Number(currentLatLng?.lng)) > 0.000001;
       const direction = hasHorizontalMovement ? isMovingRight(currentLatLng, position) : Boolean(marker._hfV2DirectionRight);
       marker.options.title = title;
-      updateMarkerIcon(marker, shipment, direction, progress);
-      marker.setTooltipContent?.(shipmentTooltip(shipment, fromCity, toCity));
+      updateMarkerIcon(marker, representative.shipment, direction, progress, {groupCount: group.length});
+      marker.setTooltipContent?.(groupTooltip(group));
       animateMarkerTo(marker, position);
-    });
-
-    vehicles.filter(vehicle => vehicle?.status === 'available' && vehicle?.currentCityId && citiesById[vehicle.currentCityId]).forEach(vehicle => {
-      const id = `waiting-${vehicle.id}`;
-      const city = citiesById[vehicle.currentCityId];
-      const position = cityCoordinates(city);
-      if (!position) return;
-      const display = {...vehicle, id, type: 'waiting'};
-      activeShipmentIds.add(id);
-      let marker = shipmentMarkers.get(id);
-      if (!marker) {
-        // Parked vehicles are informational decoration. Keeping their Leaflet
-        // marker non-interactive lets clicks reach the city marker underneath.
-        marker = L.marker(position, {icon: vehicleIcon(display), title: `${city.name || vehicle.currentCityId}: Fahrzeug wartet`, zIndexOffset: 450, interactive: false, keyboard: false}).addTo(logisticsVehicleLayer);
-        marker._hfV2VehicleType = vehicle.vehicleType;
-        marker._hfV2DirectionRight = false;
-        marker.bindTooltip(shipmentTooltip(display, city, city), {direction: 'top', sticky: true, className: 'city-label'});
-        shipmentMarkers.set(id, marker);
-      } else {
-        marker.setLatLng(position);
-        marker.setTooltipContent?.(shipmentTooltip(display, city, city));
-      }
     });
 
     shipmentMarkers.forEach((marker, id) => {
