@@ -6,6 +6,7 @@
   const MARKER_SIZE = {normal: 30, small: 22};
 
   let selectedId = null;
+  let activeCityTab = 'overview';
   let map = null;
   let savePackage = null;
   let networkState = null;
@@ -669,7 +670,32 @@
     }
   }
 
+  function cityTabAttributes(tabName) {
+    const selected = activeCityTab === tabName;
+    return `aria-selected="${selected}" tabindex="${selected ? 0 : -1}"`;
+  }
+
+  function cityPanelHidden(tabName) {
+    return activeCityTab === tabName ? '' : ' hidden';
+  }
+
+  function applyCityTabState({focus = false} = {}) {
+    const facts = document.getElementById('hfV2Facts');
+    facts?.querySelectorAll('[data-hf-v2-tab]').forEach(tab => {
+      const selected = tab.dataset.hfV2Tab === activeCityTab;
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    });
+    facts?.querySelectorAll('[data-hf-v2-panel]').forEach(panel => {
+      panel.hidden = panel.dataset.hfV2Panel !== activeCityTab;
+    });
+    if (focus) facts?.querySelector(`[data-hf-v2-tab="${activeCityTab}"]`)?.focus();
+  }
+
   function selectCity(city, cities) {
+    // A deliberate city change starts on the overview; re-rendering the same city
+    // (including live ticks) retains the user's current tab.
+    if (selectedId !== null && selectedId !== city.id) activeCityTab = 'overview';
     selectedId = city.id;
     refreshMarkers(cities);
 
@@ -680,7 +706,8 @@
     const factories = window.HFV2Factories?.getCityFactoryInstances?.(city.id) || [];
     const problems = '<p class="hf-v2-city-ok"><span aria-hidden="true">✓</span> Keine akuten Probleme erkannt.</p>';
     document.getElementById('hfV2SelectedIntro').textContent = `${state.symbol} ${state.label}`;
-    document.getElementById('hfV2Facts').innerHTML = `<div class="hf-v2-city-summary" aria-label="Kennzahlen für ${escapeHtml(city.name)}"><div class="hf-v2-city-kpi-grid">${fact('Einwohner', formatPopulation(city.population))}${fact('Lager', capacityKg ? `${Math.round(usedKg / capacityKg * 100)} %` : '–')}${fact('Fabriken', factories.length.toLocaleString('de-CH'))}${fact('Bauplätze', city.slots.toLocaleString('de-CH'))}</div></div><div class="hf-v2-city-tabs" role="tablist" aria-label="Stadtbereiche"><button type="button" role="tab" id="hfV2TabOverview" aria-controls="hfV2PanelOverview" aria-selected="true" data-hf-v2-tab="overview">Übersicht</button><button type="button" role="tab" id="hfV2TabGoods" aria-controls="hfV2PanelGoods" aria-selected="false" tabindex="-1" data-hf-v2-tab="goods">Waren</button><button type="button" role="tab" id="hfV2TabProduction" aria-controls="hfV2PanelProduction" aria-selected="false" tabindex="-1" data-hf-v2-tab="production">Produktion</button><button type="button" role="tab" id="hfV2TabTransport" aria-controls="hfV2PanelTransport" aria-selected="false" tabindex="-1" data-hf-v2-tab="transporte">Transporte</button></div><section id="hfV2PanelOverview" role="tabpanel" aria-labelledby="hfV2TabOverview" data-hf-v2-panel="overview"><h3>Aktuelle Probleme</h3>${problems}<section class="hf-v2-next-action" aria-labelledby="hfV2NextAction"><h3 id="hfV2NextAction">Nächste sinnvolle Aktion</h3><p>Kapazitäten und laufende Kosten prüfen.</p><button class="hf-v2-action-primary" type="button" data-hf-v2-show-tab="production">Produktion prüfen</button></section>${financeSummaryMarkup()}</section><section id="hfV2PanelGoods" role="tabpanel" aria-labelledby="hfV2TabGoods" data-hf-v2-panel="goods" hidden>${inventorySectionMarkup(city)}${demandPanel(city)}</section><section id="hfV2PanelProduction" role="tabpanel" aria-labelledby="hfV2TabProduction" data-hf-v2-panel="production" hidden>${factoryProductionMarkup(city)}</section><section id="hfV2PanelTransport" role="tabpanel" aria-labelledby="hfV2TabTransport" data-hf-v2-panel="transporte" hidden>${cityLogisticsSectionMarkup(city)}</section>`;
+    document.getElementById('hfV2Facts').innerHTML = `<div class="hf-v2-city-summary" aria-label="Kennzahlen für ${escapeHtml(city.name)}"><div class="hf-v2-city-kpi-grid">${fact('Einwohner', formatPopulation(city.population))}${fact('Lager', capacityKg ? `${Math.round(usedKg / capacityKg * 100)} %` : '–')}${fact('Fabriken', factories.length.toLocaleString('de-CH'))}${fact('Bauplätze', city.slots.toLocaleString('de-CH'))}</div></div><div class="hf-v2-city-tabs" role="tablist" aria-label="Stadtbereiche"><button type="button" role="tab" id="hfV2TabOverview" aria-controls="hfV2PanelOverview" ${cityTabAttributes('overview')} data-hf-v2-tab="overview">Übersicht</button><button type="button" role="tab" id="hfV2TabGoods" aria-controls="hfV2PanelGoods" ${cityTabAttributes('goods')} data-hf-v2-tab="goods">Waren</button><button type="button" role="tab" id="hfV2TabProduction" aria-controls="hfV2PanelProduction" ${cityTabAttributes('production')} data-hf-v2-tab="production">Produktion</button><button type="button" role="tab" id="hfV2TabTransport" aria-controls="hfV2PanelTransport" ${cityTabAttributes('transporte')} data-hf-v2-tab="transporte">Transporte</button></div><section id="hfV2PanelOverview" role="tabpanel" aria-labelledby="hfV2TabOverview" data-hf-v2-panel="overview"${cityPanelHidden('overview')}><h3>Aktuelle Probleme</h3>${problems}<section class="hf-v2-next-action" aria-labelledby="hfV2NextAction"><h3 id="hfV2NextAction">Nächste sinnvolle Aktion</h3><p>Kapazitäten und laufende Kosten prüfen.</p><button class="hf-v2-action-primary" type="button" data-hf-v2-show-tab="production">Produktion prüfen</button></section>${financeSummaryMarkup()}</section><section id="hfV2PanelGoods" role="tabpanel" aria-labelledby="hfV2TabGoods" data-hf-v2-panel="goods"${cityPanelHidden('goods')}>${inventorySectionMarkup(city)}${demandPanel(city)}</section><section id="hfV2PanelProduction" role="tabpanel" aria-labelledby="hfV2TabProduction" data-hf-v2-panel="production"${cityPanelHidden('production')}>${factoryProductionMarkup(city)}</section><section id="hfV2PanelTransport" role="tabpanel" aria-labelledby="hfV2TabTransport" data-hf-v2-panel="transporte"${cityPanelHidden('transporte')}>${cityLogisticsSectionMarkup(city)}</section>`;
+    applyCityTabState();
   }
 
   function openNetworkModalForCity(city) {
@@ -1046,14 +1073,9 @@
       const requestedTab = event.target?.closest?.('[data-hf-v2-tab], [data-hf-v2-show-tab]');
       if (requestedTab) {
         const tabName = requestedTab.dataset.hfV2Tab || requestedTab.dataset.hfV2ShowTab;
-        const facts = document.getElementById('hfV2Facts');
-        facts?.querySelectorAll('[data-hf-v2-tab]').forEach(tab => {
-          const selected = tab.dataset.hfV2Tab === tabName;
-          tab.setAttribute('aria-selected', String(selected));
-          tab.tabIndex = selected ? 0 : -1;
-        });
-        facts?.querySelectorAll('[data-hf-v2-panel]').forEach(panel => { panel.hidden = panel.dataset.hfV2Panel !== tabName; });
-        facts?.querySelector(`[data-hf-v2-tab="${tabName}"]`)?.focus();
+        if (!document.getElementById('hfV2Facts')?.querySelector(`[data-hf-v2-tab="${tabName}"]`)) return;
+        activeCityTab = tabName;
+        applyCityTabState({focus: true});
         return;
       }
       const upgradeButton = event.target?.closest?.('[data-hf-v2-factory-upgrade]');
