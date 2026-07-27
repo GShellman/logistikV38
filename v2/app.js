@@ -440,7 +440,7 @@
 
   function shipmentCalendarMarkup(city, options = {}) {
     return window.HFV2ShipmentCalendar?.markup?.(city, {
-      state: window.HFV2Logistics?.getState?.(), cityName, vehicleLabel, ...options,
+      state: window.HFV2Logistics?.getState?.(), currentDay: timeDay(currentTimeState()), cityName, vehicleLabel, ...options,
     }) || '<p class="hf-v2-muted">Kalender nicht verfügbar.</p>';
   }
 

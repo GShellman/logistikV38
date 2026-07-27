@@ -31,6 +31,38 @@ test('mehrtägige Fahrten blockieren volle Zwischentage', () => {
   assert.equal(middle.continuesAfter, true);
 });
 
+test('Kalender zeigt ausschließlich Transporte mit Überschneidung zum aktuellen Tag', () => {
+  const {markup} = calendarHelpers();
+  const shipments = [
+    {id: 'past', goodId: 'past-good', status: 'completed', fromCityId: 'a', toCityId: 'b', departureAbsMinute: 60, arrivalAbsMinute: 120},
+    {id: 'current', goodId: 'current-good', status: 'active', fromCityId: 'a', toCityId: 'b', departureAbsMinute: 1500, arrivalAbsMinute: 1560},
+    {id: 'overnight', goodId: 'overnight-good', status: 'active', fromCityId: 'a', toCityId: 'b', departureAbsMinute: 1380, arrivalAbsMinute: 1500},
+    {id: 'future', goodId: 'future-good', status: 'active', fromCityId: 'a', toCityId: 'b', departureAbsMinute: 2940, arrivalAbsMinute: 3000},
+  ];
+
+  const html = markup({id: 'a'}, {currentDay: 2, shipments, cityName: id => id});
+
+  assert.equal((html.match(/class="hf-v2-transport-calendar__day-title"/g) || []).length, 1);
+  assert.match(html, />Tag 2<\/h4>/);
+  assert.match(html, /current-good/);
+  assert.match(html, /overnight-good/);
+  assert.doesNotMatch(html, /past-good/);
+  assert.doesNotMatch(html, /future-good/);
+});
+
+test('Kalender zeigt den aktuellen Tag auch ohne passende Transporte', () => {
+  const {markup} = calendarHelpers();
+  const html = markup({id: 'a'}, {
+    state: {time: {day: 3}},
+    shipments: [{id: 'past', status: 'completed', fromCityId: 'a', toCityId: 'b', departureAbsMinute: 60, arrivalAbsMinute: 120}],
+  });
+
+  assert.equal((html.match(/class="hf-v2-transport-calendar__day-title"/g) || []).length, 1);
+  assert.match(html, />Tag 3<\/h4>/);
+  assert.match(html, /Keine Transporte an Tag 3\./);
+  assert.doesNotMatch(html, /shipment-past/);
+});
+
 test('Überschneidungen erhalten parallele Spuren', () => {
   const {layout} = calendarHelpers();
   const rows = layout([
