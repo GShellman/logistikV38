@@ -174,12 +174,6 @@ h2 { font-size: 24px; }
   white-space: normal;
 }
 
-.hf-v2-demand-tile__body strong {
-  color: var(--hf-primary-2);
-  font-size: 11px;
-  line-height: 1.15;
-}
-
 .hf-v2-demand-tile__bar {
   background: #dfe5ec;
   border-radius: 999px;
@@ -225,17 +219,6 @@ h2 { font-size: 24px; }
 .hf-v2-demand-main div { align-items: baseline; display: flex; gap: 8px; justify-content: space-between; }
 .hf-v2-demand-main b { font-size: 12px; overflow-wrap: anywhere; white-space: normal; }
 .hf-v2-demand-main strong { color: var(--hf-primary-2); flex: 0 0 auto; font-size: 11px; }
-.hf-v2-demand-price {
-  color: var(--hf-muted);
-  display: flex;
-  font-size: 11px;
-  font-weight: 800;
-  gap: 8px;
-  justify-content: space-between;
-  margin-top: 5px;
-}
-.hf-v2-demand-price b { color: var(--hf-ink); font-size: 11px; }
-.hf-v2-demand-price small { font-size: 10px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
 .hf-v2-demand-main span {
   background: #e4ebf2;
   border-radius: 999px;
@@ -2351,7 +2334,6 @@ textarea,
 .hf-v2-fleet-cash strong,
 .hf-v2-fleet-stats dd,
 .hf-v2-fleet-table td,
-.hf-v2-demand-price,
 .hf-v2-transport-calendar__time,
 .hf-v2-transport-calendar__event dd,
 .hf-v2-logistics-preview,
