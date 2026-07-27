@@ -110,8 +110,10 @@
     return {ok: true, cityId: normalizeId(cityId), vehicleType, vehicleId: candidate.id, owned: getOwnedCountByType(vehicleType), refund, state};
   }
 
-  function assignVehicles({cityId, vehicleType, count = 1, assignmentId, departureAbsMinute = 0, availableAbsMinute = 0, routeSegment = null}) {
-    const vehicles = getAvailableVehicles({cityId, vehicleType, atAbsMinute: departureAbsMinute}).slice(0, Math.max(0, Math.trunc(Number(count) || 0)));
+  function assignVehicles({cityId, vehicleType, vehicleIds = null, count = 1, assignmentId, departureAbsMinute = 0, availableAbsMinute = 0, routeSegment = null}) {
+    const requestedIds = Array.isArray(vehicleIds) ? vehicleIds.map(Number) : null;
+    const candidates = getAvailableVehicles({cityId, vehicleType, atAbsMinute: departureAbsMinute});
+    const vehicles = requestedIds ? requestedIds.map(id => candidates.find(vehicle => vehicle.id === id)).filter(Boolean) : candidates.slice(0, Math.max(0, Math.trunc(Number(count) || 0)));
     if (vehicles.length !== Math.max(0, Math.trunc(Number(count) || 0))) return [];
     for (const vehicle of vehicles) Object.assign(vehicle, {status: 'assigned', activeAssignmentId: normalizeId(assignmentId), availableAbsMinute: Math.max(0, Number(availableAbsMinute) || 0), ...(routeSegment ? {routeSegment} : {})});
     return vehicles;
