@@ -67,7 +67,7 @@
   function fleetInventory(cityId) {
     const api = fleetApi();
     if (!api) return '<p class="hf-v2-fleet-empty">Der Fahrzeugbestand ist nicht geladen.</p>';
-    const fleet = api.getCityFleet?.(cityId) || {};
+    const fleet = api.getFleetSummary?.({cityId})?.byType || {};
     const vehicles = api.VEHICLES || {};
     const types = api.VEHICLE_TYPES || Object.keys(vehicles);
     const rows = types.map(type => ({type, vehicle: vehicles[type] || {icon: '🚚'}, owned: Number(fleet[type]) || 0}));
@@ -92,7 +92,7 @@
     const api = fleetApi();
     if (!api) return '<p class="hf-v2-fleet-empty">Der Fahrzeugkatalog ist nicht geladen.</p>';
 
-    const fleet = api.getCityFleet?.(cityId) || {};
+    const fleet = api.getFleetSummary?.({cityId})?.byType || {};
     const cash = window.HFV2Save?.getCash?.() ?? 0;
     const cityUnlocked = isCityUnlocked(cityId);
     const vehicleTypes = api.VEHICLE_TYPES || [];

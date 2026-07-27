@@ -177,7 +177,7 @@
   }
 
   function vehicleOptions(sourceId) {
-    const fleet = sourceId ? window.HFFleet?.getCityFleet?.(sourceId) || {} : {};
+    const fleet = sourceId ? window.HFFleet?.getFleetSummary?.({cityId: sourceId})?.availableByType || {} : {};
     return Object.entries(fleet)
       .filter(([, count]) => Math.max(0, Number(count) || 0) > 0)
       .map(([type, count]) => ({type, count, spec: vehicleSpec(type)}))
