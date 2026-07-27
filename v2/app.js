@@ -103,10 +103,10 @@
   function cityInventoryMarkup(cityId) {
     const inventory = window.HFV2Goods?.getCityInventory?.(cityId) || {};
     const rows = Object.entries(inventory).filter(([, kg]) => Number(kg) > 0.001).sort(([a], [b]) => goodById(a).name.localeCompare(goodById(b).name, 'de-CH'));
-    return rows.length ? `<div class="hf-v2-inventory-grid">${rows.map(([goodId, kg]) => {
+    return rows.length ? limitedEntriesMarkup(rows, ([goodId, kg]) => {
       const good = goodById(goodId);
       return `<article class="hf-v2-inventory-good"><div class="hf-v2-demand-icon">${goodIcon(good)}</div><div><b>${escapeHtml(good.name)}</b><span>${formatGoodAmount(goodId, kg)} · ${formatWeightKg(kg)}</span></div></article>`;
-    }).join('')}</div>` : '<p class="hf-v2-muted hf-v2-inventory-empty">📦 Lager leer</p>';
+    }, 4, 'hf-v2-inventory-grid') : '<p class="hf-v2-muted hf-v2-inventory-empty">📦 Lager leer</p>';
   }
 
   function inventorySectionMarkup(city) {
@@ -138,11 +138,35 @@
     return Math.max(0, Math.max(0, Number(currentInventoryKg) || 0) - remainingDemandKg);
   }
 
+  function stockCoverageLabel(inventoryKg, dailyDemandKg) {
+    const demand = Math.max(0, Number(dailyDemandKg) || 0);
+    const stock = Math.max(0, Number(inventoryKg) || 0);
+    if (!demand) return 'kein Verbrauch';
+    const days = stock / demand;
+    if (days < .25) return 'kritisch';
+    if (days < 1) {
+      const now = currentTimeState();
+      const minutesLeft = Math.round(days * 1440);
+      const absoluteMinutes = timeMinuteOfDay(now) + minutesLeft;
+      if (absoluteMinutes < 1440) return `bis heute ${formatClockTime(Math.floor(absoluteMinutes / 60), absoluteMinutes % 60)}`;
+    }
+    return `${days.toLocaleString('de-CH', {maximumFractionDigits: 1})} Tage`;
+  }
+
+  function limitedEntriesMarkup(entries, renderEntry, limit = 4, className = '') {
+    const visible = entries.slice(0, limit).map(renderEntry).join('');
+    const remainder = entries.slice(limit).map(renderEntry).join('');
+    const content = `<div class="${className}">${visible}</div>`;
+    if (!remainder) return content;
+    return `${content}<details class="hf-v2-more"><summary>Alle anzeigen (${entries.length.toLocaleString('de-CH')})</summary><div class="${className}">${remainder}</div></details>`;
+  }
+
   function demandPanel(city) {
     const rows = v2DemandRows(city);
     const total = rows.reduce((sum, row) => sum + row.dailyKg, 0);
     const inventory = window.HFV2Goods?.getCityInventory?.(city.id) || {};
-    return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">Alle Waren</h3></div><strong>${formatDailyKg(total)}</strong></div>${rows.length ? `<div class="hf-v2-demand-compact-grid">${rows.map(row => { const inventoryKg = Math.max(0, Number(inventory[row.good.id]) || 0); const projectedKg = projectedEndOfDayStockKg(city.id, row.good.id, inventoryKg, row.dailyKg); const coverage = row.dailyKg > 0 ? Math.min(100, projectedKg / row.dailyKg * 100) : 100; const salePrice = window.HFV2Goods?.salePriceForCity?.(city, row.good.id) ?? (Number(row.good.price) || 0); return `<article class="hf-v2-demand-tile"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-tile__body"><b>${escapeHtml(row.good.name)}</b><strong>${formatDailyKg(row.dailyKg)}</strong><div class="hf-v2-demand-price"><small>Verkaufspreis</small><b>${formatCurrency(salePrice)}/kg</b></div><span class="hf-v2-demand-tile__bar"><i style="width:${coverage}%"></i></span><small class="hf-v2-muted">Prognose Tagesende: ${formatGoodAmount(row.good.id, projectedKg)}</small></div></article>`; }).join('')}</div>` : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
+    const renderRow = row => { const inventoryKg = Math.max(0, Number(inventory[row.good.id]) || 0); const projectedKg = projectedEndOfDayStockKg(city.id, row.good.id, inventoryKg, row.dailyKg); const coverage = row.dailyKg > 0 ? Math.min(100, projectedKg / row.dailyKg * 100) : 100; const salePrice = window.HFV2Goods?.salePriceForCity?.(city, row.good.id) ?? (Number(row.good.price) || 0); return `<article class="hf-v2-demand-tile"><div class="hf-v2-demand-icon">${goodIcon(row.good)}</div><div class="hf-v2-demand-tile__body"><b>${escapeHtml(row.good.name)}</b><strong>Reichweite: ${stockCoverageLabel(inventoryKg, row.dailyKg)}</strong><small>${formatDailyKg(row.dailyKg)} Bedarf</small><div class="hf-v2-demand-price"><small>Verkaufspreis</small><b>${formatCurrency(salePrice)}/kg</b></div><span class="hf-v2-demand-tile__bar" aria-hidden="true"><i style="width:${coverage}%"></i></span><small class="hf-v2-muted">Tagesende: ${formatGoodAmount(row.good.id, projectedKg)}</small></div></article>`; };
+    return `<section class="hf-v2-demand-card" aria-labelledby="hfV2DemandTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Tagesbedarf</p><h3 id="hfV2DemandTitle">Waren und Reichweiten</h3></div><strong>${formatDailyKg(total)}</strong></div>${rows.length ? limitedEntriesMarkup(rows, renderRow, 4, 'hf-v2-demand-compact-grid') : '<p class="hf-v2-muted">Für diese Stadt gibt es noch keinen berechneten Warenbedarf.</p>'}</section>`;
   }
 
   function factoryById(factoryId) {
@@ -248,8 +272,8 @@
       const fill = capacityKg > 0 ? Math.min(100, actualKg / capacityKg * 100) : 0;
       const status = estimate?.reason === 'demand-limited' ? 'Nachfrage gedeckt' : estimate?.reason === 'capacity-limited' ? 'Lager voll' : estimate?.reason === 'input-limited' ? 'Inputs fehlen' : estimate?.reason === 'no-output' ? 'Kein Output' : 'Potenzial heute';
       return `<article class="hf-v2-factory-production-item"><div class="hf-v2-factory-production-head"><span>${escapeHtml(factory.icon || '🏭')}</span><div><b>${escapeHtml(factory.name || factory.id)}</b><small>Stufe ${level.toLocaleString('de-CH')} · ${factoryOutputsText(factory, outputMultiplier)}</small></div></div><div class="hf-v2-factory-production-bar"><span><i style="width:${fill}%"></i></span><small>${formatDailyKg(actualKg)} von ${formatDailyKg(capacityKg)} · ${status}</small></div><dl class="hf-v2-factory-production-stats"><div><dt>Kapazität aktuell</dt><dd>${formatDailyKg(capacityKg)}</dd></div><div><dt>Nach Ausbau</dt><dd>${formatDailyKg(nextCapacityKg)}</dd></div><div><dt>Betriebskosten</dt><dd>${formatCurrency(currentOperatingCost)}/Tag</dd></div><div><dt>Betriebskosten nach Ausbau</dt><dd>${formatCurrency(nextOperatingCost)}/Tag</dd></div><div><dt>Upgrade-Kosten</dt><dd>${formatCurrency(upgradeCost)}</dd></div></dl><button type="button" data-hf-v2-factory-upgrade data-city-id="${escapeHtml(city.id)}" data-factory-ref="${escapeHtml(factoryRef)}" title="${escapeHtml(buttonState.title)}"${buttonState.disabled ? ' disabled' : ''}>Fabrik ausbauen</button></article>`;
-    }).join('');
-    return `<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div><strong>${builtFactories.length.toLocaleString('de-CH')}</strong></div>${rows}</section>${productionDebugMarkup(city)}`;
+    });
+    return `<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div><strong>${builtFactories.length.toLocaleString('de-CH')}</strong></div>${limitedEntriesMarkup(rows, row => row, 3, 'hf-v2-factory-production-grid')}</section>${productionDebugMarkup(city)}`;
   }
 
 
@@ -305,7 +329,7 @@
     const dispatchAbsMinute = Number(order.lastDispatchAbsMinute);
     const dispatchTimeMarkup = Number.isFinite(dispatchAbsMinute) ? `<span><small>Letzter Versuch</small>${formatAbsMinute(dispatchAbsMinute)}</span>` : '';
     const warningClass = dispatchResult === 'stock-limited' ? ' hf-v2-logistics-row--warning' : '';
-    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row${warningClass}"><b>${escapeHtml(cityName(order.fromCityId))} → ${escapeHtml(cityName(order.toCityId))}</b><span><small>Ware</small>${escapeHtml(good.name || order.goodId)}</span><span><small>Menge</small>${formatGoodAmount(order.goodId, order.amountKg)} · ${formatWeightKg(order.amountKg)}</span><span><small>Frequenz</small>${order.frequency === 'weekly' ? 'wöchentlich' : 'täglich'}</span><span><small>Uhrzeit</small>${formatClockTime(order.departureHour, order.departureMinute)}</span><span><small>Fahrzeugtyp</small>${escapeHtml(vehicleLabel(order.vehicleType))}</span><span><small>Status</small>${order.enabled === false ? 'Inaktiv' : 'Aktiv'}</span><span><small>Versand</small>${escapeHtml(dispatchResultLabel(dispatchResult))}</span>${dispatchTimeMarkup}<span><small>Aktion</small><button type="button" data-hf-v2-order-toggle="${order.id}">${order.enabled === false ? 'Aktivieren' : 'Deaktivieren'}</button> <button type="button" data-hf-v2-order-delete="${order.id}">Löschen</button></span></article>`;
+    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row${warningClass}"><b>${escapeHtml(cityName(order.fromCityId))} → ${escapeHtml(cityName(order.toCityId))}</b><span><small>Ware</small>${escapeHtml(good.name || order.goodId)}</span><span><small>Menge</small>${formatGoodAmount(order.goodId, order.amountKg)} · ${formatWeightKg(order.amountKg)}</span><span><small>Frequenz</small>${order.frequency === 'weekly' ? 'wöchentlich' : 'täglich'}</span><span><small>Uhrzeit</small>${formatClockTime(order.departureHour, order.departureMinute)}</span><span><small>Fahrzeugtyp</small>${escapeHtml(vehicleLabel(order.vehicleType))}</span><span><small>Status</small>${order.enabled === false ? 'Inaktiv' : 'Aktiv'}</span><span><small>Versand</small>${escapeHtml(dispatchResultLabel(dispatchResult))}</span>${dispatchTimeMarkup}<span><small>Aktion</small><button type="button" data-hf-v2-order-toggle="${order.id}">${order.enabled === false ? 'Aktivieren' : 'Deaktivieren'}</button> <button class="hf-v2-action-danger" type="button" data-hf-v2-order-delete="${order.id}">Löschen</button></span></article>`;
   }
 
   function shipmentStatusLabel(shipment) {
@@ -478,7 +502,7 @@
   }
 
   function logisticsListMarkup(items, emptyText, rowMarkup) {
-    return items.length ? `<div class="hf-v2-production-debug-grid">${items.map(rowMarkup).join('')}</div>` : `<p class="hf-v2-muted">${emptyText}</p>`;
+    return items.length ? limitedEntriesMarkup(items, rowMarkup, 3, 'hf-v2-production-debug-grid') : `<p class="hf-v2-muted">${emptyText}</p>`;
   }
 
   function cityLogisticsSectionMarkup(city) {
@@ -589,15 +613,16 @@
     refreshMarkers(cities);
 
     document.getElementById('hfV2SelectedName').textContent = city.name;
-    document.getElementById('hfV2SelectedIntro').textContent = 'Produktions- und Finanzübersicht für die markierte Stadt.';
-    document.getElementById('hfV2Facts').innerHTML = [
-      financeSummaryMarkup(),
-      `<div class="hf-v2-city-kpi-grid">${fact('Kategorie', tierLabel(city.tier))}${fact('Bauplätze', city.slots.toLocaleString('de-CH'))}</div>`,
-      factoryProductionMarkup(city),
-      inventorySectionMarkup(city),
-      cityLogisticsSectionMarkup(city),
-      demandPanel(city),
-    ].join('');
+    const state = cityMapState(city);
+    const demandRows = v2DemandRows(city);
+    const inventory = window.HFV2Goods?.getCityInventory?.(city.id) || {};
+    const warnings = demandRows.filter(row => (Number(inventory[row.good.id]) || 0) / row.dailyKg < 1).sort((a, b) => ((Number(inventory[a.good.id]) || 0) / a.dailyKg) - ((Number(inventory[b.good.id]) || 0) / b.dailyKg));
+    const usedKg = window.HFV2Goods?.getUsedCapacityKg?.(city.id) || 0;
+    const capacityKg = window.HFV2Goods?.getCapacityKg?.(city.id) || 0;
+    const factories = window.HFV2Factories?.getCityFactoryInstances?.(city.id) || [];
+    const problems = warnings.length ? limitedEntriesMarkup(warnings, row => `<article class="hf-v2-city-warning"><span aria-hidden="true">⚠</span><p><b>${escapeHtml(row.good.name)}</b> reicht noch ${stockCoverageLabel(Number(inventory[row.good.id]) || 0, row.dailyKg)}<small>Ursache: Bestand liegt unter dem Tagesbedarf.</small></p><button class="hf-v2-action-primary" type="button" data-hf-v2-show-tab="transporte">Lieferung planen</button></article>`, 3, 'hf-v2-city-warning-list') : '<p class="hf-v2-city-ok"><span aria-hidden="true">✓</span> Keine akuten Probleme erkannt.</p>';
+    document.getElementById('hfV2SelectedIntro').textContent = `${state.symbol} ${state.label}`;
+    document.getElementById('hfV2Facts').innerHTML = `<div class="hf-v2-city-summary" aria-label="Kennzahlen für ${escapeHtml(city.name)}"><div class="hf-v2-city-kpi-grid">${fact('Einwohner', formatPopulation(city.population))}${fact('Lager', capacityKg ? `${Math.round(usedKg / capacityKg * 100)} %` : '–')}${fact('Fabriken', factories.length.toLocaleString('de-CH'))}${fact('Bauplätze', city.slots.toLocaleString('de-CH'))}</div></div><div class="hf-v2-city-tabs" role="tablist" aria-label="Stadtbereiche"><button type="button" role="tab" id="hfV2TabOverview" aria-controls="hfV2PanelOverview" aria-selected="true" data-hf-v2-tab="overview">Übersicht</button><button type="button" role="tab" id="hfV2TabGoods" aria-controls="hfV2PanelGoods" aria-selected="false" tabindex="-1" data-hf-v2-tab="goods">Waren</button><button type="button" role="tab" id="hfV2TabProduction" aria-controls="hfV2PanelProduction" aria-selected="false" tabindex="-1" data-hf-v2-tab="production">Produktion</button><button type="button" role="tab" id="hfV2TabTransport" aria-controls="hfV2PanelTransport" aria-selected="false" tabindex="-1" data-hf-v2-tab="transporte">Transporte</button></div><section id="hfV2PanelOverview" role="tabpanel" aria-labelledby="hfV2TabOverview" data-hf-v2-panel="overview"><h3>Aktuelle Probleme</h3>${problems}<section class="hf-v2-next-action" aria-labelledby="hfV2NextAction"><h3 id="hfV2NextAction">Nächste sinnvolle Aktion</h3><p>${warnings.length ? `Versorgung mit ${escapeHtml(warnings[0].good.name)} sichern, bevor der Bestand ausläuft.` : 'Kapazitäten und laufende Kosten prüfen.'}</p><button class="hf-v2-action-primary" type="button" data-hf-v2-show-tab="${warnings.length ? 'transporte' : 'production'}">${warnings.length ? 'Lieferung planen' : 'Produktion prüfen'}</button></section>${financeSummaryMarkup()}</section><section id="hfV2PanelGoods" role="tabpanel" aria-labelledby="hfV2TabGoods" data-hf-v2-panel="goods" hidden>${inventorySectionMarkup(city)}${demandPanel(city)}</section><section id="hfV2PanelProduction" role="tabpanel" aria-labelledby="hfV2TabProduction" data-hf-v2-panel="production" hidden>${factoryProductionMarkup(city)}</section><section id="hfV2PanelTransport" role="tabpanel" aria-labelledby="hfV2TabTransport" data-hf-v2-panel="transporte" hidden>${cityLogisticsSectionMarkup(city)}</section>`;
   }
 
   function openNetworkModalForCity(city) {
@@ -915,6 +940,19 @@
 
   function bindLogisticsPanelActions() {
     document.addEventListener('click', event => {
+      const requestedTab = event.target?.closest?.('[data-hf-v2-tab], [data-hf-v2-show-tab]');
+      if (requestedTab) {
+        const tabName = requestedTab.dataset.hfV2Tab || requestedTab.dataset.hfV2ShowTab;
+        const facts = document.getElementById('hfV2Facts');
+        facts?.querySelectorAll('[data-hf-v2-tab]').forEach(tab => {
+          const selected = tab.dataset.hfV2Tab === tabName;
+          tab.setAttribute('aria-selected', String(selected));
+          tab.tabIndex = selected ? 0 : -1;
+        });
+        facts?.querySelectorAll('[data-hf-v2-panel]').forEach(panel => { panel.hidden = panel.dataset.hfV2Panel !== tabName; });
+        facts?.querySelector(`[data-hf-v2-tab="${tabName}"]`)?.focus();
+        return;
+      }
       const upgradeButton = event.target?.closest?.('[data-hf-v2-factory-upgrade]');
       if (upgradeButton) {
         const cityId = upgradeButton.dataset.cityId;
@@ -933,6 +971,7 @@
         const order = (window.HFV2Logistics?.getState?.().orders || []).find(entry => entry.id === id);
         window.HFV2Logistics?.setOrderEnabled?.(id, order?.enabled === false);
       } else {
+        if (!window.confirm('Bestellung wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')) return;
         window.HFV2Logistics?.cancelOrder?.(id);
       }
       refreshNetworkView();
