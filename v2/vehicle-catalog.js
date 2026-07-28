@@ -4,6 +4,10 @@
   const VEHICLE_CATALOG = {
     van: {
       id: 'van',
+      brandId: 'helvetic',
+      brand: 'Helvetic',
+      model: 'City Van',
+      category: 'Transporter',
       name: 'Lieferwagen',
       icon: '🚐',
       mode: 'road',
@@ -14,8 +18,12 @@
       kmCost: 4.2,
       desc: 'Klein, flexibel und auf jeder Straße einsetzbar.',
     },
-    largeVan: {
-      id: 'largeVan',
+    'large-van': {
+      id: 'large-van',
+      brandId: 'helvetic',
+      brand: 'Helvetic',
+      model: 'Cargo Van',
+      category: 'Transporter',
       name: 'Großer Transporter',
       icon: '🚐',
       mode: 'road',
@@ -26,8 +34,12 @@
       kmCost: 5.1,
       desc: 'Größerer Transporter mit 2.8 t Nutzlast für flexible Stadt- und Regionaltransporte.',
     },
-    lightTruck: {
-      id: 'lightTruck',
+    'light-truck': {
+      id: 'light-truck',
+      brandId: 'helvetic',
+      brand: 'Helvetic',
+      model: 'Light Truck',
+      category: 'Lastwagen',
       name: 'Leicht-LKW',
       icon: '🚚',
       mode: 'road',
@@ -38,8 +50,12 @@
       kmCost: 6.2,
       desc: 'Flexibler LKW, der auf allen Straßen eingesetzt werden kann.',
     },
-    heavyTruck: {
-      id: 'heavyTruck',
+    'heavy-truck': {
+      id: 'heavy-truck',
+      brandId: 'helvetic',
+      brand: 'Helvetic',
+      model: 'Heavy Truck',
+      category: 'Lastwagen',
       name: 'Schwer-LKW',
       icon: '🚛',
       mode: 'road',
@@ -52,6 +68,10 @@
     },
     artic: {
       id: 'artic',
+      brandId: 'helvetic',
+      brand: 'Helvetic',
+      model: 'Artic',
+      category: 'Sattelzug',
       name: 'Sattelzug',
       icon: '🚛',
       mode: 'road',
@@ -64,6 +84,10 @@
     },
     reefer: {
       id: 'reefer',
+      brandId: 'helvetic',
+      brand: 'Helvetic',
+      model: 'Reefer',
+      category: 'Kuehlfahrzeug',
       name: 'Kühl-LKW',
       icon: '🧊',
       mode: 'road',
@@ -76,6 +100,10 @@
     },
     tipper: {
       id: 'tipper',
+      brandId: 'helvetic',
+      brand: 'Helvetic',
+      model: 'Tipper',
+      category: 'Kipper',
       name: 'Kipplaster',
       icon: '🚛',
       mode: 'road',
