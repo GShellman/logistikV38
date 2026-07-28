@@ -30,9 +30,12 @@
   }
 
   function lineCoordinates(connection, start, target) {
-    return connection.geometry?.length > 1
+    const coords = connection.geometry?.length > 1
       ? connection.geometry
       : [[start.lat, start.lng], [target.lat, target.lng]];
+    // Persisted routes can contain the pre-snap coordinate.  Rendering endpoints
+    // from their graph nodes guarantees adjacent split edges meet pixel-perfectly.
+    return [[start.lat, start.lng], ...coords.slice(1, -1), [target.lat, target.lng]];
   }
 
   function nodeInfo(id, citiesById) {
@@ -159,6 +162,17 @@
         networkLineLayer.addLayer(bubble);
       }
     });
+
+    const junctions = window.HFNetwork?.getState?.().junctions || [];
+    for (const junction of junctions) {
+      if (!junction?.isJunction) continue;
+      networkLineLayer.addLayer(L.marker([junction.lat, junction.lng], {
+        icon: L.divIcon({className: 'hf-v2-junction-marker', html: '<span aria-hidden="true"></span>', iconSize: [12, 12], iconAnchor: [6, 6]}),
+        interactive: false,
+        keyboard: false,
+        title: junction.name || 'Netzknoten',
+      }));
+    }
 
     return networkLineLayer;
   }

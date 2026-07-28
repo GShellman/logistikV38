@@ -4,6 +4,10 @@
   const MAX_CONNECTION_DISTANCE_KM = 105;
   const STARTING_CASH = window.HFV2Save?.STARTING_CASH ?? 500000;
   const INTERSECTION_EPS = 1e-7;
+  // 50 metres is large enough to absorb routing/rounding noise, but small enough
+  // not to join neighbouring streets accidentally.  Unlike a degree epsilon it
+  // has the same meaning everywhere on the map.
+  const JUNCTION_SNAP_KM = 0.05;
   const CAPACITY_WINDOW_MINUTES = 60;
 
   const TRANSPORT_TYPES = {
@@ -127,21 +131,47 @@
     const ax = a[1], ay = a[0], bx = b[1], by = b[0], cx = c[1], cy = c[0], dx = d[1], dy = d[0];
     const rX = bx - ax, rY = by - ay, sX = dx - cx, sY = dy - cy;
     const denom = rX * sY - rY * sX;
-    if (Math.abs(denom) < 1e-12) return null;
+    if (Math.abs(denom) < 1e-12) {
+      const cross = (cx - ax) * rY - (cy - ay) * rX;
+      if (Math.abs(cross) > 1e-10) return null;
+      const rr = rX * rX + rY * rY;
+      const ss = sX * sX + sY * sY;
+      if (rr < 1e-20 || ss < 1e-20) return null;
+      const tc = ((cx - ax) * rX + (cy - ay) * rY) / rr;
+      const td = ((dx - ax) * rX + (dy - ay) * rY) / rr;
+      const low = Math.max(0, Math.min(tc, td));
+      const high = Math.min(1, Math.max(tc, td));
+      if (high < low - INTERSECTION_EPS) return null;
+      // Return both overlap boundaries.  Callers split there and subsequently
+      // discard the duplicate edge; no zero-length overlap edge is produced.
+      return [low, high].filter((value, index, values) => index === 0 || Math.abs(value - values[0]) > INTERSECTION_EPS).map(t => {
+        const point = [ay + rY * t, ax + rX * t];
+        const u = ((point[1] - cx) * sX + (point[0] - cy) * sY) / ss;
+        return {point, t, u, collinear: true};
+      });
+    }
     const qpx = cx - ax, qpy = cy - ay;
     const t = (qpx * sY - qpy * sX) / denom;
     const u = (qpx * rY - qpy * rX) / denom;
-    if (t <= INTERSECTION_EPS || t >= 1 - INTERSECTION_EPS || u <= INTERSECTION_EPS || u >= 1 - INTERSECTION_EPS) return null;
     return {point: [ay + rY * t, ax + rX * t], t, u};
+  }
+
+  function closestPointOnSegment(point, a, b) {
+    const latScale = Math.cos(point[0] * Math.PI / 180);
+    const px = point[1] * latScale, py = point[0];
+    const ax = a[1] * latScale, ay = a[0], bx = b[1] * latScale, by = b[0];
+    const length2 = (bx - ax) ** 2 + (by - ay) ** 2;
+    const t = length2 ? Math.max(0, Math.min(1, ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / length2)) : 0;
+    return {point: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], t};
   }
 
   function geometryIntersections(aCoords, bCoords) {
     const hits = [];
     for (let ai = 0; ai < aCoords.length - 1; ai++) {
       for (let bi = 0; bi < bCoords.length - 1; bi++) {
-        const hit = segmentIntersection(aCoords[ai], aCoords[ai + 1], bCoords[bi], bCoords[bi + 1]);
-        if (!hit) continue;
-        hits.push({
+        const result = segmentIntersection(aCoords[ai], aCoords[ai + 1], bCoords[bi], bCoords[bi + 1]);
+        const exactHits = Array.isArray(result) ? result : (result ? [result] : []);
+        for (const hit of exactHits) hits.push({
           point: hit.point,
           aIndex: ai,
           aT: hit.t,
@@ -150,13 +180,27 @@
           aOffset: geometryPointOffset(aCoords, ai, hit.t),
           bOffset: geometryPointOffset(bCoords, bi, hit.u),
         });
+        if (exactHits.length) continue;
+        // Near misses primarily arise at route endpoints.  Testing all four
+        // endpoint projections also covers T joins and interior polyline points.
+        const candidates = [];
+        for (const [point, onA] of [[aCoords[ai], true], [aCoords[ai + 1], true], [bCoords[bi], false], [bCoords[bi + 1], false]]) {
+          const projected = onA ? closestPointOnSegment(point, bCoords[bi], bCoords[bi + 1]) : closestPointOnSegment(point, aCoords[ai], aCoords[ai + 1]);
+          if (dist({lat: point[0], lng: point[1]}, {lat: projected.point[0], lng: projected.point[1]}) > JUNCTION_SNAP_KM) continue;
+          const aT = onA ? (samePoint(point, aCoords[ai]) ? 0 : 1) : projected.t;
+          const bT = onA ? projected.t : (samePoint(point, bCoords[bi]) ? 0 : 1);
+          candidates.push({point: onA ? point : projected.point, aT, bT});
+        }
+        for (const hit of candidates) hits.push({point: hit.point, aIndex: ai, aT: hit.aT, bIndex: bi, bT: hit.bT,
+          aOffset: geometryPointOffset(aCoords, ai, hit.aT), bOffset: geometryPointOffset(bCoords, bi, hit.bT)});
       }
     }
     return hits;
   }
 
   function uniqueIntersections(hits) {
-    return hits.filter((hit, index) => !hits.slice(0, index).some(other => samePoint(other.point, hit.point)));
+    return hits.sort((a, b) => a.aOffset - b.aOffset || a.bOffset - b.bOffset)
+      .filter((hit, index, sorted) => !sorted.slice(0, index).some(other => dist({lat: other.point[0], lng: other.point[1]}, {lat: hit.point[0], lng: hit.point[1]}) < JUNCTION_SNAP_KM));
   }
 
   function normalizeCuts(coords, cuts) {
@@ -190,10 +234,15 @@
 
   function createJunction(point, targetState = state) {
     targetState.junctions = Array.isArray(targetState.junctions) ? targetState.junctions : [];
-    const existing = targetState.junctions.find(junction => dist(junction, {lat: point[0], lng: point[1]}) < .05);
+    const existing = targetState.junctions.find(junction => dist(junction, {lat: point[0], lng: point[1]}) < JUNCTION_SNAP_KM);
     if (existing) return existing;
+    const key = `${point[0].toFixed(6)}_${point[1].toFixed(6)}`.replace(/[^0-9_-]/g, '_');
+    const used = new Set([...(targetState.junctions || []).map(item => item.id), ...(targetState.connections || []).map(item => item.id)]);
+    let id = `junction-${key}`;
+    let suffix = 2;
+    while (used.has(id)) id = `junction-${key}-${suffix++}`;
     const junction = {
-      id: `j${Date.now()}${Math.random().toString(16).slice(2)}`,
+      id,
       name: 'Automatischer Netzknoten',
       lat: point[0],
       lng: point[1],
@@ -206,12 +255,12 @@
     return junction;
   }
 
-  function edgeWithGeometry(base, a, b, type, coords) {
+  function edgeWithGeometry(base, a, b, type, coords, targetState = state) {
     const spec = transportSpec(type);
     const distance = geometryDistance(coords);
     return {
       ...base,
-      id: `e${Date.now()}${Math.random().toString(16).slice(2)}`,
+      id: nextStateId('edge', targetState),
       a,
       b,
       type,
@@ -223,9 +272,18 @@
     };
   }
 
+  function nextStateId(prefix, targetState = state) {
+    targetState._networkSequence = Math.max(0, Number(targetState._networkSequence) || 0);
+    const used = new Set((targetState.connections || []).map(edge => String(edge.id)));
+    let id;
+    do id = `${prefix}-${++targetState._networkSequence}`; while (used.has(id));
+    return id;
+  }
+
   function splitRoadsForAutomaticJunctions(project, targetState = state) {
     const projectSpec = transportSpec(project.type);
-    if (projectSpec.mode !== 'road') return [{id: `e${Date.now()}${Math.random().toString(16).slice(2)}`, a: project.a, b: project.b, type: project.type, distance: project.distance, duration: project.duration, geometry: project.geometry, capacity: projectSpec.capacity, maintenance: project.maintenance}];
+    if (projectSpec.mode !== 'road') return [edgeWithGeometry(project, project.a, project.b, project.type,
+      project.geometry || [[nodeInfo(project.a, targetState).lat, nodeInfo(project.a, targetState).lng], [nodeInfo(project.b, targetState).lat, nodeInfo(project.b, targetState).lng]], targetState)];
 
     const projectGeometry = Array.isArray(project.geometry) && project.geometry.length > 1
       ? project.geometry
@@ -235,34 +293,62 @@
 
     for (const edge of targetState.connections || []) {
       if (!isRoadType(edge.type)) continue;
-      if (edge.a === project.a || edge.a === project.b || edge.b === project.a || edge.b === project.b) continue;
       const existingGeometry = edgeGeometry(edge, targetState);
       const hits = uniqueIntersections(geometryIntersections(projectGeometry, existingGeometry));
       if (!hits.length) continue;
 
-      const existingCuts = hits.map(hit => {
-        const junction = createJunction(hit.point, targetState);
-        newCuts.push({offset: hit.aOffset, segmentIndex: hit.aIndex, point: hit.point, junctionId: junction.id, type: edge.type});
-        return {offset: hit.bOffset, segmentIndex: hit.bIndex, point: hit.point, junctionId: junction.id};
-      });
+      const existingCuts = [];
+      for (const hit of hits) {
+        const projectAtStart = hit.aOffset <= INTERSECTION_EPS;
+        const projectAtEnd = hit.aOffset >= geometryDistance(projectGeometry) - INTERSECTION_EPS;
+        const existingAtStart = hit.bOffset <= INTERSECTION_EPS;
+        const existingAtEnd = hit.bOffset >= geometryDistance(existingGeometry) - INTERSECTION_EPS;
+        const projectNode = projectAtStart ? project.a : (projectAtEnd ? project.b : null);
+        const existingNode = existingAtStart ? edge.a : (existingAtEnd ? edge.b : null);
+        // This one point is already represented by the same graph node.  Other
+        // hits between these two polylines are deliberately still processed.
+        if (projectNode && projectNode === existingNode) continue;
+        const junctionId = projectNode || existingNode || createJunction(hit.point, targetState).id;
+        const node = nodeInfo(junctionId, targetState);
+        const point = node ? [node.lat, node.lng] : hit.point;
+        newCuts.push({offset: hit.aOffset, segmentIndex: hit.aIndex, point, junctionId, type: edge.type});
+        existingCuts.push({offset: hit.bOffset, segmentIndex: hit.bIndex, point, junctionId});
+      }
       const sortedExistingCuts = normalizeCuts(existingGeometry, existingCuts);
+      if (!sortedExistingCuts.length) continue;
       const existingParts = splitGeometryAtOffsets(existingGeometry, sortedExistingCuts);
       const nodeIds = [edge.a, ...sortedExistingCuts.map(cut => cut.junctionId), edge.b];
-      replacements.set(edge.id, existingParts.map((part, index) => edgeWithGeometry(edge, nodeIds[index], nodeIds[index + 1], edge.type, part.coords)));
+      replacements.set(edge.id, existingParts.map((part, index) => edgeWithGeometry(edge, nodeIds[index], nodeIds[index + 1], edge.type, part.coords, targetState)));
     }
 
     if (replacements.size) {
       targetState.connections = targetState.connections.flatMap(edge => replacements.get(edge.id) || [edge]);
+      targetState.usedCapacity = targetState.usedCapacity && typeof targetState.usedCapacity === 'object' ? targetState.usedCapacity : {};
+      for (const [oldId, parts] of replacements) {
+        const reservations = targetState.usedCapacity[oldId];
+        if (!reservations) continue;
+        for (const part of parts) targetState.usedCapacity[part.id] = structuredCloneSafe(reservations);
+        delete targetState.usedCapacity[oldId];
+      }
     }
 
     const sortedNewCuts = normalizeCuts(projectGeometry, newCuts);
     const newParts = splitGeometryAtOffsets(projectGeometry, sortedNewCuts);
     const newNodeIds = [project.a, ...sortedNewCuts.map(cut => cut.junctionId), project.b];
-    return newParts.map((part, index) => {
+    const result = newParts.map((part, index) => {
       const touchingType = sortedNewCuts[index - 1]?.type || project.type;
       const type = dominantRoadType(project.type, touchingType);
-      return edgeWithGeometry(project, newNodeIds[index], newNodeIds[index + 1], type, part.coords);
+      return edgeWithGeometry(project, newNodeIds[index], newNodeIds[index + 1], type, part.coords, targetState);
     });
+    // Collinear overlap boundaries produce the same graph edge as an existing
+    // part.  Keep the existing edge and never introduce zero/parallel duplicates.
+    return result.filter((edge, index) => edge.a !== edge.b
+      && !targetState.connections.some(existing => sameEndpoints(existing, edge.a, edge.b) && isRoadType(existing.type))
+      && !result.slice(0, index).some(existing => sameEndpoints(existing, edge.a, edge.b)));
+  }
+
+  function structuredCloneSafe(value) {
+    return JSON.parse(JSON.stringify(value));
   }
 
 
@@ -528,5 +614,5 @@
     return edges[0];
   }
 
-  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject, getEdgeOccupancy, pathCapacityStatus, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
+  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, JUNCTION_SNAP_KM, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject, segmentIntersection, geometryIntersections, splitRoadsForAutomaticJunctions, getEdgeOccupancy, pathCapacityStatus, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
 })();
