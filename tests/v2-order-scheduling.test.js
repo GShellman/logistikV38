@@ -88,6 +88,69 @@ test('Terminfindung wählt ein freies Zeitfenster und berücksichtigt Reposition
   assert.ok(result.arrivalAbsMinute > result.departureAbsMinute);
 });
 
+test('alle passenden Fahrzeuge dürfen heute unterwegs sein und morgen rechtzeitig frei werden', () => {
+  const {window, state} = logisticsHarness({stock: 1000, localDemand: 1500, vehicles: [
+    {id: 4, vehicleType: 'van', status: 'assigned', activeAssignmentId: 'shipment-4', currentCityId: 'c', routeSegment: {fromCityId: 'c', toCityId: 'b'}, availableAbsMinute: 1200},
+    {id: 5, vehicleType: 'van', status: 'returning', activeAssignmentId: 'shipment-5', currentCityId: 'c', routeSegment: {fromCityId: 'c', toCityId: 'a'}, availableAbsMinute: 1350},
+  ]});
+
+  const schedule = window.HFV2Logistics.findOrderSchedule({fromCityId: 'a', toCityId: 'b', goodId: 'food', frequency: 'daily', vehicleType: 'van', amountKg: 1500});
+  assert.equal(schedule.ok, true);
+  assert.ok(schedule.departureAbsMinute >= 1440);
+  assert.deepEqual(new Set(schedule.vehicleIds), new Set([4, 5]));
+
+  const order = window.HFV2Logistics.createOrder({fromCityId: 'a', toCityId: 'b', goodId: 'food', frequency: 'daily', vehicleType: 'van'});
+  assert.equal(state.orders[0], order);
+  assert.ok(order.plannedDepartureAbsMinute >= 1350);
+});
+
+test('Bestell-UI zeigt Fuhrpark-Zeitlinien, Bestand und nächste Produktion', () => {
+  const vehicles = [
+    {id: 1, vehicleType: 'van', status: 'assigned', activeAssignmentId: 'trip-1', currentCityId: 'b', routeSegment: {toCityId: 'a'}, availableAbsMinute: 1200},
+    {id: 2, vehicleType: 'truck', status: 'available', activeAssignmentId: null, currentCityId: 'a', availableAbsMinute: 0},
+  ];
+  const window = {
+    HFV2Time: {getState: () => ({day: 1, hour: 8, minute: 0})},
+    HFV2CitiesById: {a: {id: 'a', name: 'Quelle'}, b: {id: 'b', name: 'Ziel'}},
+    HFV2IsCityUnlocked: () => true,
+    HFVehicleCatalog: {VEHICLE_CATALOG: {
+      van: {name: 'Lieferwagen', icon: 'V', mode: 'road', load: 1},
+      truck: {name: 'Lastwagen', icon: 'L', mode: 'road', load: 2},
+    }},
+    HFFleet: {getState: () => ({vehicles})},
+    HFNetwork: {findPath: (from, to) => ({reachable: from !== to || true, distance: 10, duration: 1})},
+    HFV2Goods: {
+      getCityInventory: () => ({food: 75}),
+      getExportableStockKg: () => 25,
+      getCityDailyDemandMap: () => ({food: 100}),
+    },
+    HFV2Logistics: {
+      vehicleCapacityKg: type => type === 'truck' ? 2000 : 1000,
+      plannedOrderAmountKg: () => 100,
+      findOrderSchedule: () => ({ok: true, departureAbsMinute: 1440, arrivalAbsMinute: 1500, vehicleCount: 1, path: {reachable: true, distance: 10, duration: 1}, stockProducedBeforeDeparture: true}),
+    },
+  };
+  load('v2/city-action-menu.js', window);
+
+  const options = window.HFV2CityOrderUI.vehicleOptions('a');
+  assert.deepEqual(Array.from(options, item => [item.type, item.nowCount, item.totalCount]), [['truck', 1, 1], ['van', 0, 1]]);
+  const modal = window.HFV2CityOrderUI.orderModalBody({id: 'b', name: 'Ziel'});
+  assert.match(modal, /jetzt 0 verfügbar · insgesamt\/voraussichtlich 1 verfügbar/);
+
+  const preview = {innerHTML: ''};
+  const error = {hidden: true, textContent: ''};
+  const vehicleSelect = {value: 'van', innerHTML: ''};
+  const form = {
+    dataset: {targetId: 'b'},
+    elements: {fromCityId: {value: 'a'}, goodId: {value: 'food'}, frequency: {value: 'daily'}, weekday: {value: '0', disabled: false}, vehicleType: vehicleSelect},
+    querySelector: selector => selector === '#hfV2OrderPreview' ? preview : selector === '#hfV2OrderError' ? error : selector === '#hfV2OrderWeekday' ? {hidden: false} : null,
+  };
+  window.HFV2CityOrderUI.previewOrder(form);
+  assert.match(preview.innerHTML, /Bestand Quelle[\s\S]*75 kg/);
+  assert.match(preview.innerHTML, /Tatsächlich exportierbar[\s\S]*25 kg/);
+  assert.match(preview.innerHTML, /Fehlende 75 kg werden erst beim nächsten Produktionszyklus hergestellt/);
+});
+
 test('fehlender aktueller Bestand wird durch den nächsten Produktionszyklus eingeplant', () => {
   const {window, state} = logisticsHarness({stock: 0});
   const result = window.HFV2Logistics.findOrderSchedule({fromCityId: 'a', toCityId: 'b', goodId: 'food', frequency: 'daily', vehicleType: 'van'});

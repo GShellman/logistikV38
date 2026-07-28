@@ -408,18 +408,24 @@
     const vehicleCount = capacityKg > 0 ? Math.ceil(amountKg / capacityKg) : 0;
     const path = window.HFNetwork?.findPath?.(fromCityId, toCityId, {mode: 'road'});
     if (!path?.reachable) return {ok: false, reason: 'no-route'};
+    const vehicles = window.HFFleet?.getState?.().vehicles || [];
+    const matchingVehicles = vehicles.filter(vehicle => vehicle.vehicleType === vehicleType);
+    // `no-vehicle` means exactly that the requested type is not owned. Busy
+    // vehicles remain valid candidates: their timeline may end early enough for
+    // this order (including a deadhead trip back to the source city).
+    if (!matchingVehicles.length) return {ok: false, reason: 'no-vehicle'};
     if (!vehicleCount) return {ok: false, reason: 'capacity-invalid'};
     const now = absoluteMinute(options.time || currentTime());
     const currentStockKg = sourceStockKg(fromCityId, goodId);
+    const currentExportableKg = exportableStockKg(fromCityId, goodId);
     // Creating the order itself adds its amount to outgoing production demand.
-    // If it is not on hand yet, plan no earlier than the next daily production
-    // cycle instead of making an otherwise valid first order impossible.
-    const stockReadyAbsMinute = currentStockKg >= amountKg
+    // If the requested amount is not exportable yet, plan no earlier than the
+    // next production cycle instead of making an otherwise valid order impossible.
+    const stockReadyAbsMinute = currentExportableKg >= amountKg
       ? now
       : (Math.floor(now / MINUTES_PER_DAY) + 1) * MINUTES_PER_DAY;
     const horizonDays = Math.max(frequency === 'weekly' ? 14 : 7, Math.trunc(Number(options.horizonDays) || 0));
     const first = Math.ceil((now + 1) / 15) * 15;
-    const vehicles = window.HFFleet?.getState?.().vehicles || [];
     for (let departureAbsMinute = first; departureAbsMinute <= now + horizonDays * MINUTES_PER_DAY; departureAbsMinute += 15) {
       if (departureAbsMinute < stockReadyAbsMinute) continue;
       const day = Math.floor(departureAbsMinute / MINUTES_PER_DAY) + 1;
@@ -428,8 +434,8 @@
       const arrivalAbsMinute = departureAbsMinute + duration;
       const capacityStatus = window.HFNetwork?.pathCapacityStatus?.(path, {startAbsMinute: departureAbsMinute, endAbsMinute: arrivalAbsMinute, units: vehicleCount});
       if (capacityStatus?.ok === false) continue;
-      const feasibleVehicles = vehicles.filter(vehicle => {
-        if (vehicle.vehicleType !== vehicleType || Number(vehicle.availableAbsMinute || 0) > departureAbsMinute) return false;
+      const feasibleVehicles = matchingVehicles.filter(vehicle => {
+        if (Number(vehicle.availableAbsMinute || 0) > departureAbsMinute) return false;
         const cityId = vehicle.routeSegment?.toCityId || vehicle.currentCityId;
         if (cityId === fromCityId) return true;
         const repositionPath = window.HFNetwork?.findPath?.(cityId, fromCityId, {mode: 'road'});
@@ -441,9 +447,9 @@
       if (feasibleVehicles.length < vehicleCount) continue;
       const candidate = {fromCityId, toCityId, goodId, frequency, weekday, vehicleType, amountKg};
       const bundles = compatibleBundles(candidate, departureAbsMinute, capacityKg);
-      return {ok: true, departureAbsMinute, arrivalAbsMinute, vehicleCount, vehicleIds: feasibleVehicles.slice(0, vehicleCount).map(vehicle => vehicle.id), path, bundles, bundle: bundles[0] || null, expectedStockKg: Math.max(currentStockKg, amountKg), stockProducedBeforeDeparture: currentStockKg < amountKg};
+      return {ok: true, departureAbsMinute, arrivalAbsMinute, vehicleCount, vehicleIds: feasibleVehicles.slice(0, vehicleCount).map(vehicle => vehicle.id), path, bundles, bundle: bundles[0] || null, expectedStockKg: Math.max(currentExportableKg, amountKg), stockProducedBeforeDeparture: currentExportableKg < amountKg};
     }
-    return {ok: false, reason: vehicles.some(vehicle => vehicle.vehicleType === vehicleType) ? 'no-feasible-slot' : 'no-vehicle'};
+    return {ok: false, reason: 'no-feasible-slot'};
   }
 
   function createOrder(options = {}) {

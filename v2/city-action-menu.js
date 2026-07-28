@@ -20,10 +20,10 @@
   const ERROR_TEXTS = Object.freeze({
     'no-route': 'Keine Straßenroute.',
     'no-demand': 'Zielstadt braucht diese Ware nicht.',
-    'no-vehicle': 'Kein passendes Fahrzeug.',
+    'no-vehicle': 'Dieser Fahrzeugtyp ist im Fuhrpark nicht vorhanden.',
     'stock-limited': 'Quelle hat nicht genug Ware.',
     'route-overloaded': 'Straße zur gewünschten Zeit voll.',
-    'no-feasible-slot': 'Im Planungshorizont ist kein ausführbarer Termin frei.',
+    'no-feasible-slot': 'Der Fahrzeugtyp ist vorhanden, aber im Planungshorizont nicht rechtzeitig verfügbar.',
     'unknown-frequency': 'Unbekannte Frequenz.',
   });
 
@@ -185,12 +185,28 @@
   }
 
   function vehicleOptions(sourceId) {
-    const fleet = sourceId ? window.HFFleet?.getFleetSummary?.({cityId: sourceId})?.availableByType || {} : {};
-    return Object.entries(fleet)
-      .filter(([, count]) => Math.max(0, Number(count) || 0) > 0)
-      .map(([type, count]) => ({type, count, spec: vehicleSpec(type)}))
+    if (!sourceId) return [];
+    const time = window.HFV2Time?.getState?.() || window.HFV2Save?.getState?.().time || {};
+    const now = currentAbsMinute(time.hour, time.minute);
+    const counts = new Map();
+    for (const vehicle of window.HFFleet?.getState?.().vehicles || []) {
+      const spec = vehicleSpec(vehicle.vehicleType);
+      if (spec?.mode !== 'road') continue;
+      const futureCityId = vehicle.routeSegment?.toCityId || vehicle.currentCityId;
+      const canReachSource = futureCityId === sourceId || window.HFNetwork?.findPath?.(futureCityId, sourceId, {mode: 'road'})?.reachable === true;
+      if (!canReachSource) continue;
+      const item = counts.get(vehicle.vehicleType) || {type: vehicle.vehicleType, nowCount: 0, totalCount: 0, spec};
+      item.totalCount += 1;
+      if (vehicle.currentCityId === sourceId && vehicle.status === 'available' && !vehicle.activeAssignmentId && Number(vehicle.availableAbsMinute || 0) <= now) item.nowCount += 1;
+      counts.set(vehicle.vehicleType, item);
+    }
+    return [...counts.values()]
       .filter(item => item.spec?.mode === 'road')
       .sort((a, b) => String(a.spec.name || a.type).localeCompare(String(b.spec.name || b.type), 'de-CH'));
+  }
+
+  function vehicleOptionLabel(item) {
+    return `${item.spec.icon || '🚚'} ${item.spec.name || item.type} · jetzt ${item.nowCount} verfügbar · insgesamt/voraussichtlich ${item.totalCount} verfügbar · ${formatWeightKg(window.HFV2Logistics?.vehicleCapacityKg?.(item.type) || 0)}`;
   }
 
   function option(value, label, selected = false) {
@@ -212,7 +228,7 @@
         ${demandHint}
         <label>Frequenz<select name="frequency">${option('daily', 'Täglich', true)}${option('weekly', 'Wöchentlich')}</select></label>
         <label id="hfV2OrderWeekday" hidden>Wochentag<select name="weekday" required disabled>${['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag'].map((label, index) => option(index, label)).join('')}</select></label>
-        <label>Fahrzeugtyp<select name="vehicleType">${vehicles.map(item => option(item.type, `${item.spec.icon || '🚚'} ${item.spec.name || item.type} · ${item.count} verfügbar · ${formatWeightKg(window.HFV2Logistics?.vehicleCapacityKg?.(item.type) || 0)}`)).join('')}</select></label>
+        <label>Fahrzeugtyp<select name="vehicleType">${vehicles.map(item => option(item.type, vehicleOptionLabel(item))).join('')}</select></label>
         <div class="hf-v2-network-option__rows" id="hfV2OrderPreview"></div>
         <p class="hf-v2-network-empty" id="hfV2OrderError" hidden></p>
         <button class="hf-v2-network-back" type="submit" style="padding:12px 14px;font-weight:900;">Waren bestellen</button>
@@ -242,10 +258,12 @@
     if (weekdayField) weekdayField.hidden = data.frequency !== 'weekly';
     if (form.elements.weekday) form.elements.weekday.disabled = data.frequency !== 'weekly';
     const vehicles = vehicleOptions(data.fromCityId);
-    setSelectOptions(form.elements.vehicleType, vehicles.map(item => option(item.type, `${item.spec.icon || '🚚'} ${item.spec.name || item.type} · ${item.count} verfügbar · ${formatWeightKg(window.HFV2Logistics?.vehicleCapacityKg?.(item.type) || 0)}`, item.type === data.vehicleType)));
+    setSelectOptions(form.elements.vehicleType, vehicles.map(item => option(item.type, vehicleOptionLabel(item), item.type === data.vehicleType)));
     if (!form.elements.vehicleType?.value && vehicles[0]) form.elements.vehicleType.value = vehicles[0].type;
     data.vehicleType = form.elements.vehicleType?.value || '';
     const demand = Math.max(0, Number(window.HFV2Goods?.getCityDailyDemandMap?.(data.toCityId)?.[data.goodId]) || 0);
+    const inventoryKg = Math.max(0, Number(window.HFV2Goods?.getCityInventory?.(data.fromCityId)?.[data.goodId]) || 0);
+    const exportableKg = Math.max(0, Number(window.HFV2Goods?.getExportableStockKg?.(data.fromCityId, data.goodId)) || 0);
     let amountKg = 0;
     try {
       amountKg = Math.max(0, Number(window.HFV2Logistics?.plannedOrderAmountKg?.(data.toCityId, data.goodId, data.frequency)) || 0);
@@ -273,6 +291,9 @@
     }) : '';
     if (preview) preview.innerHTML = `
       <span><em>Menge</em><strong>${formatWeightKg(amountKg)}</strong></span>
+      <span><em>Bestand Quelle</em><strong>${formatWeightKg(inventoryKg)}</strong></span>
+      <span><em>Tatsächlich exportierbar</em><strong>${formatWeightKg(exportableKg)}</strong></span>
+      ${schedule?.stockProducedBeforeDeparture ? `<span><em>Nächste Produktion</em><strong>Fehlende ${formatWeightKg(Math.max(0, amountKg - exportableKg))} werden erst beim nächsten Produktionszyklus hergestellt.</strong></span>` : ''}
       <span><em>Fahrzeuge</em><strong>${trips || '–'}</strong></span>
       <span><em>Route</em><strong>${path?.reachable ? `${(Number(path.distance) || 0).toLocaleString('de-CH', {maximumFractionDigits: 1})} km · ${formatDurationHours(path.duration)}` : ERROR_TEXTS['no-route']}</strong></span>
       <span><em>Abfahrt</em><strong>${schedule?.ok ? formatAbsMinute(schedule.departureAbsMinute) : '–'}</strong></span>
@@ -383,4 +404,5 @@
   window.initCityActionMenu = initCityActionMenu;
   window.showCityActionMenu = showCityActionMenu;
   window.hideCityActionMenu = hideCityActionMenu;
+  window.HFV2CityOrderUI = {vehicleOptions, orderModalBody, previewOrder};
 })();
