@@ -272,6 +272,39 @@
     return entries.map(([goodId, kg]) => `${escapeHtml(goodById(goodId).name)} ${formatDailyKg(kg)}`).join(' · ');
   }
 
+  function factoryProductionVisual(factory) {
+    const src = window.HFV2FactoryAssets?.factoryImage?.(factory.id) || '';
+    if (!src) return `<span class="hf-v2-factory-production-emoji" aria-hidden="true">${escapeHtml(factory.icon || '🏭')}</span>`;
+    return `<img class="hf-v2-factory-production-image" src="${escapeHtml(src)}" alt="" loading="lazy" decoding="async">`;
+  }
+
+  function factoryProductionOutputs(outputs) {
+    const entries = Object.entries(outputs || {}).map(([goodId, kg]) => ({
+      goodId,
+      good: goodById(goodId),
+      kg: Math.max(0, Number(kg) || 0),
+    })).filter(entry => entry.kg > 0);
+    if (!entries.length) return '<p class="hf-v2-factory-production-empty">Keine Ware produziert</p>';
+    return `<div class="hf-v2-factory-production-goods" aria-label="Tatsächlich produzierte Waren">${entries.map(({goodId, good, kg}) => {
+      const src = window.HFV2GoodsAssets?.goodImage?.(goodId) || '';
+      const visual = src
+        ? `<img src="${escapeHtml(src)}" alt="" loading="lazy" decoding="async">`
+        : `<span aria-hidden="true">${escapeHtml(good.icon || '📦')}</span>`;
+      return `<div class="hf-v2-factory-production-good">${visual}<span><b>${escapeHtml(good.name || goodId)}</b><small>${formatDailyKg(kg)}</small></span></div>`;
+    }).join('')}</div>`;
+  }
+
+  function factoryProductionStatus(reason) {
+    return {
+      'demand-limited': {label: 'Bedarf gedeckt', tone: 'demand'},
+      'capacity-limited': {label: 'Lagerkapazität erreicht', tone: 'capacity'},
+      'input-limited': {label: 'Inputs fehlen', tone: 'input'},
+      'no-output': {label: 'Kein Output', tone: 'no-output'},
+      blocked: {label: 'Produktion blockiert', tone: 'blocked'},
+      ready: {label: 'Produktion bereit', tone: 'ready'},
+    }[reason] || {label: 'Produktion bereit', tone: 'ready'};
+  }
+
 
   function factoryMaxLevel(factory) {
     const maxLevel = Number(factory?.maxLevel ?? factory?.maxUpgradeLevel ?? factory?.levels);
@@ -310,17 +343,19 @@
       const level = Math.max(1, Math.trunc(Number(estimate?.level ?? factoryInstance.level ?? window.HFV2Factories?.getFactoryLevel?.(city.id, factoryRef)) || 1));
       const outputMultiplier = Math.max(1, Number(estimate?.outputMultiplier ?? window.HFV2Factories?.outputMultiplierForLevel?.(level)) || level);
       const nextOutputMultiplier = Math.max(1, Number(window.HFV2Factories?.outputMultiplierForLevel?.(level + 1)) || (level + 1));
-      const baseCapacityKg = Math.max(0, Number(estimate?.capacityKg) || factoryDailyCapacityKg(factory));
-      const capacityKg = Math.max(0, Number(estimate?.upgradeAdjustedCapacityKg) || baseCapacityKg * outputMultiplier);
-      const nextCapacityKg = baseCapacityKg * nextOutputMultiplier;
+      const estimatedBaseCapacity = Number(estimate?.capacityKg);
+      const baseCapacityKg = Math.max(0, Number.isFinite(estimatedBaseCapacity) ? estimatedBaseCapacity : factoryDailyCapacityKg(factory));
+      const estimatedCapacity = Number(estimate?.upgradeAdjustedCapacityKg);
+      const capacityKg = Math.max(0, Number.isFinite(estimatedCapacity) ? estimatedCapacity : baseCapacityKg * outputMultiplier);
+      const nextCapacityKg = Math.max(0, baseCapacityKg * nextOutputMultiplier);
       const currentOperatingCost = Number(window.HFV2Factories?.operatingCostForFactory?.(factory, level));
       const nextOperatingCost = Number(window.HFV2Factories?.operatingCostForFactory?.(factory, level + 1));
       const upgradeCost = Number(window.HFV2Factories?.upgradeCostForFactory?.(factory, level)) || 0;
       const buttonState = factoryUpgradeButtonState(city.id, factoryRef, factory, level, upgradeCost);
       const actualKg = Math.max(0, Number(estimate?.madeKg) || 0);
       const fill = capacityKg > 0 ? Math.min(100, actualKg / capacityKg * 100) : 0;
-      const status = estimate?.reason === 'demand-limited' ? 'Nachfrage gedeckt' : estimate?.reason === 'capacity-limited' ? 'Lager voll' : estimate?.reason === 'input-limited' ? 'Inputs fehlen' : estimate?.reason === 'no-output' ? 'Kein Output' : 'Potenzial heute';
-      return `<article class="hf-v2-factory-production-item"><div class="hf-v2-factory-production-head"><span>${escapeHtml(factory.icon || '🏭')}</span><div><b>${escapeHtml(factory.name || factory.id)}</b><small>Stufe ${level.toLocaleString('de-CH')} · ${factoryOutputsText(factory, outputMultiplier)}</small></div></div><div class="hf-v2-factory-production-bar"><span><i style="width:${fill}%"></i></span><small>${formatDailyKg(actualKg)} von ${formatDailyKg(capacityKg)} · ${status}</small></div><dl class="hf-v2-factory-production-stats"><div><dt>Kapazität aktuell</dt><dd>${formatDailyKg(capacityKg)}</dd></div><div><dt>Nach Ausbau</dt><dd>${formatDailyKg(nextCapacityKg)}</dd></div><div><dt>Betriebskosten</dt><dd>${formatCurrency(currentOperatingCost)}/Tag</dd></div><div><dt>Betriebskosten nach Ausbau</dt><dd>${formatCurrency(nextOperatingCost)}/Tag</dd></div><div><dt>Upgrade-Kosten</dt><dd>${formatCurrency(upgradeCost)}</dd></div></dl><button type="button" data-hf-v2-factory-upgrade data-city-id="${escapeHtml(city.id)}" data-factory-ref="${escapeHtml(factoryRef)}" title="${escapeHtml(buttonState.title)}"${buttonState.disabled ? ' disabled' : ''}>Fabrik ausbauen</button></article>`;
+      const status = factoryProductionStatus(estimate?.reason);
+      return `<article class="hf-v2-factory-production-item"><div class="hf-v2-factory-production-head"><span class="hf-v2-factory-production-visual">${factoryProductionVisual(factory)}</span><div><b>${escapeHtml(factory.name || factory.id)}</b><small>Stufe ${level.toLocaleString('de-CH')}</small></div><em class="hf-v2-factory-production-status is-${status.tone}">${status.label}</em></div>${factoryProductionOutputs(estimate?.outputs)}<div class="hf-v2-factory-production-bar"><span role="progressbar" aria-label="Produktion von ${escapeHtml(factory.name || factory.id)}" aria-valuemin="0" aria-valuemax="${capacityKg}" aria-valuenow="${actualKg}"><i style="width:${fill}%"></i></span><small><b>${fill.toLocaleString('de-CH', {maximumFractionDigits: 0})} %</b> · ${formatDailyKg(actualKg)} / ${formatDailyKg(capacityKg)}</small></div><div class="hf-v2-factory-production-upgrade"><dl class="hf-v2-factory-production-stats"><div><dt>Aktuell</dt><dd><b>${formatDailyKg(capacityKg)}</b><small>${formatCurrency(currentOperatingCost)}/Tag</small></dd></div><div><dt>Nach Ausbau</dt><dd><b>${formatDailyKg(nextCapacityKg)}</b><small>${formatCurrency(nextOperatingCost)}/Tag</small></dd></div></dl><button type="button" data-hf-v2-factory-upgrade data-city-id="${escapeHtml(city.id)}" data-factory-ref="${escapeHtml(factoryRef)}" title="${escapeHtml(buttonState.title)}"${buttonState.disabled ? ' disabled' : ''}><span>Ausbauen</span><strong>${formatCurrency(upgradeCost)}</strong></button></div></article>`;
     });
     return `<section class="hf-v2-demand-card hf-v2-factory-production-list" aria-labelledby="hfV2FactoryProductionTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Produktion</p><h3 id="hfV2FactoryProductionTitle">Fabriken in dieser Stadt</h3></div><strong>${builtFactories.length.toLocaleString('de-CH')}</strong></div>${limitedEntriesMarkup(rows, row => row, 3, 'hf-v2-factory-production-grid', `${city.id}:factories`)}</section>${productionDebugMarkup(city)}`;
   }
