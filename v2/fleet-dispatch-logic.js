@@ -75,6 +75,11 @@
     return `fleet-plan-${kind}-${orderId}-${day}-${vehicleId}`;
   }
 
+  function postDeliveryDecision(originCityId, destinationCityId) {
+    return window.HFV2PostDeliveryPlanning?.decide?.({originCityId, destinationCityId})
+      || (originCityId !== destinationCityId ? 'return' : 'stay');
+  }
+
   function reserve(path, start, end, units, id, commit = true, details = {}) {
     const capacityOptions = {startAbsMinute: start, endAbsMinute: end, units, reservationId: id, vehicleSpeed: vehicleSpec(details.vehicleType).speed, ...details};
     const status = window.HFNetwork?.pathCapacityStatus?.(path, capacityOptions);
@@ -115,8 +120,8 @@
       if (!plannedStock.has(stockKey)) plannedStock.set(stockKey, Math.max(0, Number(window.HFV2Goods?.getExportableStockKg?.(order.fromCityId, order.goodId)) || 0));
       const amountKg = Math.min(Math.max(0, Number(order.amountKg) || 0), plannedStock.get(stockKey));
       if (!amountKg) { unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: 'stock-limited'}); continue; }
-      const outboundPath = route(order.fromCityId, order.toCityId), returnPath = route(order.toCityId, order.fromCityId), count = Math.ceil(amountKg / capacityKg(type));
-      if (!outboundPath?.reachable || !returnPath?.reachable || !Number.isFinite(count) || count <= 0) { unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: !outboundPath?.reachable || !returnPath?.reachable ? 'incomplete-round-trip-route' : 'capacity-invalid'}); continue; }
+      const outboundPath = route(order.fromCityId, order.toCityId), postDeliveryAction = postDeliveryDecision(order.fromCityId, order.toCityId), returnPath = postDeliveryAction === 'return' ? route(order.toCityId, order.fromCityId) : null, count = Math.ceil(amountKg / capacityKg(type));
+      if (!outboundPath?.reachable || (postDeliveryAction === 'return' && !returnPath?.reachable) || !Number.isFinite(count) || count <= 0) { unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: !outboundPath?.reachable || (postDeliveryAction === 'return' && !returnPath?.reachable) ? 'incomplete-round-trip-route' : 'capacity-invalid'}); continue; }
       const selected = vehicles.filter(v => v.vehicleType === type).map(vehicle => {
         const timeline = timelines.get(vehicle.id), path = timeline.cityId === order.fromCityId ? null : route(timeline.cityId, order.fromCityId);
         return timeline && (!path || path.reachable) ? {vehicle, timeline, deadheadPath: path} : null;
@@ -135,15 +140,18 @@
       let outboundSlot = failure ? null : slotFor(outboundPath, hardDeparture ? occurrence.departureAbsMinute : ready, latest, count, type);
       if (outboundSlot?.ok && hardDeparture && Math.abs(outboundSlot.departureAbsMinute-occurrence.departureAbsMinute)>1e-7) failure={...outboundSlot,reason:'hard-departure-unavailable'};
       if (!failure && !outboundSlot?.ok) failure={...outboundSlot,reason:'outbound-no-slot'};
-      const returnSlots=[];
-      if (!failure) for (const item of selected) { const slot=slotFor(returnPath,outboundSlot.arrivalAbsMinute,latest,1,type); if(!slot.ok){failure={...slot,reason:'return-no-slot'};break;} returnSlots.push({item,slot}); }
-      const allMoves = failure ? [] : [...chain, {kind:'shipment', path:outboundPath, slot:outboundSlot, units:count}, ...returnSlots.map(x=>({kind:'return',path:returnPath,slot:x.slot,item:x.item}))];
+      let returnSlot=null;
+      if (!failure && postDeliveryAction === 'return') { returnSlot=slotFor(returnPath,outboundSlot.arrivalAbsMinute,latest,count,type); if(!returnSlot.ok) failure={...returnSlot,reason:'return-no-slot'}; }
+      const allMoves = failure ? [] : [...chain, {kind:'shipment', path:outboundPath, slot:outboundSlot, units:count}, ...(returnSlot ? [{kind:'return',path:returnPath,slot:returnSlot,units:count}] : [])];
       if (!failure && commitReservations) for (let i=0;i<allMoves.length;i++) { const move=allMoves[i], id=reservationId(move.kind,order.id,occurrence.day,move.item?.vehicle.id||0); const ok=reserve(move.path,move.slot.departureAbsMinute,move.slot.arrivalAbsMinute,move.units||1,id,true,{vehicleType:type,edgeTimes:move.slot.edgeTimes}); if(!ok){failure={reason:`${move.kind}-reservation-race`,nextPossibleAbsMinute:move.slot.departureAbsMinute};break;} move.id=id;tempIds.push(id); }
       if (failure) { for(const id of tempIds) window.HFNetwork?.releaseCapacityReservation?.(id); unplanned.push({orderId:order.id,departureAbsMinute:occurrence.departureAbsMinute,reason:failure.reason,nextPossibleAbsMinute:failure.nextPossibleAbsMinute??failure.departureAbsMinute??null,latestArrivalAbsMinute:latest}); continue; }
       const tripId=`trip-${order.id}-${occurrence.day}`, shipmentId=`planned-shipment-${order.id}-${occurrence.day}`;
       for(const move of chain){const id=move.id; const leg={id:`planned-repositioning-${order.id}-${occurrence.day}-${move.item.vehicle.id}`,type:'repositioning',status:'planned',orderId:order.id,fromCityId:move.item.timeline.cityId,toCityId:order.fromCityId,vehicleType:type,vehicleIds:[move.item.vehicle.id],departureAbsMinute:move.slot.departureAbsMinute,scheduledDepartureAbsMinute:move.slot.scheduledDepartureAbsMinute,arrivalAbsMinute:move.slot.arrivalAbsMinute,waitingMinutes:move.slot.waitingMinutes,edgeTimes:move.slot.edgeTimes,capacityReservationIds:id?[id]:[]}; legs.push(leg); state.assignments.push(leg);}
-      const shipmentMove=allMoves.find(x=>x.kind==='shipment'); legs.push({id:shipmentId,type:'shipment',status:'planned',orderId:order.id,tripId,fromCityId:order.fromCityId,toCityId:order.toCityId,vehicleType:type,vehicleIds:selected.map(x=>x.vehicle.id),amountKg,requestedDepartureAbsMinute:occurrence.departureAbsMinute,departureConstraint:hardDeparture?'hard':'earliest',departureAbsMinute:outboundSlot.departureAbsMinute,scheduledDepartureAbsMinute:outboundSlot.scheduledDepartureAbsMinute,arrivalAbsMinute:outboundSlot.arrivalAbsMinute,waitingMinutes:outboundSlot.departureAbsMinute-occurrence.departureAbsMinute+outboundSlot.waitingMinutes,edgeTimes:outboundSlot.edgeTimes,capacityReservationIds:shipmentMove.id?[shipmentMove.id]:[],priority:occurrence.priority});
-      for(const move of allMoves.filter(x=>x.kind==='return')){legs.push({id:`planned-return-${order.id}-${occurrence.day}-${move.item.vehicle.id}`,type:'return',legKind:'return',status:'planned',orderId:order.id,tripId,outboundLegId:shipmentId,fromCityId:order.toCityId,toCityId:order.fromCityId,vehicleType:type,vehicleIds:[move.item.vehicle.id],departureAbsMinute:move.slot.departureAbsMinute,scheduledDepartureAbsMinute:move.slot.scheduledDepartureAbsMinute,arrivalAbsMinute:move.slot.arrivalAbsMinute,waitingMinutes:move.slot.waitingMinutes,edgeTimes:move.slot.edgeTimes,capacityReservationIds:move.id?[move.id]:[]}); timelines.set(move.item.vehicle.id,{cityId:order.fromCityId,availableAbsMinute:move.slot.arrivalAbsMinute});}
+      const shipmentMove=allMoves.find(x=>x.kind==='shipment'), returnMove=allMoves.find(x=>x.kind==='return');
+      const postDelivery = {action:postDeliveryAction,targetCityId:postDeliveryAction==='return'?order.fromCityId:order.toCityId,departureAbsMinute:returnMove?.slot.departureAbsMinute??outboundSlot.arrivalAbsMinute,arrivalAbsMinute:returnMove?.slot.arrivalAbsMinute??outboundSlot.arrivalAbsMinute,capacityReservationIds:returnMove?.id?[returnMove.id]:[]};
+      legs.push({id:shipmentId,type:'shipment',status:'planned',orderId:order.id,tripId,fromCityId:order.fromCityId,toCityId:order.toCityId,vehicleType:type,vehicleIds:selected.map(x=>x.vehicle.id),amountKg,requestedDepartureAbsMinute:occurrence.departureAbsMinute,departureConstraint:hardDeparture?'hard':'earliest',departureAbsMinute:outboundSlot.departureAbsMinute,scheduledDepartureAbsMinute:outboundSlot.scheduledDepartureAbsMinute,arrivalAbsMinute:outboundSlot.arrivalAbsMinute,waitingMinutes:outboundSlot.departureAbsMinute-occurrence.departureAbsMinute+outboundSlot.waitingMinutes,edgeTimes:outboundSlot.edgeTimes,capacityReservationIds:shipmentMove.id?[shipmentMove.id]:[],postDeliveryAction,postDeliveryTargetCityId:postDelivery.targetCityId,postDeliveryDepartureAbsMinute:postDelivery.departureAbsMinute,postDeliveryArrivalAbsMinute:postDelivery.arrivalAbsMinute,postDeliveryReservationIds:postDelivery.capacityReservationIds,priority:occurrence.priority});
+      if(returnMove) legs.push({id:`planned-return-${order.id}-${occurrence.day}`,type:'return',legKind:'return',status:'planned',orderId:order.id,tripId,outboundLegId:shipmentId,fromCityId:order.toCityId,toCityId:order.fromCityId,vehicleType:type,vehicleIds:selected.map(x=>x.vehicle.id),departureAbsMinute:returnMove.slot.departureAbsMinute,scheduledDepartureAbsMinute:returnMove.slot.scheduledDepartureAbsMinute,arrivalAbsMinute:returnMove.slot.arrivalAbsMinute,waitingMinutes:returnMove.slot.waitingMinutes,edgeTimes:returnMove.slot.edgeTimes,capacityReservationIds:returnMove.id?[returnMove.id]:[]});
+      for(const item of selected) timelines.set(item.vehicle.id,{cityId:postDelivery.targetCityId,availableAbsMinute:postDelivery.arrivalAbsMinute});
       plannedStock.set(stockKey,plannedStock.get(stockKey)-amountKg);
     }
     state.dispatchPlan={version:2,generatedAtAbsMinute:start,horizonDays,horizonEndAbsMinute:end,reason:dirtyReason,legs,unplanned}; delete state.planInvalidatedFromAbsMinute; dirtyReason=''; return state.dispatchPlan;
@@ -186,7 +194,14 @@
       && candidate.status === 'planned'
       && (candidate.tripId === leg.tripId || candidate.outboundLegId === leg.id)
       && (!vehicleIds.size || candidate.vehicleIds?.some(id => vehicleIds.has(Number(id)))));
-    const plannedReturn = returnLegs.length ? {
+    const postDelivery = {
+      action: leg.postDeliveryAction || (returnLegs.length ? 'return' : 'stay'),
+      targetCityId: leg.postDeliveryTargetCityId ?? (returnLegs[0]?.toCityId || leg.toCityId),
+      departureAbsMinute: leg.postDeliveryDepartureAbsMinute ?? (returnLegs[0]?.departureAbsMinute || leg.arrivalAbsMinute),
+      arrivalAbsMinute: leg.postDeliveryArrivalAbsMinute ?? (returnLegs[0]?.arrivalAbsMinute || leg.arrivalAbsMinute),
+      capacityReservationIds: returnLegs.flatMap(candidate => candidate.capacityReservationIds || []),
+    };
+    const plannedReturn = postDelivery.action === 'return' ? {
       departureAbsMinute: returnLegs[0].departureAbsMinute,
       arrivalAbsMinute: returnLegs[0].arrivalAbsMinute,
       fromCityId: returnLegs[0].fromCityId,
@@ -201,7 +216,7 @@
       for (const id of [...capacityReservationIds, ...(plannedReturn?.capacityReservationIds || [])]) window.HFNetwork?.releaseCapacityReservation?.(id);
       return leg;
     }
-    return {...leg, capacityReservationIds, plannedReturn};
+    return {...leg, capacityReservationIds, postDelivery, plannedReturn};
   }
 
   function canBundleOrders(orders, routeArrivalAbsMinute) {

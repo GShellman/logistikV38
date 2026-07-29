@@ -37,6 +37,14 @@ function harness({orders, shipment, nowAbsMinute, returnDistances}) {
   loadScript('v2/fleet-logic.js', window);
   window.HFFleet.configure({state: {vehicles, nextVehicleId: 3, depotCityId: 'zurich'}});
   loadScript('v2/logistics-logic.js', window);
+  const destinationCityId = shipment.stops?.at(-1)?.toCityId || shipment.toCityId;
+  Object.assign(shipment, {
+    postDeliveryAction: 'return',
+    postDeliveryTargetCityId: shipment.fromCityId,
+    postDeliveryDepartureAbsMinute: shipment.arrivalAbsMinute,
+    postDeliveryArrivalAbsMinute: shipment.arrivalAbsMinute + returnDistances[destinationCityId],
+    postDeliveryReservationIds: shipment.plannedReturnReservationIds || [],
+  });
   const state = window.HFV2Logistics.createLogisticsState({orders, shipments: [shipment]});
   window.HFV2Logistics.configure({state, citiesById: {zurich: {id: 'zurich'}, bern: {id: 'bern'}, basel: {id: 'basel'}, lucerne: {id: 'lucerne'}}});
   return {window, state, time, reservations, releasedReservations};
@@ -54,11 +62,11 @@ test('wöchentliche Einzellieferung kehrt trotz Ersatzfahrzeug und Tagesende zum
   assert.equal(state.shipments[0].status, 'returning');
   assert.equal(state.shipments[0].returnDepartureAbsMinute, 1380);
   assert.equal(state.shipments[0].returnArrivalAbsMinute, 1500);
-  assert.equal(state.shipments[0].returnReservationId, 'shipment-1-weekly-return');
+  assert.equal(state.shipments[0].returnReservationId, 'shipment-1-planned-return');
   assert.equal(reservations[0].startAbsMinute, 1380);
   assert.equal(reservations[0].endAbsMinute, 1500);
   assert.equal(reservations[0].units, 1);
-  assert.equal(reservations[0].reservationId, 'shipment-1-weekly-return');
+  assert.equal(reservations[0].reservationId, 'shipment-1-planned-return');
   assert.equal(window.HFFleet.getState().vehicles[0].status, 'returning');
   assert.equal(window.HFFleet.getState().vehicles[0].activeAssignmentId, '1');
 
@@ -67,7 +75,7 @@ test('wöchentliche Einzellieferung kehrt trotz Ersatzfahrzeug und Tagesende zum
   assert.equal(state.shipments[0].status, 'returned');
   assert.equal(window.HFFleet.getState().vehicles[0].currentCityId, 'zurich');
   assert.equal(window.HFFleet.getState().vehicles[0].status, 'available');
-  assert.deepEqual(releasedReservations, ['shipment-1-weekly-return']);
+  assert.deepEqual(releasedReservations, ['shipment-1-planned-return']);
 });
 
 test('wöchentliche Plan-Rückfahrt wird nicht doppelt reserviert und nach Rückkehr freigegeben', () => {

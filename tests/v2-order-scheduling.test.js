@@ -275,6 +275,7 @@ test('Dispatch-Plan teilt nur den Exportüberschuss auf mehrere Aufträge auf', 
   ]});
   state.orders = [dueOrder(1, 30, 'b'), dueOrder(2, 30, 'c')];
   window.HFV2Logistics.configure({state});
+  load('v2/post-delivery-planning-rule.js', window);
   load('v2/fleet-dispatch-logic.js', window);
 
   const plan = window.HFV2FleetDispatch.buildPlan({state, horizonDays: 3});
@@ -288,6 +289,7 @@ test('Dispatch-Plan speichert und reserviert die reduzierte Liefermenge', () => 
   const {window, state} = logisticsHarness({stock: 40});
   state.orders = [dueOrder(1, 1500)];
   window.HFV2Logistics.configure({state});
+  load('v2/post-delivery-planning-rule.js', window);
   load('v2/fleet-dispatch-logic.js', window);
   window.HFV2FleetDispatch.configure({state});
 
@@ -305,11 +307,17 @@ test('Dispatch-Plan reserviert die Rückfahrt und führt die Fahrzeug-Zeitleiste
   window.HFNetwork.reservePathCapacity = (_path, options) => { reservations.push(options); return {ok: true}; };
   state.orders = [dueOrder(1, 100)];
   window.HFV2Logistics.configure({state});
+  load('v2/post-delivery-planning-rule.js', window);
   load('v2/fleet-dispatch-logic.js', window);
   const plan = window.HFV2FleetDispatch.buildPlan({state, horizonDays: 3});
   const shipmentLeg = plan.legs.find(leg => leg.type === 'shipment');
   const returnLeg = plan.legs.find(leg => leg.type === 'return');
   assert.ok(returnLeg);
+  assert.equal(shipmentLeg.postDeliveryAction, 'return');
+  assert.equal(shipmentLeg.postDeliveryTargetCityId, 'a');
+  assert.equal(shipmentLeg.postDeliveryDepartureAbsMinute, returnLeg.departureAbsMinute);
+  assert.equal(shipmentLeg.postDeliveryArrivalAbsMinute, returnLeg.arrivalAbsMinute);
+  assert.deepEqual(shipmentLeg.postDeliveryReservationIds, returnLeg.capacityReservationIds);
   assert.equal(returnLeg.tripId, shipmentLeg.tripId);
   assert.equal(returnLeg.outboundLegId, shipmentLeg.id);
   assert.equal(returnLeg.fromCityId, 'b');
@@ -323,6 +331,7 @@ test('Bestellvorschau erzeugt Lieferung und Rückfahrt ohne Spielstand oder Rese
   window.HFV2Logistics.configure({state});
   let reservations = 0;
   window.HFNetwork.reservePathCapacity = () => { reservations += 1; return {ok: true}; };
+  load('v2/post-delivery-planning-rule.js', window);
   load('v2/fleet-dispatch-logic.js', window);
   const before = JSON.stringify(state);
   const plan = window.HFV2FleetDispatch.previewOrder({...dueOrder('preview', 100), plannedDepartureAbsMinute: 60}, {state, fromAbsMinute: 0, horizonDays: 3});
@@ -348,9 +357,9 @@ test('Edge-Fahrplan verschiebt die Abfahrt und erlaubt Wartezeit zwischen Teilst
 
   assert.equal(slot.ok, true);
   assert.equal(slot.scheduledDepartureAbsMinute, 10);
-  assert.equal(slot.arrivalAbsMinute, 35);
-  assert.equal(slot.waitingMinutes, 5);
-  assert.deepEqual(Array.from(slot.edgeTimes, edge => edge.waitingMinutes), [10, 5]);
+  assert.equal(slot.arrivalAbsMinute, 45);
+  assert.equal(slot.waitingMinutes, 25);
+  assert.deepEqual(Array.from(slot.edgeTimes, edge => edge.waitingMinutes), [10, 15]);
 });
 
 test('nicht planbare Rückfahrt rollt die komplette temporäre Rundfahrt zurück', () => {
@@ -363,6 +372,7 @@ test('nicht planbare Rückfahrt rollt die komplette temporäre Rundfahrt zurück
     : {ok: false, reason: 'no-feasible-slot', nextPossibleAbsMinute: 1500};
   window.HFNetwork.reservePathCapacity = (_path, options) => { reserved.push(options.reservationId); return {ok: true}; };
   window.HFNetwork.releaseCapacityReservation = id => released.push(id);
+  load('v2/post-delivery-planning-rule.js', window);
   load('v2/fleet-dispatch-logic.js', window);
 
   const plan = window.HFV2FleetDispatch.buildPlan({state, horizonDays: 3});
