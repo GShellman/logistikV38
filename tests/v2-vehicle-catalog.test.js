@@ -51,8 +51,11 @@ test('Fluto Gianco FR ist ein eigenständiger Kühltransporter mit Hauptasset', 
   const window = {};
   load('v2/vehicle-assets.js', window);
   const mainAsset = window.HFV2VehicleAssets.vehicleImage(vehicle.id);
-  assert.equal(mainAsset, 'assets/vehicles/fluto-gianco.png');
+  const roadAsset = window.HFV2VehicleAssets.roadVehicleImage(vehicle.id);
+  assert.equal(mainAsset, 'assets/vehicles/fluto-gianco-fr.png');
+  assert.equal(roadAsset, 'assets/vehicles/fluto-gianco-fr-road.png');
   assert.equal(existsSync(join(ROOT, 'v2', mainAsset)), true);
+  assert.equal(existsSync(join(ROOT, 'v2', roadAsset)), true);
 });
 
 test('Fahrzeugkatalog enthält vollständige, eindeutige Modelle und Pflichtassets', () => {
