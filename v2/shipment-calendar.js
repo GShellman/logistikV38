@@ -50,7 +50,24 @@
       if(Number(shipment.arrivalAbsMinute)>Number(shipment.departureAbsMinute)) result.push({...shipment,id:`shipment-${shipment.id}`,kind:shipment.status==='active'?'active':'completed',status:shipment.status==='active'?'Aktiv':'Abgeschlossen',sortAbsMinute:Number(shipment.departureAbsMinute)});
       if(Number(shipment.returnArrivalAbsMinute)>Number(shipment.returnDepartureAbsMinute)) result.push({...shipment,id:`shipment-${shipment.id}-return`,kind:shipment.status==='returned'?'completed':'return',status:shipment.status==='returned'?'Abgeschlossen':'Rückfahrt',fromCityId:shipment.toCityId,toCityId:shipment.fromCityId,departureAbsMinute:Number(shipment.returnDepartureAbsMinute),arrivalAbsMinute:Number(shipment.returnArrivalAbsMinute),sortAbsMinute:Number(shipment.returnDepartureAbsMinute)});
     }
-    const legs=[...(plan?.legs||[]),...(extraLegs||[])];
+    const canonicalTripIds=new Set((plan?.trips||[]).map(trip=>String(trip.id)));
+    for(const trip of plan?.trips||[]) {
+      const executed=shipments.some(shipment=>String(shipment?.tripId)===String(trip.id));
+      if(executed) continue;
+      for(let index=0;index<(trip.segments||[]).length;index+=1) {
+        const segment=trip.segments[index];
+        if((segment.fromCityId!==cityId&&segment.toCityId!==cityId)||Number(segment.arrivalAbsMinute)<=Number(segment.departureAbsMinute)) continue;
+        const stop=trip.stops?.[index]||{};
+        result.push({...segment,id:`trip-${trip.id}-stop-${index+1}`,tripId:trip.id,kind:'planned',status:'Geplant',vehicleType:trip.vehicleType,
+          vehicleIds:trip.vehicleIds,vehicleCount:trip.vehicleIds?.length||0,goodId:stop.goodId,amountKg:stop.amountKg,orderId:stop.orderId,sortAbsMinute:Number(segment.departureAbsMinute)});
+      }
+      const disposition=trip.disposition;
+      if(disposition?.action==='return'&&(disposition.fromCityId===cityId||disposition.toCityId===cityId)&&Number(disposition.arrivalAbsMinute)>Number(disposition.departureAbsMinute)) {
+        result.push({...disposition,id:`trip-${trip.id}-return`,tripId:trip.id,kind:'return',status:'Rückfahrt',vehicleType:trip.vehicleType,
+          vehicleIds:trip.vehicleIds,vehicleCount:trip.vehicleIds?.length||0,sortAbsMinute:Number(disposition.departureAbsMinute)});
+      }
+    }
+    const legs=[...(plan?.legs||[]).filter(leg=>!canonicalTripIds.has(String(leg.tripId))),...(extraLegs||[])];
     for(const leg of legs) {
       if((leg?.fromCityId!==cityId&&leg?.toCityId!==cityId)||Number(leg.arrivalAbsMinute)<=Number(leg.departureAbsMinute)) continue;
       if(leg.type==='shipment'&&legWasTakenOver(leg,shipments,'outbound')) continue;

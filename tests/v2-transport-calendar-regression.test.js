@@ -140,3 +140,21 @@ test('Tageszyklus baut den Kalender nach Verkauf und Produktion sofort neu auf',
   window.HFV2DayCycle.runDailyCycle({day: 1});
   assert.deepEqual(calls, ['sales', 'production', 'invalidate', 'plan']);
 });
+
+test('Kalender leitet Mehrstopp-Tour und Rückfahrt aus dem kanonischen Trip ab', () => {
+  const {rows} = calendarHelpers();
+  const trip = {id:'trip-1-1-2',status:'planned',vehicleType:'van',vehicleIds:[1],orderIds:[1,2],stops:[
+    {orderId:1,toCityId:'b',goodId:'food',amountKg:100,arrivalAbsMinute:120},
+    {orderId:2,toCityId:'c',goodId:'food',amountKg:50,arrivalAbsMinute:180},
+  ],segments:[
+    {fromCityId:'a',toCityId:'b',departureAbsMinute:60,arrivalAbsMinute:120},
+    {fromCityId:'b',toCityId:'c',departureAbsMinute:120,arrivalAbsMinute:180},
+  ],disposition:{action:'return',fromCityId:'c',toCityId:'a',targetCityId:'a',departureAbsMinute:180,arrivalAbsMinute:300}};
+  const plan={trips:[trip],legs:[{id:'legacy',tripId:trip.id,type:'shipment',fromCityId:'a',toCityId:'b',departureAbsMinute:60,arrivalAbsMinute:120}]};
+
+  assert.deepEqual(Array.from(rows({id:'b'},[],[],plan),row=>[row.id,row.kind,row.departureAbsMinute,row.arrivalAbsMinute]), [
+    ['trip-trip-1-1-2-stop-1','planned',60,120],
+    ['trip-trip-1-1-2-stop-2','planned',120,180],
+  ]);
+  assert.deepEqual(Array.from(rows({id:'c'},[],[],plan),row=>row.kind), ['planned','return']);
+});
