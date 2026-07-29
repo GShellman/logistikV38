@@ -92,8 +92,8 @@
 
   function factoryVisual(factoryId, factory) {
     const image = factoryImage(factoryId);
-    if (!image) return `<span class="hf-v2-fleet-card__emoji">${escapeHtml(factory.icon || '🏭')}</span>`;
-    return `<img class="hf-v2-fleet-card__image" src="${escapeHtml(image)}" alt="" loading="lazy" decoding="async">`;
+    if (!image) return `<span class="hf-v2-catalog-row__emoji">${escapeHtml(factory.icon || '🏭')}</span>`;
+    return `<img class="hf-v2-catalog-row__image" src="${escapeHtml(image)}" alt="" loading="lazy" decoding="async">`;
   }
 
   function factoryById(factoryId) {
@@ -102,10 +102,10 @@
 
   function renderBuiltFactories(cityId) {
     const builtFactories = factoryApi()?.getCityFactoryInstances?.(cityId) || (factoryApi()?.getCityFactories?.(cityId) || []).map((factoryId, index) => ({id: factoryId, index}));
-    if (!builtFactories.length) return '<p class="hf-v2-fleet-empty">In dieser Stadt wurden noch keine Betriebe gebaut.</p>';
+    if (!builtFactories.length) return '<p class="hf-v2-factory-empty">In dieser Stadt wurden noch keine Betriebe gebaut.</p>';
 
     return `
-      <div class="hf-v2-fleet-grid" aria-label="Bereits gebaute Betriebe">
+      <div class="hf-v2-built-list" aria-label="Bereits gebaute Betriebe">
         ${builtFactories.map(factoryInstance => {
           const factoryId = factoryInstance.id;
           const factory = factoryById(factoryId);
@@ -115,18 +115,18 @@
           const outputsTitle = factoryOutputsText(factory, outputMultiplier);
           const outputsSummary = compactFactoryOutputsText(factory, 3, outputMultiplier);
           return `
-            <article class="hf-v2-fleet-card">
-              <div class="hf-v2-fleet-card__icon" aria-hidden="true">${factoryVisual(factoryId, factory || {icon: '🏭'})}</div>
-              <div class="hf-v2-fleet-card__main">
-                <div class="hf-v2-fleet-card__head">
+            <article class="hf-v2-built-row">
+              <div class="hf-v2-catalog-row__visual" aria-hidden="true">${factoryVisual(factoryId, factory || {icon: '🏭'})}</div>
+              <div class="hf-v2-built-row__main">
+                <div class="hf-v2-catalog-row__head">
                   <span>
                     <small>Gebauter Betrieb</small>
                     <h4>${escapeHtml(factory?.name || factoryId)}</h4>
                   </span>
-                  <span class="hf-v2-fleet-owned">Aktiv</span>
+                  <span class="hf-v2-catalog-badge">Aktiv</span>
                 </div>
                 <p>${escapeHtml(factory?.desc || 'Bereits gebauter Betrieb in dieser Stadt.')}</p>
-                <dl class="hf-v2-fleet-stats">
+                <dl class="hf-v2-built-row__stats">
                   <div><dt>Produktion</dt><dd>${formatDailyKg(capacityKg)}</dd></div>
                   <div><dt>Output</dt><dd title="${escapeHtml(outputsTitle)}">${escapeHtml(outputsSummary)}</dd></div>
                 </dl>
@@ -173,27 +173,29 @@
     const capacityKg = factoryDailyCapacityKg(factory);
     const outputsTitle = factoryOutputsText(factory);
     const outputsSummary = compactFactoryOutputsText(factory);
+    const state = result.ok ? 'buildable' : result.reason === 'not-enough-cash' ? 'expensive' : result.reason === 'no-free-slots' ? 'no-slot' : 'locked';
+    const stateLabel = result.ok ? 'Baubar' : buildDisabledTitle(result);
+    const minTier = Math.max(1, Number(result?.minTier ?? factory.minTier ?? factory.minCityTier) || 1);
 
     return `
-      <article class="hf-v2-fleet-card${result.ok ? '' : ' is-disabled'}">
-        <div class="hf-v2-fleet-card__icon" aria-hidden="true">${factoryVisual(factory.id, factory)}</div>
-        <div class="hf-v2-fleet-card__main">
-          <div class="hf-v2-fleet-card__head">
+      <article class="hf-v2-catalog-row is-${state}">
+        <div class="hf-v2-catalog-row__visual" aria-hidden="true">${factoryVisual(factory.id, factory)}</div>
+        <div class="hf-v2-catalog-row__main">
+          <div class="hf-v2-catalog-row__head">
             <span>
               <small>Betrieb</small>
               <h4>${escapeHtml(factory.name || factory.id)}</h4>
             </span>
-            <span class="hf-v2-fleet-owned">${escapeHtml(ownedLabel)}</span>
+            <span class="hf-v2-catalog-badge">${escapeHtml(ownedLabel)}</span>
           </div>
           <p>${escapeHtml(factory.desc || 'Baubarer Betrieb für diese Stadt.')}</p>
-          <dl class="hf-v2-fleet-stats">
-            <div><dt>Kosten</dt><dd>${formatMoney(factory.cost)}</dd></div>
-            <div><dt>Status</dt><dd>${escapeHtml(ownedLabel)}</dd></div>
+          <dl class="hf-v2-catalog-row__facts">
             <div><dt>Produktion</dt><dd>${formatDailyKg(capacityKg)}</dd></div>
             <div><dt>Output</dt><dd title="${escapeHtml(outputsTitle)}">${escapeHtml(outputsSummary)}</dd></div>
+            <div><dt>Voraussetzung</dt><dd>Netzanschluss · Stadtstufe ${minTier}</dd></div>
           </dl>
         </div>
-        <button class="hf-v2-fleet-buy" type="button" data-action="build-factory" data-city-id="${escapeHtml(cityId)}" data-factory-id="${escapeHtml(factory.id)}"${disabledText}><span>Bauen</span><strong>${formatMoney(factory.cost)}</strong></button>
+        <div class="hf-v2-catalog-row__action"><span class="hf-v2-catalog-state">${escapeHtml(stateLabel)}</span><strong>${formatMoney(factory.cost)}</strong><button class="hf-v2-catalog-build" type="button" data-action="build-factory" data-city-id="${escapeHtml(cityId)}" data-factory-id="${escapeHtml(factory.id)}"${disabledText}>Bauen</button></div>
       </article>`;
   }
 
@@ -209,17 +211,18 @@
     return Object.values(groups).map(group => {
       const factories = grouped.get(group.id) || [];
       if (!factories.length) return '';
+      const available = factories.filter(factory => api.canBuildFactory?.(cityId, factory.id)?.ok).length;
       return `
-        <section class="hf-v2-factory-group" aria-label="${escapeHtml(group.name)}">
-          <div class="hf-v2-fleet-card__head">
+        <section class="hf-v2-catalog-group" data-catalog-group="${escapeHtml(group.id)}" aria-label="${escapeHtml(group.name)}">
+          <div class="hf-v2-catalog-group__head">
             <span>
               <small>${escapeHtml(group.icon || '🏭')} Kategorie</small>
               <h4>${escapeHtml(group.name || group.id)}</h4>
             </span>
-            <span class="hf-v2-fleet-owned">${factories.length.toLocaleString('de-CH')} Betriebe</span>
+            <span class="hf-v2-catalog-count">${available.toLocaleString('de-CH')} von ${factories.length.toLocaleString('de-CH')} verfügbar</span>
           </div>
-          <p class="hf-v2-fleet-hint">${escapeHtml(group.desc || '')}</p>
-          <div class="hf-v2-fleet-grid">${factories.map(factory => factoryCard(cityId, factory, ownedCounts.get(factory.id) || 0)).join('')}</div>
+          <p class="hf-v2-catalog-group__hint">${escapeHtml(group.desc || '')}</p>
+          <div class="hf-v2-catalog-list">${factories.map(factory => factoryCard(cityId, factory, ownedCounts.get(factory.id) || 0)).join('')}</div>
         </section>`;
     }).join('');
   }
@@ -231,26 +234,16 @@
     const cash = window.HFV2Save?.getCash?.() ?? 0;
     const slots = Math.max(0, Math.floor(Number(city.slots) || 0));
     const usedSlots = factoryApi()?.getUsedSlots?.(city.id) ?? 0;
+    const groups = Object.values(factoryGroups()).filter(group => (groupEntries().get(group.id) || []).length);
+    const tier = Math.max(1, Number(city.tier ?? city.level) || 1);
 
     return `
       <div class="hf-v2-fleet-menu hf-v2-factory-menu" data-factory-city-id="${escapeHtml(city.id)}">
-        <p class="hf-v2-fleet-eyebrow">Betriebe bauen</p>
-        <h3>Betriebe für ${escapeHtml(city.name)}</h3>
-        <div class="hf-v2-fleet-cash" aria-label="Stadtübersicht">
-          <span>Kapital</span><strong>${formatMoney(cash)}</strong>
-          <span>Bauplätze</span><strong>${usedSlots.toLocaleString('de-CH')} / ${slots.toLocaleString('de-CH')}</strong>
-        </div>
-        <p class="hf-v2-fleet-hint">Wähle einen Betrieb aus dem Katalog. Betriebe können erst nach dem Netzanschluss der Stadt gebaut werden; Baukosten werden vom gemeinsamen V2-Kapital abgezogen.</p>
-        <section class="hf-v2-factory-group" aria-label="Bereits gebaute Betriebe">
-          <div class="hf-v2-fleet-card__head">
-            <span>
-              <small>Bestand</small>
-              <h4>Bereits gebaute Betriebe</h4>
-            </span>
-            <span class="hf-v2-fleet-owned">${usedSlots.toLocaleString('de-CH')} / ${slots.toLocaleString('de-CH')} Bauplätze</span>
-          </div>
-          ${renderBuiltFactories(city.id)}
-        </section>
+        <header class="hf-v2-catalog-summary" aria-label="Stadtübersicht"><span><small>Kapital</small><strong>${formatMoney(cash)}</strong></span><span><small>Freie Bauplätze</small><strong>${Math.max(0, slots - usedSlots).toLocaleString('de-CH')} von ${slots.toLocaleString('de-CH')}</strong></span><span><small>Stadtstufe</small><strong>Stufe ${tier}</strong></span></header>
+        <div><p class="hf-v2-fleet-eyebrow">Betriebe bauen</p><h3>Betriebe für ${escapeHtml(city.name)}</h3></div>
+        <p class="hf-v2-catalog-intro">Wähle einen Betrieb aus dem Katalog. Baukosten werden vom gemeinsamen V2-Kapital abgezogen.</p>
+        <details class="hf-v2-built"><summary><span>Bereits gebaut</span><strong>${usedSlots.toLocaleString('de-CH')} Betriebe</strong></summary>${renderBuiltFactories(city.id)}</details>
+        <nav class="hf-v2-catalog-nav" aria-label="Katalog filtern"><button class="is-active" type="button" data-action="filter-factories" data-group="all">Alle</button>${groups.map(group => `<button type="button" data-action="filter-factories" data-group="${escapeHtml(group.id)}">${escapeHtml(group.icon || '')} ${escapeHtml(group.name)}</button>`).join('')}</nav>
         ${renderFactoryGroups(city.id)}
       </div>`;
   }
@@ -262,6 +255,13 @@
   function bindFactoryMenuEvents() {
     document.addEventListener('click', event => {
       const button = event.target.closest?.('[data-action="build-factory"]');
+      const filter = event.target.closest?.('[data-action="filter-factories"]');
+      if (filter) {
+        const menu = filter.closest('.hf-v2-factory-menu');
+        menu?.querySelectorAll('[data-action="filter-factories"]').forEach(item => item.classList.toggle('is-active', item === filter));
+        menu?.querySelectorAll('[data-catalog-group]').forEach(group => { group.hidden = filter.dataset.group !== 'all' && group.dataset.catalogGroup !== filter.dataset.group; });
+        return;
+      }
       if (!button) return;
 
       const modalBody = document.getElementById('hfV2ModalBody');
