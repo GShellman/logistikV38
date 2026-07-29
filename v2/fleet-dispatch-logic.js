@@ -75,11 +75,12 @@
     return `fleet-plan-${kind}-${orderId}-${day}-${vehicleId}`;
   }
 
-  function reserve(path, start, end, units, id, commit = true) {
-    const status = window.HFNetwork?.pathCapacityStatus?.(path, {startAbsMinute: start, endAbsMinute: end, units, reservationId: id});
+  function reserve(path, start, end, units, id, commit = true, details = {}) {
+    const capacityOptions = {startAbsMinute: start, endAbsMinute: end, units, reservationId: id, vehicleSpeed: vehicleSpec(details.vehicleType).speed, ...details};
+    const status = window.HFNetwork?.pathCapacityStatus?.(path, capacityOptions);
     if (status?.ok === false) return false;
     if (!commit) return true;
-    const result = window.HFNetwork?.reservePathCapacity?.(path, {startAbsMinute: start, endAbsMinute: end, units, reservationId: id});
+    const result = window.HFNetwork?.reservePathCapacity?.(path, capacityOptions);
     return result?.ok !== false;
   }
 
@@ -164,7 +165,8 @@
       const loadedDuration = durationMinutes(loadedPath, type);
       const loadedEnd = occurrence.departureAbsMinute + loadedDuration;
       const loadedReservation = reservationId('loaded', order.id, occurrence.day, 0);
-      if (!reserve(loadedPath, occurrence.departureAbsMinute, loadedEnd, count, loadedReservation, commitReservations)) {
+      const plannedTripId = `trip-${order.id}-${occurrence.day}`;
+      if (!reserve(loadedPath, occurrence.departureAbsMinute, loadedEnd, count, loadedReservation, commitReservations, {vehicleType: type, vehicleIds: selected.map(item => item.vehicle.id), tripId: plannedTripId})) {
         unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: 'route-overloaded'});
         continue;
       }
@@ -174,7 +176,7 @@
         if (!candidate.deadheadPath) continue;
         const departure = occurrence.departureAbsMinute - candidate.deadheadDuration;
         const id = reservationId('empty', order.id, occurrence.day, candidate.vehicle.id);
-        if (!reserve(candidate.deadheadPath, departure, occurrence.departureAbsMinute, 1, id, commitReservations)) { valid = false; break; }
+        if (!reserve(candidate.deadheadPath, departure, occurrence.departureAbsMinute, 1, id, commitReservations, {vehicleType: type, vehicleId: candidate.vehicle.id, tripId: `deadhead-${order.id}-${occurrence.day}-${candidate.vehicle.id}`})) { valid = false; break; }
         createdDeadheads.push({candidate, departure, id});
       }
       if (!valid) {
@@ -198,7 +200,7 @@
         legs.push({...assignment, orderId: order.id});
       }
       const vehicleIds = selected.map(candidate => candidate.vehicle.id);
-      const tripId = `trip-${order.id}-${occurrence.day}`;
+      const tripId = plannedTripId;
       legs.push({
         id: `planned-shipment-${order.id}-${occurrence.day}`, type: 'shipment', status: 'planned', orderId: order.id,
         tripId,
@@ -220,7 +222,7 @@
         }
         const returnEnd = loadedEnd + returnDuration;
         const returnId = reservationId('return', order.id, occurrence.day, candidate.vehicle.id);
-        if (!reserve(returnPath, loadedEnd, returnEnd, 1, returnId, commitReservations)) {
+        if (!reserve(returnPath, loadedEnd, returnEnd, 1, returnId, commitReservations, {vehicleType: type, vehicleId: candidate.vehicle.id, tripId})) {
           unplanned.push({orderId: order.id, vehicleId: candidate.vehicle.id, departureAbsMinute: loadedEnd, reason: 'return-overloaded'});
           timelines.set(candidate.vehicle.id, {cityId: order.toCityId, availableAbsMinute: loadedEnd});
           continue;
