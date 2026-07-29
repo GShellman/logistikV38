@@ -31,7 +31,7 @@ function harness({alternativeVehicles = 0, arrivalAbsMinute = 600, distance = 60
   loadScript('v2/logistics-logic.js', window);
   const state = window.HFV2Logistics.createLogisticsState({
     orders: [{id: 1, fromCityId: 'zurich', toCityId: 'bern', goodId: 'food', frequency: 'daily', departureHour: 8, departureMinute: 0, vehicleType: 'van', amountKg: 100, enabled: true, lastDispatchedDay: 1}],
-    shipments: [{id: 1, orderId: 1, fromCityId: 'zurich', toCityId: 'bern', goodId: 'food', amountKg: 100, vehicleType: 'van', vehicleIds: [1], vehicleCount: 1, departureAbsMinute: 480, arrivalAbsMinute, status: 'active'}],
+    shipments: [{id: 1, orderId: 1, fromCityId: 'zurich', toCityId: 'bern', goodId: 'food', amountKg: 100, vehicleType: 'van', vehicleIds: [1], vehicleCount: 1, departureAbsMinute: 480, arrivalAbsMinute, status: 'active', postDeliveryAction: 'return', postDeliveryTargetCityId: 'zurich', postDeliveryDepartureAbsMinute: arrivalAbsMinute, postDeliveryArrivalAbsMinute: arrivalAbsMinute + distance}],
   });
   window.HFV2Logistics.configure({state, citiesById: {zurich: {id: 'zurich'}, bern: {id: 'bern'}}});
   return {window, state, time, releasedReservations};
@@ -53,6 +53,7 @@ test('Planreservierungen werden über Hin- und Rückfahrt übernommen und nach A
     plannedReturnReservationIds: ['fleet-plan-return-1-1-1'],
     plannedReturnDepartureAbsMinute: 600,
     plannedReturnArrivalAbsMinute: 660,
+    postDeliveryReservationIds: ['fleet-plan-return-1-1-1'],
   });
 
   setup.window.HFV2Logistics.advanceShipments();
@@ -65,23 +66,23 @@ test('Planreservierungen werden über Hin- und Rückfahrt übernommen und nach A
   assert.deepEqual(setup.releasedReservations, ['fleet-plan-loaded-1-1-0', 'fleet-plan-return-1-1-1']);
 });
 
-test('tägliche Fahrt bleibt am Ziel, wenn am Ursprungsort Ersatz verfügbar ist', () => {
+test('geplante Rückfahrt wird trotz später verändertem Ersatzbestand ausgeführt', () => {
   const {window, state} = harness({alternativeVehicles: 1});
   window.HFV2Logistics.advanceShipments();
-  assert.equal(state.shipments[0].status, 'delivered');
-  assert.equal(window.HFFleet.getState().vehicles[0].currentCityId, 'bern');
-  assert.equal(window.HFFleet.getState().vehicles[0].status, 'available');
+  assert.equal(state.shipments[0].status, 'returning');
+  assert.equal(window.HFFleet.getState().vehicles[0].status, 'returning');
 });
 
-test('keine automatische Rückkehr, wenn sie nicht bis 23:59 abgeschlossen werden kann', () => {
+test('geplante Rückkehr wird auch über das Tagesende ausgeführt', () => {
   const {window, state} = harness({arrivalAbsMinute: 23 * 60, distance: 120});
   window.HFV2Logistics.advanceShipments();
-  assert.equal(state.shipments[0].status, 'delivered');
-  assert.equal(window.HFFleet.getState().vehicles[0].currentCityId, 'bern');
+  assert.equal(state.shipments[0].status, 'returning');
+  assert.equal(state.shipments[0].returnArrivalAbsMinute, 1500);
 });
 
-test('reduzierte Auslieferung bleibt bei synchronem State-Listener atomar und wird nur einmal verarbeitet', () => {
+test('reduzierte Auslieferung mit geplanter Stay-Aktion bleibt atomar und wird nur einmal verarbeitet', () => {
   const {window, state} = harness({alternativeVehicles: 1});
+  Object.assign(state.shipments[0], {postDeliveryAction: 'stay', postDeliveryTargetCityId: 'bern', postDeliveryDepartureAbsMinute: 600, postDeliveryArrivalAbsMinute: 600});
   let destinationStockKg = 0;
   let inventoryCalls = 0;
   let stateChangedCalls = 0;
