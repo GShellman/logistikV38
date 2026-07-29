@@ -93,6 +93,60 @@
     for (const id of leg?.capacityReservationIds || []) window.HFNetwork?.releaseCapacityReservation?.(id);
   }
 
+  function edgeId(edge) { return String(edge?.id || `${edge?.a || ''}-${edge?.b || ''}-${edge?.type || ''}`); }
+
+  // Turn the provisional, per-order schedule into the canonical tours used by
+  // both execution and the calendar.  Keeping this here is important: capacity
+  // is checked and reserved for every stop (and the final disposition) before a
+  // tour becomes visible to consumers.
+  function canonicalTrips(legs, commitReservations) {
+    const shipments = legs.filter(leg => leg.type === 'shipment' && leg.status === 'planned');
+    const used = new Set(), trips = [];
+    for (const first of shipments) {
+      if (used.has(first.id)) continue;
+      const cap = capacityKg(first.vehicleType);
+      const candidates = shipments.filter(leg => !used.has(leg.id)
+        && leg.fromCityId === first.fromCityId && leg.vehicleType === first.vehicleType
+        && Math.abs(leg.requestedDepartureAbsMinute - first.requestedDepartureAbsMinute) <= Math.max(0, Number(logisticsState?.bundleWindowMinutes) || 60));
+      const group = []; let load = 0;
+      for (const leg of candidates.sort((a,b) => a.orderId-b.orderId)) if (!group.length || load + leg.amountKg <= cap) { group.push(leg); load += leg.amountKg; }
+      for (const leg of group) used.add(leg.id);
+      const day = Math.floor(first.requestedDepartureAbsMinute / MINUTES_PER_DAY) + 1;
+      const tripId = `trip-${day}-${group.map(leg => leg.orderId).sort((a,b)=>a-b).join('-')}`;
+      const vehicleIds = [...(group[0].vehicleIds || [])];
+
+      // The provisional reservations must not block the replacement route.
+      const old = legs.filter(leg => group.some(item => item.tripId === leg.tripId));
+      if (commitReservations) for (const leg of old) releaseLeg(leg);
+      const pending = group.map(leg => ({leg, cityId: leg.toCityId}));
+      const stops = [], segments = []; let cityId = first.fromCityId;
+      let cursor = Math.max(...group.map(leg => leg.requestedDepartureAbsMinute)); let failed = false;
+      while (pending.length) {
+        let bestIndex = -1, bestPath = null;
+        for (let i=0;i<pending.length;i++) { const path=route(cityId,pending[i].cityId); if(path?.reachable && (!bestPath || Number(path.distance)<Number(bestPath.distance))) {bestIndex=i;bestPath=path;} }
+        if (bestIndex < 0) { failed=true; break; }
+        const [{leg}] = pending.splice(bestIndex,1);
+        const slot = slotFor(bestPath,cursor,Infinity,vehicleIds.length,first.vehicleType,{tripId});
+        if (!slot.ok) { failed=true; break; }
+        const reservation = `${tripId}-segment-${segments.length+1}`;
+        if (commitReservations && !reserve(bestPath,slot.departureAbsMinute,slot.arrivalAbsMinute,vehicleIds.length,reservation,true,{vehicleType:first.vehicleType,vehicleIds,tripId,edgeTimes:slot.edgeTimes})) {failed=true;break;}
+        segments.push({kind:'delivery',fromCityId:cityId,toCityId:leg.toCityId,departureAbsMinute:slot.departureAbsMinute,arrivalAbsMinute:slot.arrivalAbsMinute,edgeTimes:slot.edgeTimes||[],pathNodeIds:bestPath.nodes||[],pathEdgeIds:(bestPath.edges||[]).map(edgeId),geometry:bestPath.geometry||[],distance:Number(bestPath.distance)||0,capacityReservationIds:commitReservations?[reservation]:[]});
+        stops.push({orderId:leg.orderId,toCityId:leg.toCityId,goodId:(logisticsState.orders||[]).find(o=>o.id===leg.orderId)?.goodId,amountKg:leg.amountKg,arrivalAbsMinute:slot.arrivalAbsMinute,status:'pending',deliveredKg:0,undeliveredKg:leg.amountKg});
+        cursor=slot.arrivalAbsMinute; cityId=leg.toCityId;
+      }
+      const action=postDeliveryDecision(first.fromCityId,cityId); let disposition={action,targetCityId:cityId,departureAbsMinute:cursor,arrivalAbsMinute:cursor,edgeTimes:[],capacityReservationIds:[]};
+      if (!failed && action==='return') {
+        const path=route(cityId,first.fromCityId), slot=path?.reachable?slotFor(path,cursor,Infinity,vehicleIds.length,first.vehicleType,{tripId}):{ok:false};
+        const reservation=`${tripId}-return`;
+        if(!slot.ok || (commitReservations&&!reserve(path,slot.departureAbsMinute,slot.arrivalAbsMinute,vehicleIds.length,reservation,true,{vehicleType:first.vehicleType,vehicleIds,tripId,edgeTimes:slot.edgeTimes}))) failed=true;
+        else disposition={action:'return',targetCityId:first.fromCityId,fromCityId:cityId,toCityId:first.fromCityId,departureAbsMinute:slot.departureAbsMinute,arrivalAbsMinute:slot.arrivalAbsMinute,edgeTimes:slot.edgeTimes||[],pathNodeIds:path.nodes||[],pathEdgeIds:(path.edges||[]).map(edgeId),geometry:path.geometry||[],distance:Number(path.distance)||0,capacityReservationIds:commitReservations?[reservation]:[]};
+      }
+      if (failed) { if(commitReservations) for(const segment of segments) for(const id of segment.capacityReservationIds) window.HFNetwork?.releaseCapacityReservation?.(id); continue; }
+      trips.push({id:tripId,status:'planned',vehicleType:first.vehicleType,vehicleIds,fromCityId:first.fromCityId,departureAbsMinute:segments[0].departureAbsMinute,arrivalAbsMinute:cursor,loadKg:load,load:stops.map(({orderId,goodId,amountKg,toCityId})=>({orderId,goodId,amountKg,toCityId})),orderIds:stops.map(stop=>stop.orderId),stops,segments,edgeTimes:segments.flatMap(segment=>segment.edgeTimes),disposition});
+    }
+    return trips;
+  }
+
   function slotFor(path, earliest, latest, units, type, extra = {}) {
     const finder = window.HFNetwork?.findEarliestPathSlot;
     if (finder) return finder(path, earliest, {latestArrivalAbsMinute: latest, units, vehicleSpeed: vehicleSpec(type).speed, ...extra});
@@ -154,7 +208,8 @@
       for(const item of selected) timelines.set(item.vehicle.id,{cityId:postDelivery.targetCityId,availableAbsMinute:postDelivery.arrivalAbsMinute});
       plannedStock.set(stockKey,plannedStock.get(stockKey)-amountKg);
     }
-    state.dispatchPlan={version:2,generatedAtAbsMinute:start,horizonDays,horizonEndAbsMinute:end,reason:dirtyReason,legs,unplanned}; delete state.planInvalidatedFromAbsMinute; dirtyReason=''; return state.dispatchPlan;
+    const trips=canonicalTrips(legs,commitReservations);
+    state.dispatchPlan={version:3,generatedAtAbsMinute:start,horizonDays,horizonEndAbsMinute:end,reason:dirtyReason,trips,legs,unplanned}; delete state.planInvalidatedFromAbsMinute; dirtyReason=''; return state.dispatchPlan;
   }
 
   function previewOrder(order, options = {}) {
@@ -180,12 +235,20 @@
 
   function plannedTrip(orderId, departureAbsMinute) {
     const plan = ensurePlan();
-    return plan?.legs?.find(leg => leg.type === 'shipment' && leg.orderId === Number(orderId) && leg.status === 'planned' && Math.abs(leg.departureAbsMinute - Number(departureAbsMinute)) <= 1) || null;
+    return plan?.trips?.find(trip => trip.status === 'planned' && trip.orderIds?.includes(Number(orderId)) && Math.abs(trip.departureAbsMinute - Number(departureAbsMinute)) <= 1)
+      || plan?.legs?.find(leg => leg.type === 'shipment' && leg.orderId === Number(orderId) && leg.status === 'planned' && Math.abs(leg.departureAbsMinute - Number(departureAbsMinute)) <= 1) || null;
   }
 
   function consumeTrip(orderId, departureAbsMinute, options = {}) {
     const leg = plannedTrip(orderId, departureAbsMinute);
     if (!leg) return null;
+    if (leg.stops && leg.segments) {
+      leg.status='started';
+      const capacityReservationIds=leg.segments.flatMap(segment=>segment.capacityReservationIds||[]);
+      const plannedReturn=leg.disposition?.action==='return'?{...leg.disposition}:null;
+      if(options.transferReservations!==true) for(const id of [...capacityReservationIds,...(plannedReturn?.capacityReservationIds||[])]) window.HFNetwork?.releaseCapacityReservation?.(id);
+      return {...leg,capacityReservationIds,plannedReturn,postDelivery:leg.disposition};
+    }
     const capacityReservationIds = [...(leg.capacityReservationIds || [])];
     leg.capacityReservationIds = [];
     leg.status = 'started';

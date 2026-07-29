@@ -839,7 +839,7 @@
     return shipment;
   }
 
-  function createBundledShipment(orders, time, nowAbsMinute, created) {
+  function createFallbackBundledShipment(orders, time, nowAbsMinute, created) {
     if (orders.length < 2) return false;
     const vehicleType = orders[0].vehicleType || DEFAULT_VEHICLE_TYPE;
     if (orders.some(order => !vehicleCanTransportGood(vehicleType, order.goodId))) return false;
@@ -951,58 +951,92 @@
     return true;
   }
 
+
+  function executePlannedTrip(trip, time, nowAbsMinute, created) {
+    if (!trip?.stops?.length || !trip?.segments?.length || trip.status !== 'planned') return false;
+    const orders = trip.stops.map(stop => state.orders.find(order => order.id === stop.orderId));
+    if (orders.some(order => !order)) return false;
+    const shipmentId = state.nextShipmentId;
+    const assigned = reserveShipmentVehicles({
+      shipmentId, cityId: trip.fromCityId, vehicleType: trip.vehicleType,
+      vehicleIds: trip.vehicleIds, count: trip.vehicleIds.length,
+      departureAbsMinute: trip.departureAbsMinute,
+      finalAvailableAbsMinute: trip.disposition?.arrivalAbsMinute ?? trip.arrivalAbsMinute,
+      toCityId: trip.disposition?.targetCityId ?? trip.stops.at(-1).toCityId,
+    });
+    if (assigned.length !== trip.vehicleIds.length) return false;
+
+    const consumed = window.HFV2FleetDispatch?.consumeTrip?.(trip.orderIds[0], trip.departureAbsMinute, {transferReservations:true,vehicleIds:trip.vehicleIds});
+    if (!consumed || consumed.id !== trip.id) {
+      rollbackVehicleReservation(shipmentId, trip.fromCityId, trip.departureAbsMinute);
+      window.HFV2FleetDispatch?.invalidate?.('planned-trip-missing', nowAbsMinute);
+      return false;
+    }
+    const removed=[];
+    for(const stop of trip.stops) {
+      const result=window.HFV2Goods?.removeFromInventory?.(trip.fromCityId,stop.goodId,stop.amountKg);
+      if(!result?.ok || Number(result.removedKg)!==Number(stop.amountKg)) {
+        for(const item of removed) window.HFV2Goods?.addToInventory?.(trip.fromCityId,item.goodId,item.amountKg);
+        if(Number(result?.removedKg)>0) window.HFV2Goods?.addToInventory?.(trip.fromCityId,stop.goodId,Number(result.removedKg));
+        for(const id of [...(consumed.capacityReservationIds||[]),...(consumed.plannedReturn?.capacityReservationIds||[])]) window.HFNetwork?.releaseCapacityReservation?.(id);
+        rollbackVehicleReservation(shipmentId,trip.fromCityId,trip.departureAbsMinute);
+        window.HFV2FleetDispatch?.invalidate?.('planned-trip-stock-changed',nowAbsMinute);
+        return false;
+      }
+      removed.push({goodId:stop.goodId,amountKg:stop.amountKg});
+    }
+    const geometry=[]; const pathNodeIds=[]; const pathEdgeIds=[];
+    for(const segment of trip.segments) {
+      const path=window.HFNetwork?.findPath?.(segment.fromCityId,segment.toCityId,{mode:'road'});
+      appendPathDetails({geometry,pathNodeIds,pathEdgeIds},path||{});
+    }
+    const disposition=trip.disposition||{action:'stay',targetCityId:trip.stops.at(-1).toCityId,departureAbsMinute:trip.arrivalAbsMinute,arrivalAbsMinute:trip.arrivalAbsMinute};
+    const shipment={id:state.nextShipmentId++,tripId:trip.id,orderId:trip.orderIds[0],fromCityId:trip.fromCityId,toCityId:trip.stops.at(-1).toCityId,
+      goodId:trip.stops[0].goodId,amountKg:trip.loadKg,vehicleType:trip.vehicleType,vehicleIds:[...trip.vehicleIds],vehicleCount:trip.vehicleIds.length,
+      stops:trip.stops.map(stop=>({...stop})),routeStops:trip.stops.map(stop=>({...stop})),segments:trip.segments.map(segment=>({...segment})),edgeTimes:[...(trip.edgeTimes||[])],
+      pathNodeIds,pathEdgeIds,geometry,routeGeometry:geometry,departureAbsMinute:trip.departureAbsMinute,arrivalAbsMinute:trip.arrivalAbsMinute,
+      reservationIds:[...(consumed.capacityReservationIds||[])],plannedReturnReservationIds:[...(consumed.plannedReturn?.capacityReservationIds||[])],
+      plannedReturnDepartureAbsMinute:consumed.plannedReturn?.departureAbsMinute??null,plannedReturnArrivalAbsMinute:consumed.plannedReturn?.arrivalAbsMinute??null,
+      postDeliveryAction:disposition.action,postDeliveryTargetCityId:disposition.targetCityId,postDeliveryDepartureAbsMinute:disposition.departureAbsMinute,
+      postDeliveryArrivalAbsMinute:disposition.arrivalAbsMinute,postDeliveryReservationIds:[...(disposition.capacityReservationIds||[])],
+      status:'active',shipmentSemantics:'destination-fleet-v2',createdAtAbsMinute:nowAbsMinute,
+      costs:tripCosts(trip.segments.reduce((sum,segment)=>sum+(Number(segment.distance)||0),0),trip.vehicleType,trip.vehicleIds.length)};
+    state.shipments.push(shipment); bookTripCosts(shipment,'logistics-shipment-cost','shipment'); created.push(shipment);
+    for(const order of orders) {order.lastDispatchedDay=Math.max(1,Math.trunc(Number(time.day)||1));markOrderDispatchResult(order,'created');}
+    return true;
+  }
+
   function tick() {
     configure();
-    const time = currentTime();
-    const nowAbsMinute = absoluteMinute(time);
+    const time=currentTime(), nowAbsMinute=absoluteMinute(time);
     advanceAssignments(nowAbsMinute);
-    window.HFV2FleetDispatch?.ensurePlan?.({state});
-    window.HFNetwork?.cleanupCapacityReservations?.(nowAbsMinute - MINUTES_PER_DAY);
-    const created = [];
-    const dueOrders = state.orders.filter(order => orderDueToday(order, time));
-    const groups = new Map();
-    const windowMinutes = bundleWindowMinutes();
-    for (const order of dueOrders) {
-      const vehicleType = order.vehicleType || DEFAULT_VEHICLE_TYPE;
-      const scheduledMinute = order.departureHour * 60 + order.departureMinute;
-      const bucket = windowMinutes > 0 ? Math.floor(scheduledMinute / windowMinutes) * windowMinutes : scheduledMinute;
-      const key = [order.fromCityId, vehicleType, bucket].join('|');
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(order);
+    const plan=window.HFV2FleetDispatch?.ensurePlan?.({state});
+    window.HFNetwork?.cleanupCapacityReservations?.(nowAbsMinute-MINUTES_PER_DAY);
+    const created=[];
+    if (!window.HFV2FleetDispatch) {
+      const due=state.orders.filter(order=>orderDueToday(order,time));
+      const grouped=new Map();
+      for(const order of due) {const key=`${order.fromCityId}|${order.vehicleType||DEFAULT_VEHICLE_TYPE}`;if(!grouped.has(key))grouped.set(key,[]);grouped.get(key).push(order);}
+      for(const orders of grouped.values()) {
+        if(orders.length>1 && createFallbackBundledShipment(orders,time,nowAbsMinute,created)) continue;
+        for(const order of orders) createSingleShipment(order,time,nowAbsMinute,created);
+      }
+      if(created.length) window.HFV2Save?.dispatchStateChanged?.('logistics-shipments-created');
+      return created;
     }
+    const dueTrips=(plan?.trips||[]).filter(trip=>trip.status==='planned'&&trip.departureAbsMinute<=nowAbsMinute
+      && trip.orderIds?.some(id=>state.orders.some(order=>order.id===id&&orderDueToday(order,time))));
+    for(const trip of dueTrips) executePlannedTrip(trip,time,nowAbsMinute,created);
 
-    const fallbackOrders = [];
-    for (const groupOrders of groups.values()) {
-      const vehicleType = groupOrders[0].vehicleType || DEFAULT_VEHICLE_TYPE;
-      const capacityKg = vehicleCapacityKg(vehicleType);
-      const candidates = [];
-      for (const order of groupOrders) {
-        if (capacityKg > 0 && order.amountKg <= capacityKg) candidates.push(order);
-        else fallbackOrders.push(order);
-      }
-      let bundle = [];
-      let bundleKg = 0;
-      for (const order of candidates) {
-        if (bundle.length && bundleKg + order.amountKg > capacityKg) {
-          if (!createBundledShipment(bundle, time, nowAbsMinute, created)) fallbackOrders.push(...bundle);
-          bundle = [];
-          bundleKg = 0;
-        }
-        bundle.push(order);
-        bundleKg = Math.round((bundleKg + order.amountKg) * 1000) / 1000;
-      }
-      if (bundle.length >= 2) {
-        if (!createBundledShipment(bundle, time, nowAbsMinute, created)) fallbackOrders.push(...bundle);
-      } else {
-        fallbackOrders.push(...bundle);
-      }
+    // Explicit recovery only: invalidate first, then build and consume one new
+    // internally consistent plan.  There is no ad-hoc grouping in tick.
+    const uncovered=state.orders.filter(order=>orderDueToday(order,time)&&!dueTrips.some(trip=>trip.orderIds.includes(order.id)));
+    if(uncovered.length) {
+      window.HFV2FleetDispatch?.invalidate?.('due-order-not-in-plan',nowAbsMinute);
+      const fallback=window.HFV2FleetDispatch?.buildPlan?.({state,fromAbsMinute:nowAbsMinute});
+      for(const trip of fallback?.trips||[]) if(trip.status==='planned'&&trip.departureAbsMinute<=nowAbsMinute&&trip.orderIds.some(id=>uncovered.some(order=>order.id===id))) executePlannedTrip(trip,time,nowAbsMinute,created);
     }
-
-    for (const order of fallbackOrders) {
-      if (order.lastDispatchedDay === Math.max(1, Math.trunc(Number(time.day) || 1))) continue;
-      createSingleShipment(order, time, nowAbsMinute, created);
-    }
-    if (created.length) window.HFV2Save?.dispatchStateChanged?.('logistics-shipments-created');
+    if(created.length) window.HFV2Save?.dispatchStateChanged?.('logistics-shipments-created');
     return created;
   }
 

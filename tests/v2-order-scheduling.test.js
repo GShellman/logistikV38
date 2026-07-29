@@ -382,3 +382,33 @@ test('nicht planbare Rückfahrt rollt die komplette temporäre Rundfahrt zurück
   assert.equal(released.length, 0);
   assert.ok(plan.unplanned.some(item => item.orderId === 91 && item.reason === 'return-no-slot' && item.nextPossibleAbsMinute === 1500));
 });
+
+test('kanonischer Mehrstopp-Trip wird mit identischen Stopps, Zeiten, Reservierungen und Rückfahrt ausgeführt', () => {
+  const reservations = new Map();
+  const {window, state} = logisticsHarness({stock: 150, vehicles: [{id: 1, vehicleType: 'van', currentCityId: 'a', availableAbsMinute: 0}]});
+  window.HFNetwork.reservePathCapacity = (_path, options) => { reservations.set(options.reservationId, {...options}); return {ok: true, reservationId: options.reservationId}; };
+  window.HFNetwork.releaseCapacityReservation = id => reservations.delete(id);
+  state.orders = [dueOrder(1, 100, 'b'), dueOrder(2, 50, 'c')];
+  window.HFV2Logistics.configure({state});
+  load('v2/post-delivery-planning-rule.js', window);
+  load('v2/fleet-dispatch-logic.js', window);
+
+  const plan = window.HFV2FleetDispatch.buildPlan({state, horizonDays: 3});
+  const trip = plan.trips.find(item => item.orderIds.length === 2);
+  assert.ok(trip);
+  assert.equal(trip.id, 'trip-1-1-2');
+  assert.deepEqual(Array.from(trip.stops, stop => stop.orderId), [1, 2]);
+  assert.equal(trip.segments.length, 2);
+  assert.equal(trip.disposition.action, 'return');
+  const plannedReservationIds = [...trip.segments.flatMap(segment => segment.capacityReservationIds), ...trip.disposition.capacityReservationIds];
+  assert.ok(plannedReservationIds.every(id => reservations.has(id)), 'die gesamte Route ist vor der Ausführung reserviert');
+
+  const [shipment] = window.HFV2Logistics.tick();
+  assert.equal(shipment.tripId, trip.id);
+  assert.deepEqual(Array.from(shipment.stops, stop => [stop.orderId, stop.toCityId, stop.arrivalAbsMinute]), Array.from(trip.stops, stop => [stop.orderId, stop.toCityId, stop.arrivalAbsMinute]));
+  assert.deepEqual(Array.from(shipment.segments, segment => [segment.departureAbsMinute, segment.arrivalAbsMinute, segment.edgeTimes]), Array.from(trip.segments, segment => [segment.departureAbsMinute, segment.arrivalAbsMinute, segment.edgeTimes]));
+  assert.deepEqual(Array.from(shipment.reservationIds), Array.from(trip.segments.flatMap(segment => segment.capacityReservationIds)));
+  assert.equal(shipment.plannedReturnDepartureAbsMinute, trip.disposition.departureAbsMinute);
+  assert.equal(shipment.plannedReturnArrivalAbsMinute, trip.disposition.arrivalAbsMinute);
+  assert.deepEqual(Array.from(shipment.plannedReturnReservationIds), Array.from(trip.disposition.capacityReservationIds));
+});
