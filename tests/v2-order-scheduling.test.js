@@ -74,6 +74,26 @@ test('alle sieben Wochentage werden normalisiert und nur am gewählten Tag fäll
   }
 });
 
+test('Kühlwaren können nicht mit einem normalen Fahrzeug disponiert werden', () => {
+  const {window} = logisticsHarness();
+  window.HFV2GoodsCatalog = [{id: 'food', properties: {requiresRefrigeration: true}}];
+
+  assert.throws(
+    () => window.HFV2Logistics.createOrder({fromCityId: 'a', toCityId: 'b', goodId: 'food', frequency: 'daily', vehicleType: 'van'}),
+    error => error?.reason === 'refrigeration-required',
+  );
+});
+
+test('Kühlwaren können mit einem als gekühlt markierten Fahrzeug disponiert werden', () => {
+  const vehicles = [{id: 2, vehicleType: 'refrigerated-van', currentCityId: 'a', availableAbsMinute: 0}];
+  const {window} = logisticsHarness({vehicles});
+  window.HFV2GoodsCatalog = [{id: 'food', properties: {requiresRefrigeration: true}}];
+  window.HFVehicleCatalog.VEHICLE_CATALOG['refrigerated-van'] = {mode: 'road', refrigerated: true, load: 1.7, speed: 80};
+
+  const order = window.HFV2Logistics.createOrder({fromCityId: 'a', toCityId: 'b', goodId: 'food', frequency: 'daily', vehicleType: 'refrigerated-van'});
+  assert.equal(order.vehicleType, 'refrigerated-van');
+});
+
 test('tägliche und wöchentliche Folgetermine überschreiten Tages- und Wochengrenzen', () => {
   const {window} = logisticsHarness();
   assert.equal(window.HFV2Logistics.nextOrderDueAbsMinute({enabled: true, frequency: 'daily', departureHour: 23, departureMinute: 55, lastDispatchedDay: null}, {day: 1, hour: 23, minute: 56}), 2875);

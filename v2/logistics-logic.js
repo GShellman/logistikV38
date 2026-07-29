@@ -194,6 +194,17 @@
     return window.HFFleet?.VEHICLES?.[vehicleType] || window.HFVehicleCatalog?.VEHICLE_CATALOG?.[vehicleType] || null;
   }
 
+  function goodSpec(goodId) {
+    const id = normalizeId(goodId);
+    return (window.HFV2GoodsCatalog || []).find(good => good.id === id) || window.HF_GOODS_DATABASE?.goods?.[id] || null;
+  }
+
+  function vehicleCanTransportGood(vehicleType, goodId) {
+    const properties = goodSpec(goodId)?.properties || {};
+    const requiresRefrigeration = properties.requiresRefrigeration === true || properties.refrigeratedRequired === true;
+    return !requiresRefrigeration || vehicleSpec(vehicleType)?.refrigerated === true;
+  }
+
   function tripCosts(distanceKm, vehicleType, vehicleCount) {
     const distance = Math.max(0, Number(distanceKm) || 0);
     const perVehicleKm = Math.max(0, Number(vehicleSpec(vehicleType)?.kmCost) || 0);
@@ -354,7 +365,8 @@
     if (!vehicle || vehicle.mode !== 'road' || available.length <= 0) throw new Error('Selected road vehicle type is not available in the source city fleet');
   }
 
-  function validateRoadShipment({fromCityId, toCityId, vehicleType, amountKg, departureAbsMinute, reservationId}) {
+  function validateRoadShipment({fromCityId, toCityId, goodId, vehicleType, amountKg, departureAbsMinute, reservationId}) {
+    if (!vehicleCanTransportGood(vehicleType, goodId)) return {ok: false, reason: 'refrigeration-required'};
     const path = window.HFNetwork?.findPath?.(fromCityId, toCityId, {mode: 'road'});
     if (!path?.reachable) return {ok: false, reason: 'no-route'};
 
@@ -404,6 +416,7 @@
     const weekday = normalizeWeekday(options.weekday, frequency);
     const vehicleType = normalizeId(options.vehicleType) || DEFAULT_VEHICLE_TYPE;
     const amountKg = Number(options.amountKg) > 0 ? Number(options.amountKg) : plannedOrderAmountKg(toCityId, goodId, frequency);
+    if (!vehicleCanTransportGood(vehicleType, goodId)) return {ok: false, reason: 'refrigeration-required'};
     const capacityKg = vehicleCapacityKg(vehicleType);
     const vehicleCount = capacityKg > 0 ? Math.ceil(amountKg / capacityKg) : 0;
     const path = window.HFNetwork?.findPath?.(fromCityId, toCityId, {mode: 'road'});
@@ -726,7 +739,7 @@
       return null;
     }
     const plannedReservationId = plannedTrip?.capacityReservationIds?.length === 1 ? plannedTrip.capacityReservationIds[0] : null;
-    const validation = validateRoadShipment({fromCityId: order.fromCityId, toCityId: order.toCityId, vehicleType, amountKg, departureAbsMinute, reservationId: plannedReservationId});
+    const validation = validateRoadShipment({fromCityId: order.fromCityId, toCityId: order.toCityId, goodId: order.goodId, vehicleType, amountKg, departureAbsMinute, reservationId: plannedReservationId});
     if (!validation.ok) {
       markOrderDispatchResult(order, validation.reason);
       return null;
@@ -824,6 +837,7 @@
   function createBundledShipment(orders, time, nowAbsMinute, created) {
     if (orders.length < 2) return false;
     const vehicleType = orders[0].vehicleType || DEFAULT_VEHICLE_TYPE;
+    if (orders.some(order => !vehicleCanTransportGood(vehicleType, order.goodId))) return false;
     const capacityKg = vehicleCapacityKg(vehicleType);
     if (capacityKg <= 0) return false;
     const vehicle = window.HFVehicleCatalog?.VEHICLE_CATALOG?.[vehicleType] || null;
