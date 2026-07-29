@@ -379,7 +379,50 @@
 
   function reservedUnitsFor(edge, windowKey, targetState = state, exceptReservationId = '') {
     const reservations = targetState?.usedCapacity?.[edgeId(edge)]?.[windowKey] || {};
-    return Object.entries(reservations).reduce((total, [id, units]) => total + (id === exceptReservationId ? 0 : Math.max(0, Number(units) || 0)), 0);
+    return Object.entries(reservations).reduce((total, [id, reservation]) => total + (id === exceptReservationId ? 0 : reservationUnits(reservation)), 0);
+  }
+
+  function reservationUnits(reservation) {
+    return Math.max(0, Number(typeof reservation === 'object' ? reservation?.units : reservation) || 0);
+  }
+
+  function edgeDistance(edge, targetState = state) {
+    const explicit = Number(edge?.distance);
+    if (Number.isFinite(explicit) && explicit >= 0) return explicit;
+    return geometryDistance(edgeGeometry(edge, targetState));
+  }
+
+  // The common source of truth for both capacity validation and persistence.
+  function pathEdgeOccupations(path, options = {}) {
+    const targetState = options.state || state || createNetworkState();
+    const edges = Array.isArray(path?.edges) ? path.edges : [];
+    const nodes = Array.isArray(path?.nodes) ? path.nodes : [];
+    let cursor = Number(options.startAbsMinute);
+    if (!Number.isFinite(cursor)) return [];
+    const requestedSpeed = Math.max(1, Number(options.vehicleSpeed ?? options.speed) || Infinity);
+    return edges.map((edge, index) => {
+      const roadSpeed = Math.max(1, Number(edge?.speed ?? transportSpec(edge).speed) || 1);
+      const speed = Math.min(requestedSpeed, roadSpeed);
+      const entryAbsMinute = cursor;
+      const exitAbsMinute = entryAbsMinute + edgeDistance(edge, targetState) / speed * 60;
+      cursor = exitAbsMinute;
+      const from = nodes[index] || edge?.a;
+      const to = nodes[index + 1] || (from === edge?.a ? edge?.b : edge?.a);
+      return Object.freeze({edge, edgeId: edgeId(edge), direction: `${from || ''}>${to || ''}`, entryAbsMinute, exitAbsMinute, speed});
+    });
+  }
+
+  function reservationsForInterval(edge, start, end, targetState, exceptReservationId = '') {
+    const found = new Map();
+    for (const key of capacityWindowRange(start, end)) {
+      for (const [id, reservation] of Object.entries(targetState?.usedCapacity?.[edgeId(edge)]?.[key] || {})) {
+        if (id === exceptReservationId || found.has(id)) continue;
+        const entry = Number(typeof reservation === 'object' ? reservation.entryAbsMinute : -Infinity);
+        const exit = Number(typeof reservation === 'object' ? reservation.exitAbsMinute : Infinity);
+        if (entry < end && exit > start) found.set(id, {entry, exit, units: reservationUnits(reservation)});
+      }
+    }
+    return [...found.values()];
   }
 
   function currentAbsoluteMinute() {
@@ -395,7 +438,7 @@
     const targetState = options.state || state || createNetworkState();
     const absMinute = Number.isFinite(Number(options.absMinute)) ? Number(options.absMinute) : currentAbsoluteMinute();
     return Object.freeze({
-      used: reservedUnitsFor(edge, capacityWindowKey(absMinute), targetState),
+      used: reservationsForInterval(edge, absMinute, absMinute + 1e-7, targetState).reduce((sum, item) => sum + item.units, 0),
       capacity: edgeCapacity(edge),
     });
   }
@@ -407,19 +450,21 @@
   function pathCapacityStatus(path, options = {}) {
     const targetState = options.state || state || createNetworkState();
     const edges = Array.isArray(path?.edges) ? path.edges : [];
-    const start = Number(options.startAbsMinute);
-    const end = Number(options.endAbsMinute);
     const units = Math.max(1, Math.floor(Number(options.units) || 1));
     const reservationId = String(options.reservationId || '');
-    if (!edges.length || !Number.isFinite(start) || !Number.isFinite(end)) return {ok: true, overloaded: []};
+    const occupations = pathEdgeOccupations(path, {...options, state: targetState});
+    if (!edges.length || !occupations.length) return {ok: true, overloaded: [], occupations};
     const overloaded = [];
-    for (const edge of edges) {
+    for (const occupation of occupations) {
+      const edge = occupation.edge;
       const capacity = edgeCapacity(edge);
-      for (const windowKey of capacityWindowRange(start, end)) {
-        if (reservedUnitsFor(edge, windowKey, targetState, reservationId) + units > capacity) overloaded.push({edgeId: edgeId(edge), windowKey, capacity});
+      const existing = reservationsForInterval(edge, occupation.entryAbsMinute, occupation.exitAbsMinute, targetState, reservationId);
+      const points = [occupation.entryAbsMinute, ...existing.flatMap(item => [Math.max(occupation.entryAbsMinute, item.entry), Math.min(occupation.exitAbsMinute, item.exit)])];
+      if (points.some(point => units + existing.filter(item => item.entry <= point && item.exit > point).reduce((sum, item) => sum + item.units, 0) > capacity)) {
+        overloaded.push({edgeId: occupation.edgeId, entryAbsMinute: occupation.entryAbsMinute, exitAbsMinute: occupation.exitAbsMinute, capacity});
       }
     }
-    return {ok: overloaded.length === 0, overloaded};
+    return {ok: overloaded.length === 0, overloaded, occupations};
   }
 
   function reservePathCapacity(path, options = {}) {
@@ -429,16 +474,27 @@
     if (!status.ok) return {ok: false, reason: 'route-overloaded', overloaded: status.overloaded};
     const reservationId = String(options.reservationId || `res-${Date.now()}${Math.random().toString(16).slice(2)}`);
     const units = Math.max(1, Math.floor(Number(options.units) || 1));
-    for (const edge of Array.isArray(path?.edges) ? path.edges : []) {
-      const id = edgeId(edge);
+    for (const occupation of status.occupations || []) {
+      const id = occupation.edgeId;
       targetState.usedCapacity[id] = targetState.usedCapacity[id] && typeof targetState.usedCapacity[id] === 'object' ? targetState.usedCapacity[id] : {};
-      for (const windowKey of capacityWindowRange(options.startAbsMinute, options.endAbsMinute)) {
+      for (const windowKey of capacityWindowRange(occupation.entryAbsMinute, occupation.exitAbsMinute)) {
         targetState.usedCapacity[id][windowKey] = targetState.usedCapacity[id][windowKey] && typeof targetState.usedCapacity[id][windowKey] === 'object' ? targetState.usedCapacity[id][windowKey] : {};
-        targetState.usedCapacity[id][windowKey][reservationId] = units;
+        targetState.usedCapacity[id][windowKey][reservationId] = {units, vehicleId: options.vehicleId ?? null, vehicleIds: options.vehicleIds || undefined, tripId: options.tripId || reservationId, direction: occupation.direction, entryAbsMinute: occupation.entryAbsMinute, exitAbsMinute: occupation.exitAbsMinute};
       }
     }
     dispatchCapacityChanged();
     return {ok: true, reservationId};
+  }
+
+  function getEdgeSchedule(requestedEdgeId, day, targetState = state) {
+    const start = (Math.max(1, Math.trunc(Number(day) || 1)) - 1) * 1440;
+    const end = start + 1440;
+    const found = new Map();
+    for (const key of capacityWindowRange(start, end)) for (const [reservationId, value] of Object.entries(targetState?.usedCapacity?.[String(requestedEdgeId)]?.[key] || {})) {
+      if (typeof value !== 'object' || Number(value.entryAbsMinute) >= end || Number(value.exitAbsMinute) <= start) continue;
+      found.set(reservationId, Object.freeze({reservationId, ...structuredCloneSafe(value)}));
+    }
+    return Object.freeze([...found.values()].sort((a, b) => a.entryAbsMinute - b.entryAbsMinute));
   }
 
   function releaseCapacityReservation(reservationId, targetState = state) {
@@ -614,5 +670,5 @@
     return edges[0];
   }
 
-  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, JUNCTION_SNAP_KM, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject, segmentIntersection, geometryIntersections, splitRoadsForAutomaticJunctions, getEdgeOccupancy, pathCapacityStatus, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
+  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, JUNCTION_SNAP_KM, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject, segmentIntersection, geometryIntersections, splitRoadsForAutomaticJunctions, getEdgeOccupancy, getEdgeSchedule, pathEdgeOccupations, pathCapacityStatus, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
 })();

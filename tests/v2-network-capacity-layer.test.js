@@ -102,3 +102,40 @@ test('Plan → Hinfahrt → Rückfahrt → angekommen zählt ein Fahrzeug je Zei
   window.HFNetwork.releaseCapacityReservation(trip.plannedReturn.capacityReservationIds[0]);
   assert.deepEqual({...window.HFNetwork.getEdgeOccupancy(edge, {absMinute: 600})}, {used: 0, capacity: 3}, 'unmittelbar nach Fahrtende: 0/3');
 });
+
+test('Mehrteilige Routen belegen jeden Edge erst bei dessen tatsächlicher Durchfahrt', () => {
+  const {window} = setup();
+  const first = {id: 'first', a: 'a', b: 'b', type: 'regional', capacity: 1, distance: 30};
+  const second = {id: 'second', a: 'b', b: 'c', type: 'mainroad', capacity: 1, distance: 45};
+  const state = window.HFNetwork.createNetworkState({connections: [first, second]});
+  window.HFNetwork.configure({state});
+  const path = {reachable: true, edges: [first, second], nodes: ['a', 'b', 'c']};
+
+  assert.equal(window.HFNetwork.reservePathCapacity(path, {
+    startAbsMinute: 60, vehicleSpeed: 90, units: 1, reservationId: 'trip-one',
+    vehicleId: 7, tripId: 'stable-trip-one',
+  }).ok, true);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(window.HFNetwork.getEdgeSchedule('first', 1).map(item => [item.entryAbsMinute, item.exitAbsMinute]))), [[60, 90]]);
+  const secondSchedule = window.HFNetwork.getEdgeSchedule('second', 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(secondSchedule.map(item => [item.entryAbsMinute, item.exitAbsMinute]))), [[90, 120]]);
+  assert.equal(secondSchedule[0].vehicleId, 7);
+  assert.equal(secondSchedule[0].tripId, 'stable-trip-one');
+  assert.equal(secondSchedule[0].direction, 'b>c');
+  assert.equal(Object.isFrozen(secondSchedule), true);
+  assert.equal(Object.isFrozen(secondSchedule[0]), true);
+});
+
+test('Zwei Fahrten können denselben Edge direkt nacheinander nutzen', () => {
+  const {window} = setup();
+  const edge = {id: 'serial-road', a: 'a', b: 'b', type: 'mainroad', capacity: 1, distance: 30};
+  const state = window.HFNetwork.createNetworkState({connections: [edge]});
+  window.HFNetwork.configure({state});
+  const path = {reachable: true, edges: [edge], nodes: ['a', 'b']};
+
+  assert.equal(window.HFNetwork.reservePathCapacity(path, {startAbsMinute: 0, vehicleSpeed: 60, reservationId: 'early'}).ok, true);
+  assert.equal(window.HFNetwork.pathCapacityStatus(path, {startAbsMinute: 30, vehicleSpeed: 60, reservationId: 'late'}).ok, true);
+  assert.equal(window.HFNetwork.reservePathCapacity(path, {startAbsMinute: 30, vehicleSpeed: 60, reservationId: 'late'}).ok, true);
+  assert.equal(window.HFNetwork.pathCapacityStatus(path, {startAbsMinute: 29, vehicleSpeed: 60, reservationId: 'overlap'}).ok, false);
+  assert.equal(window.HFNetwork.getEdgeSchedule('serial-road', 1).length, 2);
+});
