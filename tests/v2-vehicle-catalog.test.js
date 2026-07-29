@@ -20,6 +20,20 @@ function loadCatalog() {
   return window.HFVehicleCatalog.VEHICLE_CATALOG;
 }
 
+test('Fluto Gianco ist mit Stammdaten und passenden PNG-Assets registriert', () => {
+  const catalog = loadCatalog();
+  const vehicle = catalog['fluto-gianco'];
+  assert.ok(vehicle, 'Fluto Gianco fehlt im Fahrzeugkatalog');
+  assert.equal(vehicle.brand, 'Fluto');
+  assert.equal(vehicle.model, 'Gianco');
+  assert.equal(vehicle.load, 2);
+
+  const window = {};
+  load('v2/vehicle-assets.js', window);
+  assert.equal(window.HFV2VehicleAssets.vehicleImage(vehicle.id), 'assets/vehicles/fluto-gianco.png');
+  assert.equal(window.HFV2VehicleAssets.roadVehicleImage(vehicle.id), 'assets/vehicles/fluto-gianco-road.png');
+});
+
 test('Fahrzeugkatalog enthält vollständige, eindeutige Modelle und Pflichtassets', () => {
   const catalog = loadCatalog();
   const ids = new Set();

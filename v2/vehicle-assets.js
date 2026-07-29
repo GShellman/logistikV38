@@ -15,6 +15,7 @@
   const VEHICLE_PNG_ASSETS = Object.freeze({
     van: 'assets/vehicles/van.png',
     'large-van': 'assets/vehicles/large-van.png',
+    'fluto-gianco': 'assets/vehicles/fluto-gianco.png',
     'light-truck': 'assets/vehicles/light-truck.png',
     'heavy-truck': 'assets/vehicles/heavy-truck.png',
     artic: 'assets/vehicles/artic.png',
@@ -25,6 +26,7 @@
 
   const VEHICLE_ROAD_PNG_ASSETS = Object.freeze({
     'large-van': 'assets/vehicles/large-van-road.png',
+    'fluto-gianco': 'assets/vehicles/fluto-gianco-road.png',
   });
 
   function normalizeVehicleId(vehicleId) {
