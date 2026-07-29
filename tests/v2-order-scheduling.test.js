@@ -331,3 +331,44 @@ test('Bestellvorschau erzeugt Lieferung und Rückfahrt ohne Spielstand oder Rese
   assert.equal(JSON.stringify(state), before);
   assert.equal(reservations, 0);
 });
+
+test('Edge-Fahrplan verschiebt die Abfahrt und erlaubt Wartezeit zwischen Teilstrecken', () => {
+  const window = {HFV2Time: {getState: () => ({day: 1, hour: 0, minute: 0})}, dispatchEvent: () => {}};
+  load('v2/network-logic.js', window);
+  const edges = [
+    {id: 'ab', a: 'a', b: 'b', type: 'localroad', distance: 10, speed: 60},
+    {id: 'bc', a: 'b', b: 'c', type: 'localroad', distance: 10, speed: 60},
+  ];
+  const state = window.HFNetwork.createNetworkState({connections: edges});
+  window.HFNetwork.configure({state, citiesById: {a: {id: 'a'}, b: {id: 'b'}, c: {id: 'c'}}});
+  window.HFNetwork.reservePathCapacity({nodes: ['a', 'b'], edges: [edges[0]]}, {startAbsMinute: 0, endAbsMinute: 20, vehicleSpeed: 60, units: 3, reservationId: 'blocked-first'});
+  window.HFNetwork.reservePathCapacity({nodes: ['b', 'c'], edges: [edges[1]]}, {startAbsMinute: 25, endAbsMinute: 35, vehicleSpeed: 60, units: 3, reservationId: 'blocked-second'});
+
+  const slot = window.HFNetwork.findEarliestPathSlot({nodes: ['a', 'b', 'c'], edges}, 0, {vehicleSpeed: 60, latestArrivalAbsMinute: 60});
+
+  assert.equal(slot.ok, true);
+  assert.equal(slot.scheduledDepartureAbsMinute, 10);
+  assert.equal(slot.arrivalAbsMinute, 35);
+  assert.equal(slot.waitingMinutes, 5);
+  assert.deepEqual(Array.from(slot.edgeTimes, edge => edge.waitingMinutes), [10, 5]);
+});
+
+test('nicht planbare Rückfahrt rollt die komplette temporäre Rundfahrt zurück', () => {
+  const released = [], reserved = [];
+  const {window, state} = logisticsHarness({stock: 100});
+  state.orders = [dueOrder(91, 100)];
+  window.HFV2Logistics.configure({state});
+  window.HFNetwork.findEarliestPathSlot = (_path, earliest, options) => options.units > 1 || earliest === 0
+    ? {ok: true, departureAbsMinute: earliest, scheduledDepartureAbsMinute: earliest, arrivalAbsMinute: earliest + 60, waitingMinutes: 0, edgeTimes: []}
+    : {ok: false, reason: 'no-feasible-slot', nextPossibleAbsMinute: 1500};
+  window.HFNetwork.reservePathCapacity = (_path, options) => { reserved.push(options.reservationId); return {ok: true}; };
+  window.HFNetwork.releaseCapacityReservation = id => released.push(id);
+  load('v2/fleet-dispatch-logic.js', window);
+
+  const plan = window.HFV2FleetDispatch.buildPlan({state, horizonDays: 3});
+
+  assert.equal(plan.legs.some(leg => leg.orderId === 91), false);
+  assert.equal(reserved.length, 0);
+  assert.equal(released.length, 0);
+  assert.ok(plan.unplanned.some(item => item.orderId === 91 && item.reason === 'return-no-slot' && item.nextPossibleAbsMinute === 1500));
+});

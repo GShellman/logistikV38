@@ -470,7 +470,9 @@
   function reservePathCapacity(path, options = {}) {
     const targetState = options.state || state || createNetworkState();
     targetState.usedCapacity = targetState.usedCapacity && typeof targetState.usedCapacity === 'object' ? targetState.usedCapacity : {};
-    const status = pathCapacityStatus(path, {...options, state: targetState});
+    const suppliedTimes = Array.isArray(options.edgeTimes) ? options.edgeTimes : null;
+    const statuses = suppliedTimes ? suppliedTimes.map((time, index) => pathCapacityStatus({nodes: [path?.nodes?.[index], path?.nodes?.[index + 1]], edges: [path.edges[index]]}, {...options, state: targetState, startAbsMinute: time.entryAbsMinute, units: options.units})) : [pathCapacityStatus(path, {...options, state: targetState})];
+    const status = {ok: statuses.every(item => item.ok), overloaded: statuses.flatMap(item => item.overloaded || []), occupations: statuses.flatMap(item => item.occupations || [])};
     if (!status.ok) return {ok: false, reason: 'route-overloaded', overloaded: status.overloaded};
     const reservationId = String(options.reservationId || `res-${Date.now()}${Math.random().toString(16).slice(2)}`);
     const units = Math.max(1, Math.floor(Number(options.units) || 1));
@@ -484,6 +486,45 @@
     }
     dispatchCapacityChanged();
     return {ok: true, reservationId};
+  }
+
+  // Finds a capacity-backed traversal without changing state. Vehicles may
+  // wait at intermediate nodes when a later edge is occupied.
+  function findEarliestPathSlot(path, earliestStartAbsMinute, options = {}) {
+    const targetState = options.state || state || createNetworkState();
+    const earliest = Number(earliestStartAbsMinute);
+    if (!Number.isFinite(earliest)) return {ok: false, reason: 'invalid-start'};
+    const latest = Number.isFinite(Number(options.latestArrivalAbsMinute)) ? Number(options.latestArrivalAbsMinute) : earliest + 1440;
+    const edges = Array.isArray(path?.edges) ? path.edges : [];
+    if (!edges.length) return {ok: true, departureAbsMinute: earliest, scheduledDepartureAbsMinute: earliest, arrivalAbsMinute: earliest, waitingMinutes: 0, edgeTimes: []};
+    const nodes = Array.isArray(path?.nodes) ? path.nodes : [];
+    const units = Math.max(1, Math.floor(Number(options.units) || 1));
+    const requestedSpeed = Math.max(1, Number(options.vehicleSpeed ?? options.speed) || Infinity);
+    let cursor = earliest;
+    let waitingMinutes = 0;
+    const edgeTimes = [];
+    for (let index = 0; index < edges.length; index += 1) {
+      const edge = edges[index];
+      const from = nodes[index] || edge.a;
+      const to = nodes[index + 1] || (from === edge.a ? edge.b : edge.a);
+      const speed = Math.min(requestedSpeed, Math.max(1, Number(edge?.speed ?? transportSpec(edge).speed) || 1));
+      const duration = edgeDistance(edge, targetState) / speed * 60;
+      let entry = cursor;
+      while (entry + duration <= latest + INTERSECTION_EPS) {
+        const status = pathCapacityStatus({nodes: [from, to], edges: [edge]}, {...options, state: targetState, startAbsMinute: entry, units, vehicleSpeed: requestedSpeed});
+        if (status.ok) break;
+        const conflicts = reservationsForInterval(edge, entry, entry + duration, targetState, String(options.reservationId || ''));
+        const next = Math.min(...conflicts.filter(item => item.exit > entry + INTERSECTION_EPS).map(item => item.exit));
+        entry = Number.isFinite(next) ? next : entry + 1;
+      }
+      if (entry + duration > latest + INTERSECTION_EPS) return {ok: false, reason: 'no-feasible-slot', earliestStartAbsMinute: earliest, nextPossibleAbsMinute: entry, edgeId: edgeId(edge)};
+      waitingMinutes += entry - cursor;
+      const exit = entry + duration;
+      edgeTimes.push(Object.freeze({edgeId: edgeId(edge), direction: `${from || ''}>${to || ''}`, entryAbsMinute: entry, exitAbsMinute: exit, waitingMinutes: entry - cursor}));
+      cursor = exit;
+    }
+    const departureAbsMinute = edgeTimes[0].entryAbsMinute;
+    return {ok: true, departureAbsMinute, scheduledDepartureAbsMinute: departureAbsMinute, arrivalAbsMinute: cursor, waitingMinutes, edgeTimes: Object.freeze(edgeTimes)};
   }
 
   function getEdgeSchedule(requestedEdgeId, day, targetState = state) {
@@ -670,5 +711,5 @@
     return edges[0];
   }
 
-  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, JUNCTION_SNAP_KM, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject, segmentIntersection, geometryIntersections, splitRoadsForAutomaticJunctions, getEdgeOccupancy, getEdgeSchedule, pathEdgeOccupations, pathCapacityStatus, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
+  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, JUNCTION_SNAP_KM, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject, segmentIntersection, geometryIntersections, splitRoadsForAutomaticJunctions, getEdgeOccupancy, getEdgeSchedule, pathEdgeOccupations, pathCapacityStatus, findEarliestPathSlot, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
 })();
