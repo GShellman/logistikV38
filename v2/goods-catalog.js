@@ -34,15 +34,15 @@
     good('pears', 'Birnen', '🍐', 'fruit', KG_UNIT, 1.2, {rawMaterial: true, perishable: true, refrigeratedRequired: false}, ['general'], 'HF_PEARS_ASSET_DATA_URI'),
     good('cherries', 'Kirschen', '🍒', 'fruit', KG_UNIT, 1.85, {rawMaterial: true, perishable: true, refrigeratedRequired: false}, ['general'], 'HF_CHERRIES_ASSET_DATA_URI'),
 
-    good('fish', 'Fisch', '🐟', 'animal_products', KG_UNIT, 3.2, {rawMaterial: true, perishable: true, refrigeratedRequired: true}, ['refrigerated'], 'HF_FISH_ASSET_DATA_URI'),
+    good('fish', 'Fisch', '🐟', 'animal_products', KG_UNIT, 3.2, {rawMaterial: true, perishable: true, refrigeratedRequired: true, requiresRefrigeration: true}, ['refrigerated'], 'HF_FISH_ASSET_DATA_URI'),
     good('pigs', 'Schweine', '🐖', 'animal_products', KG_UNIT, 2.4, RAW, ['livestock'], 'HF_PIGS_ASSET_DATA_URI'),
-    good('pork', 'Schweinefleisch', '🥩', 'animal_products', KG_UNIT, 4.1, {rawMaterial: false, perishable: true, refrigeratedRequired: true}, ['refrigerated'], 'HF_PORK_ASSET_DATA_URI'),
+    good('pork', 'Schweinefleisch', '🥩', 'animal_products', KG_UNIT, 4.1, {rawMaterial: false, perishable: true, refrigeratedRequired: true, requiresRefrigeration: true}, ['refrigerated'], 'HF_PORK_ASSET_DATA_URI'),
 
     good('tomato_cans', 'Tomatenkonserven', '🍅', 'processed_food', RAVIOLI_MEAT_UNIT, 2.4, DEFAULT_PROPERTIES, ['general'], 'HF_TOMATO_CANS_ASSET_DATA_URI'),
     good('canned_corn', 'Maiskonserven', '🌽', 'processed_food', RAVIOLI_MEAT_UNIT, 2.4, DEFAULT_PROPERTIES, ['general'], 'HF_CANNED_CORN_ASSET_DATA_URI'),
     good('canned_peas', 'Erbsenkonserven', '🫛', 'processed_food', RAVIOLI_MEAT_UNIT, 2.4, DEFAULT_PROPERTIES, ['general'], 'HF_CANNED_PEAS_ASSET_DATA_URI'),
-    good('ravioli_meat', 'Ravioli mit Fleisch', '🥩', 'processed_food', RAVIOLI_MEAT_UNIT, 3.2, {rawMaterial: false, perishable: false, refrigeratedRequired: true}, ['refrigerated'], 'HF_RAVIOLI_MEAT_ASSET_DATA_URI'),
-    good('ravioli_veg', 'Ravioli ohne Fleisch', '🌿', 'processed_food', RAVIOLI_VEG_UNIT, 3, {rawMaterial: false, perishable: false, refrigeratedRequired: true}, ['refrigerated'], 'HF_RAVIOLI_VEG_ASSET_DATA_URI'),
+    good('ravioli_meat', 'Ravioli mit Fleisch', '🥩', 'processed_food', RAVIOLI_MEAT_UNIT, 3.2, {rawMaterial: false, perishable: false, refrigeratedRequired: true, requiresRefrigeration: true}, ['refrigerated'], 'HF_RAVIOLI_MEAT_ASSET_DATA_URI'),
+    good('ravioli_veg', 'Ravioli ohne Fleisch', '🌿', 'processed_food', RAVIOLI_VEG_UNIT, 3, {rawMaterial: false, perishable: false, refrigeratedRequired: true, requiresRefrigeration: true}, ['refrigerated'], 'HF_RAVIOLI_VEG_ASSET_DATA_URI'),
 
     good('furniture', 'Möbel', '🪑', 'consumer_goods', PIECE_40KG_UNIT, 4300, DEFAULT_PROPERTIES, ['general'], 'HF_FURNITURE_ASSET_DATA_URI', {...CONSUMER_GOODS_ECONOMICS, maxDailyDemandKg: 120, saturationSensitivity: 0.95, securityCostPerKm: 0.06, marketVolatility: 0.05}),
     good('tools', 'Werkzeuge', '🔧', 'consumer_goods', KG_UNIT, 4700, DEFAULT_PROPERTIES, ['general'], 'HF_TOOLS_ASSET_DATA_URI', {...CONSUMER_GOODS_ECONOMICS, maxDailyDemandKg: 150, saturationSensitivity: 1.05, securityCostPerKm: 0.08, marketVolatility: 0.06}),

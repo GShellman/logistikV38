@@ -16,6 +16,9 @@
     van: 'assets/vehicles/van.png',
     'large-van': 'assets/vehicles/large-van.png',
     'fluto-gianco': 'assets/vehicles/fluto-gianco.png',
+    // The refrigerated derivative reuses the Gianco artwork. Keeping the
+    // mapping explicit still gives the model a stable main-asset lookup.
+    'fluto-gianco-fr': 'assets/vehicles/fluto-gianco.png',
     'light-truck': 'assets/vehicles/light-truck.png',
     'heavy-truck': 'assets/vehicles/heavy-truck.png',
     artic: 'assets/vehicles/artic.png',

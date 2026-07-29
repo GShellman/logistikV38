@@ -34,6 +34,21 @@ test('Fluto Gianco ist mit Stammdaten und passenden PNG-Assets registriert', () 
   assert.equal(window.HFV2VehicleAssets.roadVehicleImage(vehicle.id), 'assets/vehicles/fluto-gianco-road.png');
 });
 
+test('Fluto Gianco FR ist ein eigenständiger Kühltransporter mit Hauptasset', () => {
+  const catalog = loadCatalog();
+  const vehicle = catalog['fluto-gianco-fr'];
+  assert.ok(vehicle, 'Fluto Gianco FR fehlt im Fahrzeugkatalog');
+  assert.notStrictEqual(vehicle, catalog['fluto-gianco']);
+  assert.equal(vehicle.id, 'fluto-gianco-fr');
+  assert.equal(vehicle.load, 1.7);
+  assert.equal(vehicle.refrigerated, true);
+  const window = {};
+  load('v2/vehicle-assets.js', window);
+  const mainAsset = window.HFV2VehicleAssets.vehicleImage(vehicle.id);
+  assert.equal(mainAsset, 'assets/vehicles/fluto-gianco.png');
+  assert.equal(existsSync(join(ROOT, 'v2', mainAsset)), true);
+});
+
 test('Fahrzeugkatalog enthält vollständige, eindeutige Modelle und Pflichtassets', () => {
   const catalog = loadCatalog();
   const ids = new Set();
