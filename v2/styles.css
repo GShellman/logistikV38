@@ -931,7 +931,7 @@ code {
   border-radius: 16px;
   display: grid;
   gap: 14px;
-  grid-template-columns: auto 1fr minmax(132px, auto);
+  grid-template-columns: minmax(132px, 160px) minmax(0, 1fr) minmax(108px, auto);
   padding: 14px;
 }
 .hf-v2-fleet-card.is-disabled {
@@ -947,15 +947,17 @@ code {
   display: flex;
   font-size: 24px;
   justify-content: center;
-  min-height: 52px;
+  height: 104px;
   text-align: center;
-  width: 64px;
+  width: 100%;
 }
 .hf-v2-fleet-card__image {
   display: block;
-  height: 42px;
+  height: 88px;
+  max-height: 100%;
+  max-width: 100%;
   object-fit: contain;
-  width: 58px;
+  width: 124px;
 }
 .hf-v2-fleet-card__emoji { line-height: 1; }
 .hf-v2-fleet-card__main {
@@ -1026,24 +1028,28 @@ code {
 }
 .hf-v2-fleet-buy {
   align-items: center;
-  align-self: stretch;
-  min-width: 0;
+  align-self: center;
+  min-height: 42px;
+  min-width: 108px;
   background: var(--hf-accent);
   border: 1px solid var(--hf-accent);
   border-radius: 12px;
   color: #fff;
   cursor: pointer;
-  display: grid;
+  display: inline-grid;
   font: inherit;
   font-weight: 900;
-  gap: 2px;
+  gap: 2px 6px;
+  grid-template-columns: auto auto;
   justify-items: center;
-  padding: 10px 14px;
+  padding: 8px 11px;
+  transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease;
 }
 .hf-v2-fleet-buy strong {
-  font-size: 11px;
-  font-weight: 800;
-  opacity: .88;
+  font-size: 12px;
+  font-weight: 900;
+  grid-column: 1 / -1;
+  opacity: .94;
 }
 .hf-v2-fleet-buy:disabled {
   background: #eee6df;
@@ -1053,8 +1059,11 @@ code {
 }
 .hf-v2-fleet-buy:hover:not(:disabled),
 .hf-v2-fleet-buy:focus-visible:not(:disabled) {
+  background: #cf7119;
+  border-color: #b95f0d;
   box-shadow: 0 0 0 3px rgba(230,138,46,.22);
   outline: none;
+  transform: translateY(-1px);
 }
 
 /* Kanonische Fleet-Komponenten: Struktur und Darstellung an einer Stelle. */
@@ -1086,11 +1095,25 @@ code {
 .hf-v2-fleet-footer small { color: var(--text-muted); }
 .hf-v2-fleet-sort { background: var(--surface-work); border: 1px solid var(--border-subtle); color: var(--text-primary); font: inherit; padding: var(--space-2) var(--space-3); }
 
-@media (max-width: 680px) {
-  .hf-v2-fleet-card { grid-template-columns: auto 1fr; }
-  .hf-v2-fleet-buy { grid-column: 1 / -1; }
+@media (max-width: 800px) {
+  .hf-v2-fleet-card { grid-template-columns: 120px minmax(0, 1fr); }
+  .hf-v2-fleet-card__icon { height: 92px; }
+  .hf-v2-fleet-card__image { height: 76px; width: 108px; }
+  .hf-v2-fleet-buy {
+    grid-column: 1 / -1;
+    justify-self: end;
+    min-height: 44px;
+    min-width: 116px;
+  }
   .hf-v2-fleet-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hf-v2-fleet-stats div:nth-child(2n) { border-right: 0; }
+}
+
+@media (max-width: 520px) {
+  .hf-v2-fleet-card { grid-template-columns: 1fr; }
+  .hf-v2-fleet-card__icon { height: 112px; width: 100%; }
+  .hf-v2-fleet-card__image { height: 94px; width: min(180px, 100%); }
+  .hf-v2-fleet-buy { justify-self: stretch; }
 }
 
 .hf-v2-factory-menu {
