@@ -10,7 +10,7 @@ function load(file, window) {
 
 function harness() {
   const window = {dispatchEvent() {}};
-  window.HFVehicleCatalog = {VEHICLE_CATALOG: {van: {daily: 25}}};
+  window.HFVehicleCatalog = {VEHICLE_CATALOG: {'fluto-gianco': {daily: 25}}};
   window.HFV2FactoryCatalog = [{id: 'mill', maintenance: 100}];
   load('v2/save-logic.js', window);
   window.HFV2Factories = {
@@ -22,7 +22,7 @@ function harness() {
     time: {day: 2, hour: 0, minute: 0},
     network: {connections: [{maintenance: 40}, {maintenance: 60}]},
     factories: {cityFactories: {zurich: ['mill']}, factoryUpgrades: {zurich: {'0': 3}}},
-    fleet: {vehicles: [{id: 1, vehicleType: 'van'}, {id: 2, vehicleType: 'van'}]},
+    fleet: {vehicles: [{id: 1, vehicleType: 'fluto-gianco'}, {id: 2, vehicleType: 'fluto-gianco'}]},
   });
   load('v2/day-cycle-logic.js', window);
   return {window, state};

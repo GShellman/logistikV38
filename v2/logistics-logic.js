@@ -2,7 +2,7 @@
   'use strict';
 
   const FREQUENCIES = new Set(['daily', 'weekly']);
-  const DEFAULT_VEHICLE_TYPE = 'van';
+  const DEFAULT_VEHICLE_TYPE = 'fluto-gianco';
 
   const MINUTES_PER_DAY = 1440;
   const DAYS_PER_WEEK = 7;

@@ -3,7 +3,7 @@
 
   const MINUTES_PER_DAY = 1440;
   const DEFAULT_HORIZON_DAYS = 7;
-  const DEFAULT_VEHICLE_TYPE = 'van';
+  const DEFAULT_VEHICLE_TYPE = 'fluto-gianco';
 
   let logisticsState = null;
   let dirtyReason = 'initial-plan';

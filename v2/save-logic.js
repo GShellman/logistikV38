@@ -4,6 +4,10 @@
   const SCHEMA_VERSION = 7;
   const SAVE_FILE_PREFIX = 'helvetic-freight-v2';
   const STARTING_CASH = 500000;
+  const DEFAULT_VEHICLE_TYPE = 'fluto-gianco';
+  const REFRIGERATED_VEHICLE_TYPE = 'fluto-gianco-fr';
+  const VALID_VEHICLE_TYPES = new Set([DEFAULT_VEHICLE_TYPE, REFRIGERATED_VEHICLE_TYPE]);
+  const LEGACY_REFRIGERATED_VEHICLE_TYPES = new Set(['reefer', 'refrigerated-van']);
 
   let state = null;
 
@@ -124,6 +128,14 @@
     return integer >= min && integer <= max ? integer : fallback;
   }
 
+  function normalizeSavedVehicleType(value, savedRecord = {}) {
+    const vehicleType = String(value || '').trim();
+    if (!vehicleType) return '';
+    if (VALID_VEHICLE_TYPES.has(vehicleType)) return vehicleType;
+    if (savedRecord.refrigerated === true || LEGACY_REFRIGERATED_VEHICLE_TYPES.has(vehicleType)) return REFRIGERATED_VEHICLE_TYPE;
+    return DEFAULT_VEHICLE_TYPE;
+  }
+
   function normalizePackage(savePackage) {
     const source = savePackage && typeof savePackage === 'object' ? savePackage : {};
     const sourceState = source.state && typeof source.state === 'object' ? source.state : {};
@@ -156,7 +168,7 @@
       while (usedVehicleIds.has(id)) id += 1;
       usedVehicleIds.add(id);
       nextGeneratedVehicleId = Math.max(nextGeneratedVehicleId, id + 1);
-      const vehicleType = String(rawVehicle.vehicleType || fallbackType || '').trim();
+      const vehicleType = normalizeSavedVehicleType(rawVehicle.vehicleType || fallbackType, rawVehicle);
       if (!vehicleType) return;
       const activeAssignmentId = rawVehicle.activeAssignmentId == null ? null : String(rawVehicle.activeAssignmentId).trim() || null;
       const currentCityId = String(rawVehicle.currentCityId || fallbackCityId || '').trim() || null;
@@ -245,9 +257,14 @@
       const weekday = frequency === 'weekly' && Number.isFinite(rawWeekday) && rawWeekday >= 0 && rawWeekday <= 6 ? rawWeekday : (frequency === 'weekly' ? 0 : null);
       const legacyMinute = Math.max(0, Math.min(1439, Math.trunc(Number(order.departureHour) || 0) * 60 + Math.trunc(Number(order.departureMinute) || 0)));
       const plannedDepartureAbsMinute = Number.isFinite(Number(order.plannedDepartureAbsMinute)) ? Math.max(0, Math.trunc(Number(order.plannedDepartureAbsMinute))) : legacyMinute;
-      return {...order, weekday, plannedDepartureAbsMinute};
+      const vehicleType = normalizeSavedVehicleType(order.vehicleType, order) || DEFAULT_VEHICLE_TYPE;
+      return {...order, vehicleType, weekday, plannedDepartureAbsMinute};
     }) : [];
-    logistics.shipments = Array.isArray(logistics.shipments) ? logistics.shipments : [];
+    logistics.shipments = Array.isArray(logistics.shipments) ? logistics.shipments.map(shipment => {
+      if (!shipment || typeof shipment !== 'object') return shipment;
+      const vehicleType = normalizeSavedVehicleType(shipment.vehicleType, shipment) || DEFAULT_VEHICLE_TYPE;
+      return {...shipment, vehicleType};
+    }) : [];
     logistics.assignments = Array.isArray(logistics.assignments) ? logistics.assignments : [];
     logistics.assignments = logistics.assignments.filter(assignment => {
       if (!assignment || typeof assignment !== 'object' || Array.isArray(assignment)) return false;

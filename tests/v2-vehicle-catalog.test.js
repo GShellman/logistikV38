@@ -20,6 +20,12 @@ function loadCatalog() {
   return window.HFVehicleCatalog.VEHICLE_CATALOG;
 }
 
+test('VEHICLE_TYPES enthält exakt die beiden Fluto-Modelle', () => {
+  const window = {};
+  load('v2/vehicle-catalog.js', window);
+  assert.deepEqual(Array.from(window.HFVehicleCatalog.VEHICLE_TYPES), ['fluto-gianco', 'fluto-gianco-fr']);
+});
+
 test('Fluto Gianco ist mit Stammdaten und passenden PNG-Assets registriert', () => {
   const catalog = loadCatalog();
   const vehicle = catalog['fluto-gianco'];
@@ -70,10 +76,9 @@ test('Fahrzeugkatalog enthält vollständige, eindeutige Modelle und Pflichtasse
   }
 });
 
-test('Modelle derselben Kategorie bleiben beim Kaufen, Speichern und Laden getrennte Fahrzeugtypen', () => {
+test('Fluto-Modelle bleiben beim Kaufen, Speichern und Laden getrennte Fahrzeugtypen', () => {
   const catalog = loadCatalog();
-  const models = Object.values(catalog).filter(vehicle => vehicle.category === 'Transporter');
-  assert.ok(models.length >= 2, 'Der Test benötigt zwei Modelle derselben Kategorie');
+  const models = Object.values(catalog);
 
   let cash = 500000;
   const fleetWindow = {
@@ -83,7 +88,7 @@ test('Modelle derselben Kategorie bleiben beim Kaufen, Speichern und Laden getre
   };
   load('v2/fleet-logic.js', fleetWindow);
   fleetWindow.HFFleet.configure({state: {vehicles: [], nextVehicleId: 1, depotCityId: 'zurich'}});
-  for (const model of models.slice(0, 2)) assert.equal(fleetWindow.HFFleet.buyVehicle('zurich', model.id).ok, true);
+  for (const model of models) assert.equal(fleetWindow.HFFleet.buyVehicle('zurich', model.id).ok, true);
 
   const saveWindow = {dispatchEvent() {}};
   load('v2/save-logic.js', saveWindow);
@@ -93,6 +98,25 @@ test('Modelle derselben Kategorie bleiben beim Kaufen, Speichern und Laden getre
 
   assert.deepEqual(
     Array.from(fleetWindow.HFFleet.getState().vehicles, vehicle => vehicle.vehicleType),
-    models.slice(0, 2).map(model => model.id),
+    models.map(model => model.id),
   );
+});
+
+test('alte Fahrzeugtypen werden in Fluto-Modelle migriert, auch in Aufträgen und Sendungen', () => {
+  const window = {dispatchEvent() {}};
+  load('v2/save-logic.js', window);
+  const state = window.HFV2Save.hydrateState({state: {
+    fleet: {vehicles: [
+      {id: 1, vehicleType: 'van'},
+      {id: 2, vehicleType: 'reefer'},
+    ]},
+    logistics: {
+      orders: [{id: 1, vehicleType: 'heavy-truck'}, {id: 2, vehicleType: 'refrigerated-van'}],
+      shipments: [{id: 1, vehicleType: 'tipper'}, {id: 2, vehicleType: 'reefer'}],
+    },
+  }}).state;
+
+  assert.deepEqual(Array.from(state.fleet.vehicles, vehicle => vehicle.vehicleType), ['fluto-gianco', 'fluto-gianco-fr']);
+  assert.deepEqual(Array.from(state.logistics.orders, order => order.vehicleType), ['fluto-gianco', 'fluto-gianco-fr']);
+  assert.deepEqual(Array.from(state.logistics.shipments, shipment => shipment.vehicleType), ['fluto-gianco', 'fluto-gianco-fr']);
 });
