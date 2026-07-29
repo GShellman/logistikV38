@@ -72,6 +72,6 @@ test('Speichern/Laden während einer Fahrt erhält Standort, Assignment und abso
     fleet: {vehicles: [{id: 7, vehicleType: 'van', status: 'assigned', currentCityId: 'bern', availableAbsMinute: 5000, activeAssignmentId: 'move-1', routeSegment: {fromCityId: 'bern', toCityId: 'basel'}, position: [46.9, 7.4]}]},
     logistics: {assignments: [{id: 'move-1', type: 'repositioning', fromCityId: 'bern', toCityId: 'basel', vehicleIds: [7], departureAbsMinute: 4000, arrivalAbsMinute: 5000, status: 'active'}]},
   }}).state;
-  assert.deepEqual(JSON.parse(JSON.stringify(saved.fleet.vehicles[0])), {id: 7, vehicleType: 'van', status: 'assigned', currentCityId: 'bern', availableAbsMinute: 5000, activeAssignmentId: 'move-1', position: [46.9, 7.4], routeSegment: {fromCityId: 'bern', toCityId: 'basel'}});
+  assert.deepEqual(JSON.parse(JSON.stringify(saved.fleet.vehicles[0])), {id: 7, vehicleType: 'fluto-gianco', status: 'assigned', currentCityId: 'bern', availableAbsMinute: 5000, activeAssignmentId: 'move-1', position: [46.9, 7.4], routeSegment: {fromCityId: 'bern', toCityId: 'basel'}});
   assert.equal(saved.logistics.assignments[0].arrivalAbsMinute, 5000);
 });
