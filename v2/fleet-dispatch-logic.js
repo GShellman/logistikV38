@@ -88,22 +88,13 @@
     for (const id of leg?.capacityReservationIds || []) window.HFNetwork?.releaseCapacityReservation?.(id);
   }
 
-  function candidateFor(vehicle, occurrence, timelines, futureOccurrences) {
-    const order = occurrence.order;
-    const timeline = timelines.get(vehicle.id);
-    if (!timeline || timeline.availableAbsMinute > occurrence.departureAbsMinute) return null;
-    let deadheadPath = null;
-    let deadheadDuration = 0;
-    if (timeline.cityId !== order.fromCityId) {
-      deadheadPath = route(timeline.cityId, order.fromCityId);
-      if (!deadheadPath?.reachable) return null;
-      deadheadDuration = durationMinutes(deadheadPath, vehicle.vehicleType);
-      if (timeline.availableAbsMinute + deadheadDuration > occurrence.departureAbsMinute) return null;
-    }
-    const distance = Math.max(0, Number(deadheadPath?.distance) || 0);
-    const kmCost = Math.max(0, Number(vehicleSpec(vehicle.vehicleType).kmCost) || 0);
-    const connectionBonus = futureOccurrences.some(next => next.order.fromCityId === order.toCityId && next.order.vehicleType === vehicle.vehicleType) ? 100 : 0;
-    return {vehicle, timeline, deadheadPath, deadheadDuration, score: distance * 10 + distance * kmCost - connectionBonus};
+  function slotFor(path, earliest, latest, units, type, extra = {}) {
+    const finder = window.HFNetwork?.findEarliestPathSlot;
+    if (finder) return finder(path, earliest, {latestArrivalAbsMinute: latest, units, vehicleSpeed: vehicleSpec(type).speed, ...extra});
+    const duration = durationMinutes(path, type);
+    const status = window.HFNetwork?.pathCapacityStatus?.(path, {startAbsMinute: earliest, endAbsMinute: earliest + duration, units, vehicleSpeed: vehicleSpec(type).speed, ...extra});
+    return status?.ok === false || earliest + duration > latest ? {ok: false, reason: 'no-feasible-slot', nextPossibleAbsMinute: earliest}
+      : {ok: true, departureAbsMinute: earliest, scheduledDepartureAbsMinute: earliest, arrivalAbsMinute: earliest + duration, waitingMinutes: 0, edgeTimes: status?.occupations || []};
   }
 
   function buildPlan(options = {}) {
@@ -112,137 +103,50 @@
     const start = Math.max(nowAbsMinute(), Number(options.fromAbsMinute) || 0);
     const horizonDays = Math.max(3, Math.trunc(Number(options.horizonDays) || DEFAULT_HORIZON_DAYS));
     const end = start + horizonDays * MINUTES_PER_DAY;
-
     const commitReservations = options.reserveCapacity !== false;
     const preservedLegs = (state.dispatchPlan?.legs || []).filter(leg => leg.departureAbsMinute < start || leg.status === 'active' || leg.status === 'completed');
     if (commitReservations) for (const leg of state.dispatchPlan?.legs || []) if (!preservedLegs.includes(leg)) releaseLeg(leg);
-    state.assignments = (state.assignments || []).filter(assignment => assignment.status !== 'planned' || assignment.departureAbsMinute < start);
-
+    state.assignments = (state.assignments || []).filter(item => item.status !== 'planned' || item.departureAbsMinute < start);
     const vehicles = window.HFFleet?.getState?.().vehicles || [];
-    const timelines = new Map(vehicles.map(vehicle => [vehicle.id, {
-      cityId: vehicle.activeAssignmentId ? (vehicle.routeSegment?.toCityId || vehicle.currentCityId) : vehicle.currentCityId,
-      availableAbsMinute: Math.max(start, Number(vehicle.availableAbsMinute) || 0),
-    }]));
-    const due = occurrences(state.orders || [], start, end);
-    const legs = [...preservedLegs];
-    const unplanned = [];
-    const plannedStock = new Map();
-
-    for (let occurrenceIndex = 0; occurrenceIndex < due.length; occurrenceIndex += 1) {
-      const occurrence = due[occurrenceIndex];
-      const order = occurrence.order;
-      const type = order.vehicleType || DEFAULT_VEHICLE_TYPE;
-      const stockKey = `${order.fromCityId}|${order.goodId}`;
-      if (!plannedStock.has(stockKey)) {
-        const exportableKg = window.HFV2Goods?.getExportableStockKg?.(order.fromCityId, order.goodId);
-        const stockKg = Math.max(0, Number(window.HFV2Goods?.getCityInventory?.(order.fromCityId)?.[order.goodId]) || 0);
-        const reserveKg = Math.max(0, Number(window.HFV2Goods?.getCityDailyDemandMap?.(order.fromCityId)?.[order.goodId]) || 0);
-        plannedStock.set(stockKey, Number.isFinite(Number(exportableKg)) ? Math.max(0, Number(exportableKg)) : Math.max(0, stockKg - reserveKg));
-      }
+    const timelines = new Map(vehicles.map(vehicle => [vehicle.id, {cityId: vehicle.activeAssignmentId ? (vehicle.routeSegment?.toCityId || vehicle.currentCityId) : vehicle.currentCityId, availableAbsMinute: Math.max(start, Number(vehicle.availableAbsMinute) || 0)}]));
+    const due = occurrences(state.orders || [], start, end), legs = [...preservedLegs], unplanned = [], plannedStock = new Map();
+    for (const occurrence of due) {
+      const order = occurrence.order, type = order.vehicleType || DEFAULT_VEHICLE_TYPE, stockKey = `${order.fromCityId}|${order.goodId}`;
+      if (!plannedStock.has(stockKey)) plannedStock.set(stockKey, Math.max(0, Number(window.HFV2Goods?.getExportableStockKg?.(order.fromCityId, order.goodId)) || 0));
       const amountKg = Math.min(Math.max(0, Number(order.amountKg) || 0), plannedStock.get(stockKey));
-      if (amountKg <= 0) {
-        unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: 'stock-limited'});
-        continue;
+      if (!amountKg) { unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: 'stock-limited'}); continue; }
+      const outboundPath = route(order.fromCityId, order.toCityId), returnPath = route(order.toCityId, order.fromCityId), count = Math.ceil(amountKg / capacityKg(type));
+      if (!outboundPath?.reachable || !returnPath?.reachable || !Number.isFinite(count) || count <= 0) { unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: !outboundPath?.reachable || !returnPath?.reachable ? 'incomplete-round-trip-route' : 'capacity-invalid'}); continue; }
+      const selected = vehicles.filter(v => v.vehicleType === type).map(vehicle => {
+        const timeline = timelines.get(vehicle.id), path = timeline.cityId === order.fromCityId ? null : route(timeline.cityId, order.fromCityId);
+        return timeline && (!path || path.reachable) ? {vehicle, timeline, deadheadPath: path} : null;
+      }).filter(Boolean).sort((x,y) => x.timeline.availableAbsMinute-y.timeline.availableAbsMinute || x.vehicle.id-y.vehicle.id).slice(0,count);
+      if (selected.length < count) { unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: 'no-vehicle-chain'}); continue; }
+      const dayEnd = (Math.floor(occurrence.departureAbsMinute / MINUTES_PER_DAY) + 1) * MINUTES_PER_DAY;
+      const latest = Math.min(end, Number.isFinite(Number(options.maxDelayMinutes)) ? occurrence.departureAbsMinute + Number(options.maxDelayMinutes) : dayEnd);
+      const hardDeparture = order.departureConstraint === 'hard' || order.departureTimeMode === 'hard';
+      const chain = [], tempIds = []; let ready = occurrence.departureAbsMinute, failure = null;
+      for (const item of selected) {
+        if (!item.deadheadPath) continue;
+        const slot = slotFor(item.deadheadPath, item.timeline.availableAbsMinute, latest, 1, type);
+        if (!slot.ok) { failure = {...slot, reason: 'repositioning-no-slot'}; break; }
+        chain.push({kind:'repositioning', item, path:item.deadheadPath, slot}); ready=Math.max(ready,slot.arrivalAbsMinute);
       }
-      const loadedPath = route(order.fromCityId, order.toCityId);
-      const count = Math.ceil(amountKg / capacityKg(type));
-      if (!loadedPath?.reachable || !Number.isFinite(count) || count <= 0) {
-        unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: loadedPath?.reachable ? 'capacity-invalid' : 'no-route'});
-        continue;
-      }
-      const future = due.slice(occurrenceIndex + 1);
-      const candidates = vehicles
-        .filter(vehicle => vehicle.vehicleType === type)
-        .map(vehicle => candidateFor(vehicle, occurrence, timelines, future))
-        .filter(Boolean)
-        .sort((a, b) => a.score - b.score || a.vehicle.id - b.vehicle.id);
-      if (candidates.length < count) {
-        unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: 'no-on-time-vehicle'});
-        continue;
-      }
-
-      const selected = candidates.slice(0, count);
-      const loadedDuration = durationMinutes(loadedPath, type);
-      const loadedEnd = occurrence.departureAbsMinute + loadedDuration;
-      const loadedReservation = reservationId('loaded', order.id, occurrence.day, 0);
-      const plannedTripId = `trip-${order.id}-${occurrence.day}`;
-      if (!reserve(loadedPath, occurrence.departureAbsMinute, loadedEnd, count, loadedReservation, commitReservations, {vehicleType: type, vehicleIds: selected.map(item => item.vehicle.id), tripId: plannedTripId})) {
-        unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: 'route-overloaded'});
-        continue;
-      }
-      const createdDeadheads = [];
-      let valid = true;
-      for (const candidate of selected) {
-        if (!candidate.deadheadPath) continue;
-        const departure = occurrence.departureAbsMinute - candidate.deadheadDuration;
-        const id = reservationId('empty', order.id, occurrence.day, candidate.vehicle.id);
-        if (!reserve(candidate.deadheadPath, departure, occurrence.departureAbsMinute, 1, id, commitReservations, {vehicleType: type, vehicleId: candidate.vehicle.id, tripId: `deadhead-${order.id}-${occurrence.day}-${candidate.vehicle.id}`})) { valid = false; break; }
-        createdDeadheads.push({candidate, departure, id});
-      }
-      if (!valid) {
-        if (commitReservations) window.HFNetwork?.releaseCapacityReservation?.(loadedReservation);
-        if (commitReservations) for (const entry of createdDeadheads) window.HFNetwork?.releaseCapacityReservation?.(entry.id);
-        unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: 'repositioning-overloaded'});
-        continue;
-      }
-
-      for (const entry of createdDeadheads) {
-        const assignmentId = `planned-repositioning-${order.id}-${occurrence.day}-${entry.candidate.vehicle.id}`;
-        const assignment = {
-          id: assignmentId, type: 'repositioning', reason: 'dispatch-plan', status: 'planned',
-          fromCityId: entry.candidate.timeline.cityId, toCityId: order.fromCityId, vehicleType: type,
-          vehicleIds: [entry.candidate.vehicle.id], departureAbsMinute: entry.departure,
-          arrivalAbsMinute: occurrence.departureAbsMinute, capacityReservationIds: [entry.id],
-          route: {pathNodeIds: entry.candidate.deadheadPath.nodes || [], pathEdgeIds: (entry.candidate.deadheadPath.edges || []).map(edge => String(edge.id || '')), distance: Number(entry.candidate.deadheadPath.distance) || 0},
-          costs: {distanceKm: Number(entry.candidate.deadheadPath.distance) || 0, perVehicleKm: Number(vehicleSpec(type).kmCost) || 0, vehicleCount: 1, total: Math.round((Number(entry.candidate.deadheadPath.distance) || 0) * (Number(vehicleSpec(type).kmCost) || 0) * 100) / 100, booked: false},
-        };
-        state.assignments.push(assignment);
-        legs.push({...assignment, orderId: order.id});
-      }
-      const vehicleIds = selected.map(candidate => candidate.vehicle.id);
-      const tripId = plannedTripId;
-      legs.push({
-        id: `planned-shipment-${order.id}-${occurrence.day}`, type: 'shipment', status: 'planned', orderId: order.id,
-        tripId,
-        fromCityId: order.fromCityId, toCityId: order.toCityId, vehicleType: type, vehicleIds,
-        amountKg,
-        departureAbsMinute: occurrence.departureAbsMinute, arrivalAbsMinute: loadedEnd,
-        capacityReservationIds: [loadedReservation], priority: occurrence.priority,
-      });
-      plannedStock.set(stockKey, Math.max(0, plannedStock.get(stockKey) - amountKg));
-      // A delivery is not the end of a vehicle movement. Return every vehicle to
-      // the dispatching location, so today's plan is a complete, capacity-backed
-      // timeline rather than an optimistic list of outbound loads.
-      const returnPath = route(order.toCityId, order.fromCityId);
-      const returnDuration = returnPath?.reachable ? durationMinutes(returnPath, type) : 0;
-      for (const candidate of selected) {
-        if (!returnPath?.reachable) {
-          timelines.set(candidate.vehicle.id, {cityId: order.toCityId, availableAbsMinute: loadedEnd});
-          continue;
-        }
-        const returnEnd = loadedEnd + returnDuration;
-        const returnId = reservationId('return', order.id, occurrence.day, candidate.vehicle.id);
-        if (!reserve(returnPath, loadedEnd, returnEnd, 1, returnId, commitReservations, {vehicleType: type, vehicleId: candidate.vehicle.id, tripId})) {
-          unplanned.push({orderId: order.id, vehicleId: candidate.vehicle.id, departureAbsMinute: loadedEnd, reason: 'return-overloaded'});
-          timelines.set(candidate.vehicle.id, {cityId: order.toCityId, availableAbsMinute: loadedEnd});
-          continue;
-        }
-        legs.push({
-          id: `planned-return-${order.id}-${occurrence.day}-${candidate.vehicle.id}`,
-          type: 'return', legKind: 'return', status: 'planned', orderId: order.id,
-          tripId, outboundLegId: `planned-shipment-${order.id}-${occurrence.day}`,
-          fromCityId: order.toCityId, toCityId: order.fromCityId, vehicleType: type,
-          vehicleIds: [candidate.vehicle.id], departureAbsMinute: loadedEnd, arrivalAbsMinute: returnEnd,
-          capacityReservationIds: commitReservations ? [returnId] : [],
-        });
-        timelines.set(candidate.vehicle.id, {cityId: order.fromCityId, availableAbsMinute: returnEnd});
-      }
+      let outboundSlot = failure ? null : slotFor(outboundPath, hardDeparture ? occurrence.departureAbsMinute : ready, latest, count, type);
+      if (outboundSlot?.ok && hardDeparture && Math.abs(outboundSlot.departureAbsMinute-occurrence.departureAbsMinute)>1e-7) failure={...outboundSlot,reason:'hard-departure-unavailable'};
+      if (!failure && !outboundSlot?.ok) failure={...outboundSlot,reason:'outbound-no-slot'};
+      const returnSlots=[];
+      if (!failure) for (const item of selected) { const slot=slotFor(returnPath,outboundSlot.arrivalAbsMinute,latest,1,type); if(!slot.ok){failure={...slot,reason:'return-no-slot'};break;} returnSlots.push({item,slot}); }
+      const allMoves = failure ? [] : [...chain, {kind:'shipment', path:outboundPath, slot:outboundSlot, units:count}, ...returnSlots.map(x=>({kind:'return',path:returnPath,slot:x.slot,item:x.item}))];
+      if (!failure && commitReservations) for (let i=0;i<allMoves.length;i++) { const move=allMoves[i], id=reservationId(move.kind,order.id,occurrence.day,move.item?.vehicle.id||0); const ok=reserve(move.path,move.slot.departureAbsMinute,move.slot.arrivalAbsMinute,move.units||1,id,true,{vehicleType:type,edgeTimes:move.slot.edgeTimes}); if(!ok){failure={reason:`${move.kind}-reservation-race`,nextPossibleAbsMinute:move.slot.departureAbsMinute};break;} move.id=id;tempIds.push(id); }
+      if (failure) { for(const id of tempIds) window.HFNetwork?.releaseCapacityReservation?.(id); unplanned.push({orderId:order.id,departureAbsMinute:occurrence.departureAbsMinute,reason:failure.reason,nextPossibleAbsMinute:failure.nextPossibleAbsMinute??failure.departureAbsMinute??null,latestArrivalAbsMinute:latest}); continue; }
+      const tripId=`trip-${order.id}-${occurrence.day}`, shipmentId=`planned-shipment-${order.id}-${occurrence.day}`;
+      for(const move of chain){const id=move.id; const leg={id:`planned-repositioning-${order.id}-${occurrence.day}-${move.item.vehicle.id}`,type:'repositioning',status:'planned',orderId:order.id,fromCityId:move.item.timeline.cityId,toCityId:order.fromCityId,vehicleType:type,vehicleIds:[move.item.vehicle.id],departureAbsMinute:move.slot.departureAbsMinute,scheduledDepartureAbsMinute:move.slot.scheduledDepartureAbsMinute,arrivalAbsMinute:move.slot.arrivalAbsMinute,waitingMinutes:move.slot.waitingMinutes,edgeTimes:move.slot.edgeTimes,capacityReservationIds:id?[id]:[]}; legs.push(leg); state.assignments.push(leg);}
+      const shipmentMove=allMoves.find(x=>x.kind==='shipment'); legs.push({id:shipmentId,type:'shipment',status:'planned',orderId:order.id,tripId,fromCityId:order.fromCityId,toCityId:order.toCityId,vehicleType:type,vehicleIds:selected.map(x=>x.vehicle.id),amountKg,requestedDepartureAbsMinute:occurrence.departureAbsMinute,departureConstraint:hardDeparture?'hard':'earliest',departureAbsMinute:outboundSlot.departureAbsMinute,scheduledDepartureAbsMinute:outboundSlot.scheduledDepartureAbsMinute,arrivalAbsMinute:outboundSlot.arrivalAbsMinute,waitingMinutes:outboundSlot.departureAbsMinute-occurrence.departureAbsMinute+outboundSlot.waitingMinutes,edgeTimes:outboundSlot.edgeTimes,capacityReservationIds:shipmentMove.id?[shipmentMove.id]:[],priority:occurrence.priority});
+      for(const move of allMoves.filter(x=>x.kind==='return')){legs.push({id:`planned-return-${order.id}-${occurrence.day}-${move.item.vehicle.id}`,type:'return',legKind:'return',status:'planned',orderId:order.id,tripId,outboundLegId:shipmentId,fromCityId:order.toCityId,toCityId:order.fromCityId,vehicleType:type,vehicleIds:[move.item.vehicle.id],departureAbsMinute:move.slot.departureAbsMinute,scheduledDepartureAbsMinute:move.slot.scheduledDepartureAbsMinute,arrivalAbsMinute:move.slot.arrivalAbsMinute,waitingMinutes:move.slot.waitingMinutes,edgeTimes:move.slot.edgeTimes,capacityReservationIds:move.id?[move.id]:[]}); timelines.set(move.item.vehicle.id,{cityId:order.fromCityId,availableAbsMinute:move.slot.arrivalAbsMinute});}
+      plannedStock.set(stockKey,plannedStock.get(stockKey)-amountKg);
     }
-
-    state.dispatchPlan = {version: 1, generatedAtAbsMinute: start, horizonDays, horizonEndAbsMinute: end, reason: dirtyReason, legs, unplanned};
-    delete state.planInvalidatedFromAbsMinute;
-    dirtyReason = '';
-    return state.dispatchPlan;
+    state.dispatchPlan={version:2,generatedAtAbsMinute:start,horizonDays,horizonEndAbsMinute:end,reason:dirtyReason,legs,unplanned}; delete state.planInvalidatedFromAbsMinute; dirtyReason=''; return state.dispatchPlan;
   }
 
   function previewOrder(order, options = {}) {
