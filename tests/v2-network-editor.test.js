@@ -31,11 +31,20 @@ test('Straßenprojekt übernimmt Editor-Geometrie und berechnet daraus die Kennz
 test('Menü und Kartenlayer enthalten den expliziten Zeichenmodus',()=>{
   const menu=readFileSync('v2/network-menu.js','utf8');
   const layer=readFileSync('v2/network-map-layer.js','utf8');
-  for(const label of ['Zeichenmodus','Stützpunkte fortlaufend','zulässige Zielstadt','Bau bestätigen','Bearbeitung abbrechen']) assert.match(menu,new RegExp(label));
+  for(const label of ['Zeichenmodus','Straße zeichnen','Knoten setzen','Punkte bearbeiten','Letzten Punkt rückgängig','Wiederholen','Trasse löschen','Abbrechen','Bauen']) assert.match(menu,new RegExp(label));
   assert.doesNotMatch(menu,/Automatische Route|Route und Kreuzungen werden berechnet/);
-  assert.match(layer,/draggable: true/); assert.match(layer,/contextmenu/); assert.match(layer,/beginRoadDrawing/); assert.match(layer,/handleDrawingCityClick/);
+  assert.match(layer,/editorMode === 'draw'/); assert.match(layer,/editorMode === 'node'/);
+  assert.match(layer,/event\.key === 'Escape'/); assert.match(layer,/event\.key === 'Delete'/);
+  assert.match(layer,/undoDrawingPoint/); assert.match(layer,/redoDrawingPoint/);
+  assert.match(layer,/draggable: true/); assert.match(layer,/beginRoadDrawing/); assert.match(layer,/handleDrawingCityClick/);
   const handleBody=menu.slice(menu.indexOf('async function handleBuild'),menu.indexOf('function bindNetworkMenuEvents'));
   assert.doesNotMatch(handleBody,/confirmProject/,'handleBuild darf nicht unmittelbar bestätigen');
+});
+
+test('Bauen ist nur bei einer gültigen Verbindung aktiv',()=>{
+  const menu=readFileSync('v2/network-menu.js','utf8');
+  assert.match(menu,/class="hf-v2-network-build" \$\{valid \? '' : 'disabled'\}/);
+  assert.match(menu,/project\.geometry\?\.length >= 2/);
 });
 
 test('Straße ohne Editor-Geometrie ist weder plan- noch bestätigbar', async()=>{
