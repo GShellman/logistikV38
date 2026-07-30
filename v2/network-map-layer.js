@@ -193,14 +193,14 @@
     });
   }
 
-  function beginRoadDrawing({originId, type, allowedTargetIds = [], onChange, onComplete, onCancel} = {}) {
+  function beginRoadDrawing({originId, type, allowedTargetIds = [], onChange, onComplete, onConnectRoad, onCancel} = {}) {
     clearProjectPreview();
     const start = nodeInfo(originId, renderedCitiesById);
     if (!networkMap || !window.L || !start) return false;
     previewLayer = L.layerGroup().addTo(networkMap);
     previewCallbacks = {};
     previewProject = {a: originId, type};
-    drawing = {originId, type, points: [[start.lat, start.lng]], history: [], future: [], allowedTargetIds: new Set(allowedTargetIds), callbacks: {onChange, onComplete, onCancel}};
+    drawing = {originId, type, points: [[start.lat, start.lng]], history: [], future: [], allowedTargetIds: new Set(allowedTargetIds), callbacks: {onChange, onComplete, onConnectRoad, onCancel}};
     setEditorMode('draw');
     networkMap.on?.('click', handlePreviewMapClick);
     networkMap.on?.('mousemove', handleDrawingMouseMove);
@@ -225,6 +225,21 @@
     return true;
   }
 
+  function handleDrawingRoadClick(connection, event) {
+    if (!drawing || editorMode !== 'draw' || !event?.latlng) return false;
+    event.originalEvent?.stopPropagation?.();
+    const point = [event.latlng.lat, event.latlng.lng];
+    const geometry = [...drawing.points.map(entry => [...entry]), point];
+    const connect = drawing.callbacks.onConnectRoad;
+    drawing = null;
+    drawingCursor = null;
+    networkMap?.off?.('mousemove', handleDrawingMouseMove);
+    networkMap?.off?.('click', handlePreviewMapClick);
+    setEditorStatus('Anschluss an bestehende Straße gewählt – Verbindung prüfen');
+    connect?.({connection, point: {lat: point[0], lng: point[1]}, geometry});
+    return true;
+  }
+
   function markerIcon(kind, label) {
     return L.divIcon({className: `hf-v2-route-editor-marker is-${kind}`, html: `<span>${escapeHtml(label)}</span>`, iconSize: [30, 30], iconAnchor: [15, 15]});
   }
@@ -236,11 +251,11 @@
     previewCallbacks = callbacks;
     previewLayer = L.layerGroup().addTo(networkMap);
     const start = nodeInfo(project.a, renderedCitiesById);
-    const target = nodeInfo(project.b, renderedCitiesById);
+    const target = project.endpointJunction || nodeInfo(project.b, renderedCitiesById);
     const geometry = project.geometry?.length > 1 ? project.geometry : (start && target ? [[start.lat, start.lng], [target.lat, target.lng]] : []);
     if (geometry.length) previewLayer.addLayer(L.polyline(geometry, {color: '#15a6a6', weight: 7, opacity: .9, dashArray: '12 8'}));
     if (start) previewLayer.addLayer(L.marker([start.lat, start.lng], {icon: markerIcon('start', 'A'), draggable: false, title: 'Start'}));
-    if (target) previewLayer.addLayer(L.marker([target.lat, target.lng], {icon: markerIcon('target', 'Z'), draggable: false, title: 'Ziel'}));
+    if (target) previewLayer.addLayer(L.marker([target.lat, target.lng], {icon: markerIcon(project.endpointJunction ? 'connection' : 'target', project.endpointJunction ? 'T' : 'Z'), draggable: false, title: project.endpointJunction ? 'Anschluss an bestehende Straße' : 'Ziel'}));
     (project.waypoints || []).forEach((point, index) => {
       const marker = L.marker([point.lat, point.lng], {icon: markerIcon('waypoint', String(index + 1)), draggable: true, title: 'Wegpunkt (Rechtsklick zum Löschen)'});
       marker.on('click', () => markSelected(marker, () => callbacks.onRemoveWaypoint?.(index)));
@@ -363,6 +378,12 @@
         `Distanz: ${escapeHtml(formatKm(connection.distance))}`,
         `Kapazität: ${escapeHtml(capacity)}`,
       ].join('<br>'));
+      if (!isRail) {
+        line.on?.('click', event => handleDrawingRoadClick(connection, event));
+        line.on?.('mouseover', () => {
+          if (drawing && editorMode === 'draw') setEditorStatus('Bestehende Straße anklicken, um hier eine T-Kreuzung anzulegen');
+        });
+      }
 
       networkLineLayer.addLayer(glow);
       networkLineLayer.addLayer(casing);

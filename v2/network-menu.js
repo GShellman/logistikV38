@@ -381,9 +381,11 @@
     const old = network()?.getState?.().pendingProject;
     if (!old) return;
     const start = cityById(old.a);
-    const target = cityById(old.b);
+    const target = old.endpointJunction || cityById(old.b);
     const geometry = [[start.lat, start.lng], ...waypoints.map(point => [point.lat, point.lng]), [target.lat, target.lng]];
-    const project = await window.HF_V2?.planConnection?.(old.a, old.b, old.type, {geometry, manualJunctions: old.manualJunctions});
+    const project = old.endpointJunction
+      ? network()?.planRoadJunction?.(old.a, old.type, geometry, old.connectionId, old.endpointJunction)
+      : await window.HF_V2?.planConnection?.(old.a, old.b, old.type, {geometry, manualJunctions: old.manualJunctions});
     if (project) showProject(project);
   }
 
@@ -475,6 +477,14 @@
         const project = await window.HF_V2?.planConnection?.(originId, targetId, type, {geometry});
         if (project?.ok === false) {
           setBody(project.reason === 'not-enough-cash' ? `<div class="hf-v2-network-menu"><h3>Nicht genug Kapital</h3><p>Benötigt ${formatMoney(project.cost)}, verfügbar ${formatMoney(project.cash)}.</p><button type="button" data-action="cancel-planning">Zurück</button></div>` : renderBuildFailure());
+          return;
+        }
+        if (project) showProject(project);
+      },
+      onConnectRoad: ({connection, point, geometry}) => {
+        const project = network()?.planRoadJunction?.(originId, type, geometry, connection.id, point);
+        if (project?.ok === false) {
+          setBody(renderBuildFailure());
           return;
         }
         if (project) showProject(project);

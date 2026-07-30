@@ -445,6 +445,12 @@
     const newCuts = [];
     const replacements = new Map();
     const manualJunctions = (project.manualJunctions || []).filter(node => node?.automatic === false);
+    let endpointJunctionId = project.b;
+
+    if (project.endpointJunction) {
+      const endpoint = createJunction([project.endpointJunction.lat, project.endpointJunction.lng], targetState);
+      endpointJunctionId = endpoint.id;
+    }
 
     for (const manual of manualJunctions) {
       const onProject = closestPointOnGeometry([manual.lat, manual.lng], projectGeometry);
@@ -485,7 +491,7 @@
 
     const sortedNewCuts = normalizeCuts(projectGeometry, newCuts);
     const newParts = splitGeometryAtOffsets(projectGeometry, sortedNewCuts);
-    const newNodeIds = [project.a, ...sortedNewCuts.map(cut => cut.junctionId), project.b];
+    const newNodeIds = [project.a, ...sortedNewCuts.map(cut => cut.junctionId), endpointJunctionId];
     const result = newParts.map((part, index) => {
       const touchingType = sortedNewCuts[index - 1]?.type || project.type;
       const type = dominantRoadType(project.type, touchingType);
@@ -840,6 +846,30 @@
     return state.pendingProject;
   }
 
+  function planRoadJunction(fromId, type, geometry, connectionId, clickPoint) {
+    const from = citiesById[fromId];
+    const road = state?.connections?.find(edge => String(edge.id) === String(connectionId) && isRoadType(edge.type));
+    const rawGeometry = Array.isArray(geometry) ? geometry.map(point => [Number(point[0]), Number(point[1])]) : [];
+    const existingGeometry = road ? edgeGeometry(road, state) : null;
+    const requested = Array.isArray(clickPoint) ? clickPoint : [clickPoint?.lat, clickPoint?.lng];
+    const snapped = existingGeometry && closestPointOnGeometry(requested.map(Number), existingGeometry);
+    const spec = TRANSPORT_TYPES[type];
+    if (!state || !from || !road || spec?.mode !== 'road' || !snapped || rawGeometry.length < 2) return {ok: false, reason: 'invalid-road-junction'};
+    rawGeometry[0] = [from.lat, from.lng];
+    rawGeometry[rawGeometry.length - 1] = [...snapped.point];
+    const distance = geometryDistance(rawGeometry);
+    if (!(distance > 0)) return {ok: false, reason: 'invalid-geometry'};
+    const quote = buildQuote(type, distance);
+    const cash = window.HFV2Save?.getCash?.() ?? STARTING_CASH;
+    if (cash < quote.cost) return {ok: false, reason: 'not-enough-cash', cost: quote.cost, cash};
+    const endpointJunction = {id: `pending-junction-${Date.now()}`, name: 'Netzknoten', lat: snapped.point[0], lng: snapped.point[1], automatic: false};
+    const project = {kind: 'build', a: fromId, b: endpointJunction.id, type, distance, duration: distance / spec.speed,
+      geometry: rawGeometry, cost: quote.cost, maintenance: quote.maintenance, endpointJunction, connectionId: road.id,
+      waypoints: rawGeometry.slice(1, -1).map(([lat, lng]) => ({lat, lng})), manualJunctions: [endpointJunction]};
+    state.pendingProject = project;
+    return project;
+  }
+
   function getState() {
     return configure();
   }
@@ -848,8 +878,11 @@
     const project = state?.pendingProject;
     if (!project || project.kind !== 'build') return null;
     const start = nodeInfo(project.a);
-    const target = nodeInfo(project.b);
-    if (!start || !target || (isRoadType(project.type) && !editorGeometry(project.geometry, start, target))) return null;
+    const target = project.endpointJunction || nodeInfo(project.b);
+    const validGeometry = project.endpointJunction
+      ? Array.isArray(project.geometry) && project.geometry.length > 1 && geometryDistance(project.geometry) > 0
+      : editorGeometry(project.geometry, start, target);
+    if (!start || !target || (isRoadType(project.type) && !validGeometry)) return null;
     const cash = window.HFV2Save?.getCash?.() ?? STARTING_CASH;
     if (cash < project.cost) return null;
     window.HFV2Save?.changeCash?.(-project.cost, 'network-build', {reference: {networkProject: `${project.a}:${project.b}:${project.type}`}});
@@ -858,12 +891,12 @@
     state.cities = state.cities && typeof state.cities === 'object' ? state.cities : {};
     state.usedCapacity = state.usedCapacity && typeof state.usedCapacity === 'object' ? state.usedCapacity : {};
     state.cities[project.a] = {...(state.cities[project.a] || {}), unlocked: true};
-    state.cities[project.b] = {...(state.cities[project.b] || {}), unlocked: true};
-    state.selected = project.b;
+    if (!project.endpointJunction) state.cities[project.b] = {...(state.cities[project.b] || {}), unlocked: true};
+    state.selected = edges.at(-1)?.b || project.b;
     state.pendingProject = null;
     window.dispatchEvent?.(new CustomEvent('hf:network:confirmed', {detail: {edge: edges[0], edges, state}}));
     return edges[0];
   }
 
-  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, JUNCTION_SNAP_KM, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, createManualJunction, getState, confirmProject, segmentIntersection, geometryIntersections, splitRoadsForAutomaticJunctions, getIntersectionStats: () => ({...intersectionStats}), getEdgeOccupancy, getEdgeSchedule, pathEdgeOccupations, pathCapacityStatus, findEarliestPathSlot, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
+  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, JUNCTION_SNAP_KM, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, planRoadJunction, createManualJunction, getState, confirmProject, segmentIntersection, geometryIntersections, splitRoadsForAutomaticJunctions, getIntersectionStats: () => ({...intersectionStats}), getEdgeOccupancy, getEdgeSchedule, pathEdgeOccupations, pathCapacityStatus, findEarliestPathSlot, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
 })();
