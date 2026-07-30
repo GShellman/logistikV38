@@ -6,7 +6,7 @@
   const STARTING_CASH = 500000;
   const DEFAULT_VEHICLE_TYPE = 'fluto-gianco';
   const REFRIGERATED_VEHICLE_TYPE = 'fluto-gianco-fr';
-  const VALID_VEHICLE_TYPES = new Set([DEFAULT_VEHICLE_TYPE, REFRIGERATED_VEHICLE_TYPE]);
+  const VALID_VEHICLE_TYPES = new Set([DEFAULT_VEHICLE_TYPE, REFRIGERATED_VEHICLE_TYPE, 'pcp-mr3']);
   const LEGACY_REFRIGERATED_VEHICLE_TYPES = new Set(['reefer', 'refrigerated-van']);
 
   let state = null;
