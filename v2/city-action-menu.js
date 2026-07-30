@@ -25,6 +25,7 @@
     'route-overloaded': 'Straße zur gewünschten Zeit voll.',
     'no-feasible-slot': 'Der Fahrzeugtyp ist vorhanden, aber im Planungshorizont nicht rechtzeitig verfügbar.',
     'unknown-frequency': 'Unbekannte Frequenz.',
+    'incompatible-load-carrier': 'Fahrzeug und Ladungsträger sind nicht kompatibel.',
   });
 
   function stopLeafletPropagation(element) {
@@ -227,6 +228,7 @@
         <label>Ware<select name="goodId">${demands.map(([goodId, kg]) => option(goodId, `${goodById(goodId).name} · Tagesbedarf ${formatWeightKg(kg)}`)).join('')}</select></label>
         ${demandHint}
         <label>Frequenz<select name="frequency">${option('daily', 'Täglich', true)}${option('weekly', 'Wöchentlich')}</select></label>
+        <label>Verpackung<select name="packagingStrategy">${option('automatic', 'Automatisch', true)}${option('pallet', 'Palette')}${option('swap-body', 'Wechselbehälter')}</select></label>
         <label id="hfV2OrderWeekday" hidden>Wochentag<select name="weekday" required disabled>${['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag'].map((label, index) => option(index, label)).join('')}</select></label>
         <label>Fahrzeugtyp<select name="vehicleType">${vehicles.map(item => option(item.type, vehicleOptionLabel(item))).join('')}</select></label>
         <div class="hf-v2-network-option__rows" id="hfV2OrderPreview"></div>
@@ -247,6 +249,7 @@
       frequency: form.elements.frequency?.value || 'daily',
       weekday: form.elements.frequency?.value === 'weekly' ? Number(form.elements.weekday?.value) : null,
       vehicleType: form.elements.vehicleType?.value || '',
+      packagingStrategy: form.elements.packagingStrategy?.value || 'automatic',
     };
   }
 
@@ -273,6 +276,7 @@
     const schedule = amountKg > 0 && data.vehicleType ? window.HFV2Logistics?.findOrderSchedule?.({...data, amountKg}) : {ok: false, reason: demand <= 0 ? 'no-demand' : 'no-vehicle'};
     const path = schedule?.path;
     const trips = schedule?.vehicleCount || 0;
+    const packagingAlternatives = schedule?.packagingAlternatives || window.HFV2Logistics?.packagingAlternatives?.({...data, amountKg, path}) || [];
     const warnings = [];
     if (demand <= 0) warnings.push('no-demand');
     if (!schedule?.ok && !warnings.includes(schedule?.reason)) warnings.push(schedule?.reason || 'no-feasible-slot');
@@ -295,6 +299,7 @@
       <span><em>Tatsächlich exportierbar</em><strong>${formatWeightKg(exportableKg)}</strong></span>
       ${schedule?.stockProducedBeforeDeparture ? `<span><em>Nächste Produktion</em><strong>Fehlende ${formatWeightKg(Math.max(0, amountKg - exportableKg))} werden erst beim nächsten Produktionszyklus hergestellt.</strong></span>` : ''}
       <span><em>Fahrzeuge</em><strong>${trips || '–'}</strong></span>
+      <div class="hf-v2-order-preview-alternatives"><h4>Verpackungsalternativen</h4>${packagingAlternatives.map(item => `<span><em>${escapeHtml(item.label)}${item.strategy === schedule?.packagingStrategy ? ' · gewählt' : ''}</em><strong>${item.compatible ? `${item.vehicleCount} Fahrzeug${item.vehicleCount === 1 ? '' : 'e'} · ${(item.utilization * 100).toLocaleString('de-CH', {maximumFractionDigits: 0})}% Auslastung · ${formatDurationHours(item.durationHours)} · CHF ${item.costs.total.toLocaleString('de-CH', {maximumFractionDigits: 2})}` : 'Nicht kompatibel'}</strong></span>`).join('')}</div>
       <span><em>Route</em><strong>${path?.reachable ? `${(Number(path.distance) || 0).toLocaleString('de-CH', {maximumFractionDigits: 1})} km · ${formatDurationHours(path.duration)}` : ERROR_TEXTS['no-route']}</strong></span>
       <span><em>Abfahrt</em><strong>${schedule?.ok ? formatAbsMinute(schedule.departureAbsMinute) : '–'}</strong></span>
       <span><em>Ankunft</em><strong>${schedule?.ok ? formatAbsMinute(schedule.arrivalAbsMinute) : '–'}</strong></span>

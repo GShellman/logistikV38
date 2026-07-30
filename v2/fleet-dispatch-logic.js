@@ -53,8 +53,8 @@
       ?? Math.ceil(cargoes.reduce((sum, cargo) => sum + Number(cargo.grossKg || 0), 0) / capacityKg(type));
   }
 
-  function cargoMetrics(goodId, amountKg) {
-    return window.HFV2LoadCarrierCatalog?.metrics?.(goodId, amountKg)
+  function cargoMetrics(goodId, amountKg, packagingStrategy) {
+    return window.HFV2LoadCarrierCatalog?.metrics?.(goodId, amountKg, packagingStrategy)
       || {carrierCount: 0, netKg: Number(amountKg) || 0, tareKg: 0, grossKg: Number(amountKg) || 0};
   }
 
@@ -126,8 +126,9 @@
         && Math.abs(leg.requestedDepartureAbsMinute - first.requestedDepartureAbsMinute) <= Math.max(0, Number(logisticsState?.bundleWindowMinutes) || 60));
       const group = []; let load = 0, grossLoad = 0;
       for (const leg of candidates.sort((a,b) => a.orderId-b.orderId)) {
-        const orderGoodId=(logisticsState.orders||[]).find(order=>order.id===leg.orderId)?.goodId;
-        const legCargo={...cargoMetrics(orderGoodId,leg.amountKg), ...leg};
+        const legOrder=(logisticsState.orders||[]).find(order=>order.id===leg.orderId);
+        const orderGoodId=legOrder?.goodId;
+        const legCargo={...cargoMetrics(orderGoodId,leg.amountKg,legOrder?.resolvedPackagingStrategy||legOrder?.packagingStrategy), ...leg};
         if (!group.length || capacityCheck(first.vehicleType, [...group, legCargo], (first.vehicleIds || []).length).ok) { group.push(legCargo); load += leg.amountKg; grossLoad += legCargo.grossKg; }
       }
       for (const leg of group) used.add(leg.id);
@@ -151,8 +152,8 @@
         const reservation = `${tripId}-segment-${segments.length+1}`;
         if (commitReservations && !reserve(bestPath,slot.departureAbsMinute,slot.arrivalAbsMinute,vehicleIds.length,reservation,true,{vehicleType:first.vehicleType,vehicleIds,tripId,edgeTimes:slot.edgeTimes})) {failed=true;break;}
         segments.push({kind:'delivery',fromCityId:cityId,toCityId:leg.toCityId,departureAbsMinute:slot.departureAbsMinute,arrivalAbsMinute:slot.arrivalAbsMinute,edgeTimes:slot.edgeTimes||[],pathNodeIds:bestPath.nodes||[],pathEdgeIds:(bestPath.edges||[]).map(edgeId),geometry:bestPath.geometry||[],distance:Number(bestPath.distance)||0,capacityReservationIds:commitReservations?[reservation]:[]});
-        const goodId=(logisticsState.orders||[]).find(o=>o.id===leg.orderId)?.goodId;
-        stops.push({orderId:leg.orderId,toCityId:leg.toCityId,goodId,amountKg:leg.amountKg,...cargoMetrics(goodId,leg.amountKg),arrivalAbsMinute:slot.arrivalAbsMinute,status:'pending',deliveredKg:0,undeliveredKg:leg.amountKg});
+        const stopOrder=(logisticsState.orders||[]).find(o=>o.id===leg.orderId), goodId=stopOrder?.goodId;
+        stops.push({orderId:leg.orderId,toCityId:leg.toCityId,goodId,amountKg:leg.amountKg,...cargoMetrics(goodId,leg.amountKg,stopOrder?.resolvedPackagingStrategy||stopOrder?.packagingStrategy),arrivalAbsMinute:slot.arrivalAbsMinute,status:'pending',deliveredKg:0,undeliveredKg:leg.amountKg});
         cursor=slot.arrivalAbsMinute; cityId=leg.toCityId;
       }
       const action=postDeliveryDecision(first.fromCityId,cityId); let disposition={action,targetCityId:cityId,departureAbsMinute:cursor,arrivalAbsMinute:cursor,edgeTimes:[],capacityReservationIds:[]};
@@ -196,7 +197,7 @@
       if (!plannedStock.has(stockKey)) plannedStock.set(stockKey, Math.max(0, Number(window.HFV2Goods?.getExportableStockKg?.(order.fromCityId, order.goodId)) || 0));
       const amountKg = Math.min(Math.max(0, Number(order.amountKg) || 0), plannedStock.get(stockKey));
       if (!amountKg) { unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: 'stock-limited'}); continue; }
-      const cargo = cargoMetrics(order.goodId, amountKg);
+      const cargo = cargoMetrics(order.goodId, amountKg, order.resolvedPackagingStrategy || order.packagingStrategy);
       const outboundPath = route(order.fromCityId, order.toCityId), postDeliveryAction = postDeliveryDecision(order.fromCityId, order.toCityId), returnPath = postDeliveryAction === 'return' ? route(order.toCityId, order.fromCityId) : null, count = requiredVehicleCount(type, [cargo]);
       if (!outboundPath?.reachable || (postDeliveryAction === 'return' && !returnPath?.reachable) || !Number.isFinite(count) || count <= 0) { unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: !outboundPath?.reachable || (postDeliveryAction === 'return' && !returnPath?.reachable) ? 'incomplete-round-trip-route' : 'capacity-invalid'}); continue; }
       const selected = vehicles.filter(v => v.vehicleType === type).map(vehicle => {

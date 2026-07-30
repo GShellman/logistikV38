@@ -51,8 +51,8 @@
     return String(value || '').trim();
   }
 
-  function cargoMetrics(goodId, amountKg) {
-    return window.HFV2LoadCarrierCatalog?.metrics?.(goodId, amountKg)
+  function cargoMetrics(goodId, amountKg, packagingStrategy = 'default', options = {}) {
+    return window.HFV2LoadCarrierCatalog?.metrics?.(goodId, amountKg, packagingStrategy, options)
       || {loadCarrier: 'loose', carrierCount: 0, netKg: Math.max(0, Number(amountKg) || 0), tareKg: 0, grossKg: Math.max(0, Number(amountKg) || 0), stackable: false};
   }
 
@@ -78,6 +78,8 @@
     const departureHour = Math.floor((plannedDepartureAbsMinute % MINUTES_PER_DAY) / 60);
     const departureMinute = plannedDepartureAbsMinute % 60;
     const amountKg = Math.max(0, Number(order.amountKg) || 0);
+    const packagingStrategy = ['automatic', 'pallet', 'swap-body'].includes(order.packagingStrategy) ? order.packagingStrategy : 'pallet';
+    const resolvedPackagingStrategy = ['pallet', 'swap-body'].includes(order.resolvedPackagingStrategy) ? order.resolvedPackagingStrategy : (packagingStrategy === 'automatic' ? 'pallet' : packagingStrategy);
     if (!id || !fromCityId || !toCityId || !goodId || !FREQUENCIES.has(frequency) || amountKg <= 0) return null;
     return {
       ...order,
@@ -92,7 +94,9 @@
       departureMinute,
       vehicleType: normalizeId(order.vehicleType) || null,
       amountKg,
-      ...cargoMetrics(goodId, amountKg),
+      ...cargoMetrics(goodId, amountKg, resolvedPackagingStrategy, {deferCount: true}),
+      packagingStrategy,
+      resolvedPackagingStrategy,
       enabled: order.enabled !== false,
       lastDispatchedDay: Number.isFinite(Number(order.lastDispatchedDay)) ? Math.trunc(Number(order.lastDispatchedDay)) : null,
     };
@@ -210,6 +214,41 @@
     const properties = goodSpec(goodId)?.properties || {};
     const requiresRefrigeration = properties.requiresRefrigeration === true || properties.refrigeratedRequired === true;
     return !requiresRefrigeration || vehicleSpec(vehicleType)?.refrigerated === true;
+  }
+
+  function vehicleSupportsCarrier(vehicleType, carrierId) {
+    const supported = vehicleSpec(vehicleType)?.supportedLoadCarriers || ['loose', 'euro-pallet', 'industrial-pallet'];
+    return supported.includes(carrierId);
+  }
+
+  function packagingAlternatives(options = {}) {
+    const goodId = normalizeId(options.goodId);
+    const vehicleType = normalizeId(options.vehicleType) || DEFAULT_VEHICLE_TYPE;
+    const amountKg = Math.max(0, Number(options.amountKg) || 0);
+    const distanceKm = Math.max(0, Number(options.distanceKm ?? options.path?.distance) || 0);
+    const baseDurationHours = Math.max(0, Number(options.durationHours ?? options.path?.duration) || 0);
+    return ['pallet', 'swap-body'].map(strategy => {
+      const cargo = cargoMetrics(goodId, amountKg, strategy);
+      const compatible = cargo.compatibleGood !== false && vehicleSupportsCarrier(vehicleType, cargo.loadCarrier);
+      const vehicleCount = compatible ? requiredVehicleCount(vehicleType, cargo) : Infinity;
+      const finiteCount = Number.isFinite(vehicleCount) && vehicleCount > 0 ? vehicleCount : 0;
+      const capacity = finiteCount ? capacityCheck(vehicleType, cargo, finiteCount) : null;
+      const handlingMinutes = cargo.carrierCount * (strategy === 'swap-body' ? 12 : 6);
+      const transportCost = finiteCount * distanceKm * Math.max(0, Number(vehicleSpec(vehicleType)?.kmCost) || 0);
+      const handlingCost = cargo.carrierCount * (strategy === 'swap-body' ? 35 : 25);
+      const rentalCost = Math.max(0, Number(cargo.rentalCost) || 0);
+      return {strategy, label: strategy === 'swap-body' ? 'Wechselbehälter' : 'Palette', compatible: compatible && finiteCount > 0, vehicleCount: finiteCount, utilization: capacity ? Math.max(capacity.weightRatio || 0, capacity.volumeRatio || 0) : 0, durationHours: baseDurationHours + handlingMinutes / 60, costs: {transport: transportCost, handling: handlingCost, rental: rentalCost, total: Math.round((transportCost + handlingCost + rentalCost) * 100) / 100}, cargo};
+    });
+  }
+
+  function selectPackagingStrategy(options = {}) {
+    const alternatives = packagingAlternatives(options);
+    const requested = ['pallet', 'swap-body'].includes(options.packagingStrategy) ? options.packagingStrategy : 'automatic';
+    const viable = alternatives.filter(item => item.compatible);
+    const selected = requested === 'automatic'
+      ? viable.sort((a, b) => a.costs.total - b.costs.total || b.utilization - a.utilization)[0]
+      : alternatives.find(item => item.strategy === requested && item.compatible);
+    return {requested, selected: selected || null, alternatives};
   }
 
   function tripCosts(distanceKm, vehicleType, vehicleCount) {
@@ -452,10 +491,13 @@
     const vehicleType = normalizeId(options.vehicleType) || DEFAULT_VEHICLE_TYPE;
     const amountKg = Number(options.amountKg) > 0 ? Number(options.amountKg) : plannedOrderAmountKg(toCityId, goodId, frequency);
     if (!vehicleCanTransportGood(vehicleType, goodId)) return {ok: false, reason: 'refrigeration-required'};
-    const capacityKg = vehicleCapacityKg(vehicleType);
-    const vehicleCount = capacityKg > 0 ? requiredVehicleCount(vehicleType, cargoMetrics(goodId, amountKg)) : 0;
     const path = window.HFNetwork?.findPath?.(fromCityId, toCityId, {mode: 'road'});
     if (!path?.reachable) return {ok: false, reason: 'no-route'};
+    const packaging = selectPackagingStrategy({...options, goodId, vehicleType, amountKg, path});
+    if (!packaging.selected) return {ok: false, reason: 'incompatible-load-carrier', packagingAlternatives: packaging.alternatives};
+    const resolvedPackagingStrategy = packaging.selected.strategy;
+    const capacityKg = vehicleCapacityKg(vehicleType);
+    const vehicleCount = capacityKg > 0 ? requiredVehicleCount(vehicleType, cargoMetrics(goodId, amountKg, resolvedPackagingStrategy)) : 0;
     const vehicles = window.HFFleet?.getState?.().vehicles || [];
     const matchingVehicles = vehicles.filter(vehicle => vehicle.vehicleType === vehicleType);
     // `no-vehicle` means exactly that the requested type is not owned. Busy
@@ -495,7 +537,7 @@
       if (feasibleVehicles.length < vehicleCount) continue;
       const candidate = {fromCityId, toCityId, goodId, frequency, weekday, vehicleType, amountKg};
       const bundles = compatibleBundles(candidate, departureAbsMinute);
-      return {ok: true, departureAbsMinute, arrivalAbsMinute, vehicleCount, vehicleIds: feasibleVehicles.slice(0, vehicleCount).map(vehicle => vehicle.id), path, bundles, bundle: bundles[0] || null, expectedStockKg: Math.max(currentExportableKg, amountKg), stockProducedBeforeDeparture: currentExportableKg < amountKg};
+      return {ok: true, departureAbsMinute, arrivalAbsMinute, vehicleCount, vehicleIds: feasibleVehicles.slice(0, vehicleCount).map(vehicle => vehicle.id), path, bundles, bundle: bundles[0] || null, packagingStrategy: resolvedPackagingStrategy, packagingAlternatives: packaging.alternatives, expectedStockKg: Math.max(currentExportableKg, amountKg), stockProducedBeforeDeparture: currentExportableKg < amountKg};
     }
     return {ok: false, reason: 'no-feasible-slot'};
   }
@@ -522,7 +564,8 @@
     if (!schedule.ok) { const error = new Error(schedule.reason); error.reason = schedule.reason; throw error; }
     const departureHour = Math.floor((schedule.departureAbsMinute % MINUTES_PER_DAY) / 60);
     const departureMinute = schedule.departureAbsMinute % 60;
-    const order = {id: state.nextOrderId++, fromCityId, toCityId, goodId, frequency, weekday, plannedDepartureAbsMinute: schedule.departureAbsMinute, plannedArrivalAbsMinute: schedule.arrivalAbsMinute, plannedVehicleCount: schedule.vehicleCount, departureHour, departureMinute, vehicleType, amountKg, ...cargoMetrics(goodId, amountKg), enabled: true, lastDispatchedDay: null};
+    const packagingStrategy = ['automatic', 'pallet', 'swap-body'].includes(options.packagingStrategy) ? options.packagingStrategy : 'automatic';
+    const order = {id: state.nextOrderId++, fromCityId, toCityId, goodId, frequency, weekday, plannedDepartureAbsMinute: schedule.departureAbsMinute, plannedArrivalAbsMinute: schedule.arrivalAbsMinute, plannedVehicleCount: schedule.vehicleCount, departureHour, departureMinute, vehicleType, amountKg, packagingStrategy, resolvedPackagingStrategy: schedule.packagingStrategy, ...cargoMetrics(goodId, amountKg, schedule.packagingStrategy, {deferCount: true}), enabled: true, lastDispatchedDay: null};
     state.orders.push(order);
     window.HFV2FleetDispatch?.invalidate?.('order-created');
     window.HFV2Save?.dispatchStateChanged?.('logistics-order-created');
@@ -843,7 +886,7 @@
       toCityId: order.toCityId,
       goodId: order.goodId,
       amountKg,
-      ...cargoMetrics(order.goodId, amountKg),
+      ...cargoMetrics(order.goodId, amountKg, order.resolvedPackagingStrategy || order.packagingStrategy),
       vehicleType,
       vehicleIds: assigned.map(vehicle => vehicle.id),
       vehicleCount: assigned.length,
@@ -904,7 +947,7 @@
     }
     if (dispatches.length < 2) return false;
     const amountKg = Math.round(dispatches.reduce((total, dispatch) => total + dispatch.amountKg, 0) * 1000) / 1000;
-    const bundledCargo = dispatches.map(dispatch => cargoMetrics(dispatch.order.goodId, dispatch.amountKg));
+    const bundledCargo = dispatches.map(dispatch => cargoMetrics(dispatch.order.goodId, dispatch.amountKg, dispatch.order.resolvedPackagingStrategy || dispatch.order.packagingStrategy));
     const bundleCapacity = capacityCheck(vehicleType, bundledCargo);
     if (!bundleCapacity.ok) return false;
     const bundledGrossKg = bundleCapacity.usage.grossKg;
@@ -966,7 +1009,7 @@
       netKg: amountKg,
       tareKg: Math.max(0, bundledGrossKg - amountKg),
       grossKg: bundledGrossKg,
-      carrierCount: dispatches.reduce((total, dispatch) => total + cargoMetrics(dispatch.order.goodId, dispatch.amountKg).carrierCount, 0),
+      carrierCount: dispatches.reduce((total, dispatch) => total + cargoMetrics(dispatch.order.goodId, dispatch.amountKg, dispatch.order.resolvedPackagingStrategy || dispatch.order.packagingStrategy).carrierCount, 0),
       vehicleType,
       vehicleIds: assigned.map(vehicle => vehicle.id),
       vehicleCount: assigned.length,
@@ -1340,5 +1383,5 @@
     return completed;
   }
 
-  window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, createRepositioningAssignment, absoluteMinute, orderDueToday, nextOrderDueAbsMinute, getOutgoingProductionDemandMap, vehicleCapacityKg, capacityCheck, requiredVehicleCount, splitIntoVehicleLoads, cargoMetrics, plannedOrderAmountKg, validateRoadShipment, findOrderSchedule, buildMultiStopRoute};
+  window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, createRepositioningAssignment, absoluteMinute, orderDueToday, nextOrderDueAbsMinute, getOutgoingProductionDemandMap, vehicleCapacityKg, capacityCheck, requiredVehicleCount, splitIntoVehicleLoads, cargoMetrics, packagingAlternatives, selectPackagingStrategy, plannedOrderAmountKg, validateRoadShipment, findOrderSchedule, buildMultiStopRoute};
 })();

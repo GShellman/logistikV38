@@ -29,15 +29,19 @@
       total.grossKg += Math.max(0, Number(cargo.grossKg ?? cargo.amountKg) || 0);
       total.palletSlots += carrierCount;
       if (cargo.loadCarrier === 'euro-pallet') total.euroPalletSlots += carrierCount;
-      if (cargo.loadCarrier === 'container') total.containerSlots += carrierCount;
+      if (cargo.loadCarrier === 'container' || cargo.loadCarrier === 'swap-body') total.containerSlots += carrierCount;
       return total;
     }, {grossKg: 0, palletSlots: 0, euroPalletSlots: 0, containerSlots: 0});
   }
 
   function evaluate(vehicleOrType, cargoes, vehicleCount = 1) {
+    const vehicle = vehicleSpec(vehicleOrType);
+    const supported = Array.isArray(vehicle.supportedLoadCarriers) ? vehicle.supportedLoadCarriers : ['loose', 'euro-pallet', 'industrial-pallet'];
+    const incompatible = (Array.isArray(cargoes) ? cargoes : [cargoes]).filter(Boolean).some(cargo => cargo.loadCarrier && !supported.includes(cargo.loadCarrier));
     const used = usage(cargoes);
     const capacity = limits(vehicleOrType, vehicleCount);
     const exceeded = [];
+    if (incompatible) exceeded.push('load-carrier');
     if (!(capacity.grossKg > 0) || used.grossKg > capacity.grossKg + 1e-7) exceeded.push('weight');
     if (used.palletSlots > capacity.palletSlots) exceeded.push('volume');
     if (used.euroPalletSlots > capacity.euroPalletSlots) exceeded.push('volume');
@@ -61,6 +65,9 @@
   }
 
   function requiredVehicleCount(vehicleOrType, cargoes) {
+    const list = Array.isArray(cargoes) ? cargoes : [cargoes];
+    const supported = vehicleSpec(vehicleOrType).supportedLoadCarriers || ['loose', 'euro-pallet', 'industrial-pallet'];
+    if (list.some(cargo => cargo?.loadCarrier && !supported.includes(cargo.loadCarrier))) return Infinity;
     const one = limits(vehicleOrType, 1);
     const used = usage(cargoes);
     if (!(one.grossKg > 0)) return 0;

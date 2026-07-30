@@ -5,19 +5,42 @@
     loose: Object.freeze({id: 'loose', name: 'Lose Ware', tareKg: 0, footprintM2: 0, depositValue: 0}),
     'euro-pallet': Object.freeze({id: 'euro-pallet', name: 'Europalette', tareKg: 25, footprintM2: 0.96, depositValue: 25}),
     'industrial-pallet': Object.freeze({id: 'industrial-pallet', name: 'Industriepalette', tareKg: 30, footprintM2: 1.2, depositValue: 30}),
+    'swap-body': Object.freeze({
+      id: 'swap-body', name: 'Straßentauglicher Wechselbehälter', roadworthy: true,
+      netCapacityKg: 10000, tareKg: 2500, footprintM2: 18, rentalPrice: 180,
+      allowedGoodsGroups: Object.freeze(['industrial_material', 'vegetable', 'fruit', 'processed_food', 'consumer_goods']),
+    }),
   });
 
-  function metrics(goodId, amountKg) {
+  function carrierFor(good, strategy = 'default') {
+    if (strategy === 'swap-body') return LOAD_CARRIER_CATALOG['swap-body'];
+    if (strategy === 'pallet') return LOAD_CARRIER_CATALOG['euro-pallet'];
+    const profile = good?.packaging || {loadCarrier: 'loose'};
+    return LOAD_CARRIER_CATALOG[profile.loadCarrier] || LOAD_CARRIER_CATALOG.loose;
+  }
+
+  function supportsGood(carrierId, goodId) {
+    const carrier = LOAD_CARRIER_CATALOG[carrierId];
+    const good = (window.HFV2GoodsCatalog || []).find(item => item.id === String(goodId));
+    return Boolean(carrier && good && (!carrier.allowedGoodsGroups || carrier.allowedGoodsGroups.includes(good.category)));
+  }
+
+  function metrics(goodId, amountKg, strategy = 'default', options = {}) {
     const netKg = Math.max(0, Number(amountKg) || 0);
     const good = (window.HFV2GoodsCatalog || []).find(item => item.id === String(goodId));
     const profile = good?.packaging || {loadCarrier: 'loose'};
-    const carrier = LOAD_CARRIER_CATALOG[profile.loadCarrier] || LOAD_CARRIER_CATALOG.loose;
-    const maxNetKg = Number(profile.maxNetKgPerCarrier);
-    const carrierCount = carrier.id === 'loose' || !(maxNetKg > 0) ? 0 : Math.ceil(netKg / maxNetKg);
+    const carrier = carrierFor(good, strategy);
+    const maxNetKg = carrier.id === 'swap-body' ? Number(carrier.netCapacityKg) : Number(profile.maxNetKgPerCarrier || (strategy === 'pallet' ? 700 : 0));
+    const incompatible = !supportsGood(carrier.id, goodId) && carrier.allowedGoodsGroups;
+    const calculatedCount = carrier.id === 'loose' || !(maxNetKg > 0) || incompatible ? 0 : Math.ceil(netKg / maxNetKg);
+    const carrierCount = options.deferCount === true && carrier.id === 'swap-body' ? 0 : calculatedCount;
     const tarePerCarrier = Number.isFinite(Number(profile.carrierTareKg)) ? Math.max(0, Number(profile.carrierTareKg)) : carrier.tareKg;
-    const tareKg = carrierCount * tarePerCarrier;
-    return {loadCarrier: carrier.id, carrierCount, netKg, tareKg, grossKg: netKg + tareKg, stackable: profile.stackable !== false};
+    const effectiveTare = carrier.id === 'swap-body' ? carrier.tareKg : tarePerCarrier;
+    const tareKg = carrierCount * effectiveTare;
+    const result = {loadCarrier: carrier.id, carrierCount, netKg, tareKg, grossKg: netKg + tareKg, stackable: carrier.id === 'swap-body' ? false : profile.stackable !== false};
+    if (carrier.id === 'swap-body') Object.assign(result, {maxNetKgPerCarrier: maxNetKg, rentalCost: carrierCount * carrier.rentalPrice, compatibleGood: !incompatible});
+    return result;
   }
 
-  window.HFV2LoadCarrierCatalog = Object.freeze({LOAD_CARRIER_CATALOG, metrics});
+  window.HFV2LoadCarrierCatalog = Object.freeze({LOAD_CARRIER_CATALOG, metrics, supportsGood});
 })();
