@@ -10,6 +10,7 @@
   let previewCallbacks = {};
   let drawing = null;
   let drawingCursor = null;
+  let manualNodeMode = false;
 
   function transportSpec(type) {
     return window.HFNetwork?.TRANSPORT_TYPES?.[type] || window.HFNetwork?.TRANSPORT_TYPES?.mainroad || {};
@@ -100,6 +101,7 @@
     networkMap?.off?.('mousemove', handleDrawingMouseMove);
     drawing = null;
     drawingCursor = null;
+    manualNodeMode = false;
   }
 
   function handlePreviewMapClick(event) {
@@ -111,6 +113,10 @@
       return;
     }
     if (!previewProject || event?.originalEvent?.target?.closest?.('.leaflet-marker-icon')) return;
+    if (manualNodeMode) {
+      previewCallbacks.onAddManualJunction?.({lat: event.latlng.lat, lng: event.latlng.lng});
+      return;
+    }
     previewCallbacks.onAddWaypoint?.({lat: event.latlng.lat, lng: event.latlng.lng});
   }
 
@@ -190,13 +196,20 @@
       marker.on('contextmenu', () => callbacks.onRemoveWaypoint?.(index));
       previewLayer.addLayer(marker);
     });
-    (project.connectionPoints || []).forEach(candidate => {
-      const marker = L.marker([candidate.lat, candidate.lng], {icon: markerIcon(candidate.enabled === false ? 'connection-off' : 'connection', candidate.automatic ? 'A' : 'K'), title: candidate.enabled === false ? 'Anschluss aktivieren' : 'Anschluss deaktivieren'});
-      marker.on('click', () => callbacks.onToggleConnection?.(candidate.id));
+    (project.manualJunctions || []).forEach((junction, index) => {
+      const marker = L.marker([junction.lat, junction.lng], {icon: markerIcon('connection', 'K'), draggable: true,
+        title: 'Netzknoten ziehen oder per Rechtsklick löschen'});
+      marker.on('dragend', event => callbacks.onMoveManualJunction?.(index, event.target.getLatLng()));
+      marker.on('contextmenu', () => callbacks.onRemoveManualJunction?.(index));
       previewLayer.addLayer(marker);
     });
     networkMap.on?.('click', handlePreviewMapClick);
     return previewLayer;
+  }
+
+  function setManualNodeMode(active) {
+    manualNodeMode = active === true;
+    return manualNodeMode;
   }
 
   function clearNetworkLines() {
@@ -301,7 +314,7 @@
     if (!visible && map.hasLayer(networkLineLayer)) map.removeLayer(networkLineLayer);
   }
 
-  const api = {initNetworkLayer, renderNetworkLines, clearNetworkLines, setNetworkLayerVisible, renderProjectPreview, clearProjectPreview, beginRoadDrawing, handleDrawingCityClick};
+  const api = {initNetworkLayer, renderNetworkLines, clearNetworkLines, setNetworkLayerVisible, renderProjectPreview, clearProjectPreview, beginRoadDrawing, handleDrawingCityClick, setManualNodeMode};
   window.HFNetworkLayer = api;
   window.HFNetwork = {...(window.HFNetwork || {}), ...api};
   window.addEventListener?.('hf:network:capacity-changed', refreshRenderedNetwork);
