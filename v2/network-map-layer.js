@@ -11,6 +11,46 @@
   let drawing = null;
   let drawingCursor = null;
   let manualNodeMode = false;
+  let editorMode = 'edit';
+  let selectedElement = null;
+  let editorStatus = null;
+
+  function setEditorStatus(message, invalid = false) {
+    const container = networkMap?.getContainer?.();
+    if (!container || typeof document === 'undefined') return;
+    if (!editorStatus) {
+      editorStatus = document.createElement('div');
+      editorStatus.className = 'hf-v2-map-editor-status';
+      editorStatus.setAttribute('role', 'status');
+      editorStatus.setAttribute('aria-live', 'polite');
+      container.appendChild(editorStatus);
+    }
+    editorStatus.textContent = message;
+    editorStatus.hidden = !message;
+    editorStatus.classList.toggle('is-error', invalid);
+  }
+
+  function modeInstruction() {
+    if (editorMode === 'draw') return 'Straße zeichnen – nächsten Stützpunkt setzen oder Zielstadt wählen';
+    if (editorMode === 'node') return 'Knoten setzen – auf eine gezeichnete Trasse klicken';
+    return 'Punkte bearbeiten – Punkt auswählen, ziehen oder mit Delete löschen';
+  }
+
+  function setEditorMode(mode) {
+    editorMode = ['draw', 'node', 'edit'].includes(mode) ? mode : 'edit';
+    manualNodeMode = editorMode === 'node';
+    selectedElement = null;
+    setEditorStatus(modeInstruction());
+    networkMap?.getContainer?.()?.setAttribute?.('data-network-editor-mode', editorMode);
+    return editorMode;
+  }
+
+  function markSelected(marker, remove) {
+    selectedElement?.marker?._icon?.classList?.remove('is-selected');
+    selectedElement = {marker, remove};
+    marker?._icon?.classList?.add('is-selected');
+    setEditorStatus('Punkt ausgewählt – ziehen oder Delete zum Löschen');
+  }
 
   function transportSpec(type) {
     return window.HFNetwork?.TRANSPORT_TYPES?.[type] || window.HFNetwork?.TRANSPORT_TYPES?.mainroad || {};
@@ -102,22 +142,28 @@
     drawing = null;
     drawingCursor = null;
     manualNodeMode = false;
+    selectedElement = null;
+    setEditorStatus('', false);
   }
 
   function handlePreviewMapClick(event) {
-    if (drawing) {
+    if (drawing && editorMode === 'draw') {
       if (event?.originalEvent?.target?.closest?.('.leaflet-marker-icon')) return;
+      drawing.history.push(drawing.points.map(point => [...point]));
+      drawing.future.length = 0;
       drawing.points.push([event.latlng.lat, event.latlng.lng]);
       renderDrawing();
       drawing.callbacks.onChange?.(drawing.points.map(point => [...point]));
       return;
     }
     if (!previewProject || event?.originalEvent?.target?.closest?.('.leaflet-marker-icon')) return;
-    if (manualNodeMode) {
-      previewCallbacks.onAddManualJunction?.({lat: event.latlng.lat, lng: event.latlng.lng});
+    if (editorMode === 'node') {
+      const result = previewCallbacks.onAddManualJunction?.({lat: event.latlng.lat, lng: event.latlng.lng});
+      if (result === false || result?.ok === false) setEditorStatus('Ungültige Platzierung – Knoten müssen auf einer Trasse liegen', true);
+      else setEditorStatus(modeInstruction());
       return;
     }
-    previewCallbacks.onAddWaypoint?.({lat: event.latlng.lat, lng: event.latlng.lng});
+    // Ein Klick auf die leere Karte bearbeitet im Bearbeitungsmodus nichts.
   }
 
   function handleDrawingMouseMove(event) {
@@ -132,13 +178,14 @@
     const spec = transportSpec(drawing.type);
     const points = drawing.points;
     for (let index = 1; index < points.length; index += 1) {
-      previewLayer.addLayer(L.polyline([points[index - 1], points[index]], {color: spec.color || '#15a6a6', weight: 7, opacity: .95}));
+      previewLayer.addLayer(L.polyline([points[index - 1], points[index]], {className: 'hf-v2-route-segment is-valid', color: spec.color || '#15a6a6', weight: 7, opacity: .95}));
     }
     if (drawingCursor) previewLayer.addLayer(L.polyline([points[points.length - 1], drawingCursor], {color: spec.color || '#15a6a6', weight: 5, opacity: .7, dashArray: '8 8', interactive: false}));
     previewLayer.addLayer(L.marker(points[0], {icon: markerIcon('start', 'A'), draggable: false, title: 'Gewählte Startstadt'}));
     points.slice(1).forEach((point, offset) => {
       const index = offset + 1;
       const marker = L.marker(point, {icon: markerIcon('waypoint', String(index)), draggable: true, title: 'Stützpunkt ziehen oder per Rechtsklick löschen'});
+      marker.on('click', () => markSelected(marker, () => { drawing.points.splice(index, 1); renderDrawing(); drawing.callbacks.onChange?.(drawing.points.map(entry => [...entry])); }));
       marker.on('drag', event => { drawing.points[index] = [event.latlng.lat, event.latlng.lng]; renderDrawing(); });
       marker.on('dragend', () => drawing.callbacks.onChange?.(drawing.points.map(entry => [...entry])));
       marker.on('contextmenu', () => { drawing.points.splice(index, 1); renderDrawing(); drawing.callbacks.onChange?.(drawing.points.map(entry => [...entry])); });
@@ -146,14 +193,15 @@
     });
   }
 
-  function beginRoadDrawing({originId, type, allowedTargetIds = [], onChange, onComplete} = {}) {
+  function beginRoadDrawing({originId, type, allowedTargetIds = [], onChange, onComplete, onConnectRoad, onCancel} = {}) {
     clearProjectPreview();
     const start = nodeInfo(originId, renderedCitiesById);
     if (!networkMap || !window.L || !start) return false;
     previewLayer = L.layerGroup().addTo(networkMap);
     previewCallbacks = {};
     previewProject = {a: originId, type};
-    drawing = {originId, type, points: [[start.lat, start.lng]], allowedTargetIds: new Set(allowedTargetIds), callbacks: {onChange, onComplete}};
+    drawing = {originId, type, points: [[start.lat, start.lng]], history: [], future: [], allowedTargetIds: new Set(allowedTargetIds), callbacks: {onChange, onComplete, onConnectRoad, onCancel}};
+    setEditorMode('draw');
     networkMap.on?.('click', handlePreviewMapClick);
     networkMap.on?.('mousemove', handleDrawingMouseMove);
     renderDrawing();
@@ -161,7 +209,10 @@
   }
 
   function handleDrawingCityClick(cityId) {
-    if (!drawing || cityId === drawing.originId || !drawing.allowedTargetIds.has(cityId)) return false;
+    if (!drawing || editorMode !== 'draw' || cityId === drawing.originId || !drawing.allowedTargetIds.has(cityId)) {
+      if (drawing) setEditorStatus('Ungültiges Ziel – eine zulässige Zielstadt wählen', true);
+      return false;
+    }
     const target = nodeInfo(cityId, renderedCitiesById);
     if (!target) return false;
     const geometry = [...drawing.points.map(point => [...point]), [target.lat, target.lng]];
@@ -171,6 +222,21 @@
     networkMap?.off?.('mousemove', handleDrawingMouseMove);
     networkMap?.off?.('click', handlePreviewMapClick);
     complete?.({targetId: cityId, geometry});
+    return true;
+  }
+
+  function handleDrawingRoadClick(connection, event) {
+    if (!drawing || editorMode !== 'draw' || !event?.latlng) return false;
+    event.originalEvent?.stopPropagation?.();
+    const point = [event.latlng.lat, event.latlng.lng];
+    const geometry = [...drawing.points.map(entry => [...entry]), point];
+    const connect = drawing.callbacks.onConnectRoad;
+    drawing = null;
+    drawingCursor = null;
+    networkMap?.off?.('mousemove', handleDrawingMouseMove);
+    networkMap?.off?.('click', handlePreviewMapClick);
+    setEditorStatus('Anschluss an bestehende Straße gewählt – Verbindung prüfen');
+    connect?.({connection, point: {lat: point[0], lng: point[1]}, geometry});
     return true;
   }
 
@@ -185,13 +251,14 @@
     previewCallbacks = callbacks;
     previewLayer = L.layerGroup().addTo(networkMap);
     const start = nodeInfo(project.a, renderedCitiesById);
-    const target = nodeInfo(project.b, renderedCitiesById);
+    const target = project.endpointJunction || nodeInfo(project.b, renderedCitiesById);
     const geometry = project.geometry?.length > 1 ? project.geometry : (start && target ? [[start.lat, start.lng], [target.lat, target.lng]] : []);
     if (geometry.length) previewLayer.addLayer(L.polyline(geometry, {color: '#15a6a6', weight: 7, opacity: .9, dashArray: '12 8'}));
     if (start) previewLayer.addLayer(L.marker([start.lat, start.lng], {icon: markerIcon('start', 'A'), draggable: false, title: 'Start'}));
-    if (target) previewLayer.addLayer(L.marker([target.lat, target.lng], {icon: markerIcon('target', 'Z'), draggable: false, title: 'Ziel'}));
+    if (target) previewLayer.addLayer(L.marker([target.lat, target.lng], {icon: markerIcon(project.endpointJunction ? 'connection' : 'target', project.endpointJunction ? 'T' : 'Z'), draggable: false, title: project.endpointJunction ? 'Anschluss an bestehende Straße' : 'Ziel'}));
     (project.waypoints || []).forEach((point, index) => {
       const marker = L.marker([point.lat, point.lng], {icon: markerIcon('waypoint', String(index + 1)), draggable: true, title: 'Wegpunkt (Rechtsklick zum Löschen)'});
+      marker.on('click', () => markSelected(marker, () => callbacks.onRemoveWaypoint?.(index)));
       marker.on('dragend', event => callbacks.onMoveWaypoint?.(index, event.target.getLatLng()));
       marker.on('contextmenu', () => callbacks.onRemoveWaypoint?.(index));
       previewLayer.addLayer(marker);
@@ -200,17 +267,61 @@
       const marker = L.marker([junction.lat, junction.lng], {icon: markerIcon('connection', 'K'), draggable: true,
         title: 'Netzknoten ziehen oder per Rechtsklick löschen'});
       marker.on('dragend', event => callbacks.onMoveManualJunction?.(index, event.target.getLatLng()));
+      marker.on('click', () => markSelected(marker, () => callbacks.onRemoveManualJunction?.(index)));
       marker.on('contextmenu', () => callbacks.onRemoveManualJunction?.(index));
       previewLayer.addLayer(marker);
     });
     networkMap.on?.('click', handlePreviewMapClick);
+    setEditorMode(editorMode);
     return previewLayer;
   }
 
   function setManualNodeMode(active) {
-    manualNodeMode = active === true;
+    setEditorMode(active === true ? 'node' : 'edit');
     return manualNodeMode;
   }
+
+  function deleteSelected() {
+    if (!selectedElement) return false;
+    const remove = selectedElement.remove;
+    selectedElement = null;
+    remove?.();
+    setEditorStatus(modeInstruction());
+    return true;
+  }
+
+  function updateDrawingFromHistory(points) {
+    if (!drawing || !points) return false;
+    drawing.points = points.map(point => [...point]);
+    renderDrawing();
+    drawing.callbacks.onChange?.(drawing.points.map(point => [...point]));
+    return true;
+  }
+
+  function undoDrawingPoint() {
+    if (!drawing?.history.length) return false;
+    drawing.future.push(drawing.points.map(point => [...point]));
+    return updateDrawingFromHistory(drawing.history.pop());
+  }
+
+  function redoDrawingPoint() {
+    if (!drawing?.future.length) return false;
+    drawing.history.push(drawing.points.map(point => [...point]));
+    return updateDrawingFromHistory(drawing.future.pop());
+  }
+
+  function clearDrawingRoute() {
+    if (!drawing || drawing.points.length <= 1) return false;
+    drawing.history.push(drawing.points.map(point => [...point]));
+    drawing.future.length = 0;
+    return updateDrawingFromHistory([drawing.points[0]]);
+  }
+
+  window.document?.addEventListener?.('keydown', event => {
+    if (!drawing && !previewProject) return;
+    if (event.key === 'Escape') { event.preventDefault(); (drawing?.callbacks || previewCallbacks).onCancel?.(); }
+    if (event.key === 'Delete' && deleteSelected()) event.preventDefault();
+  });
 
   function clearNetworkLines() {
     networkLineLayer?.clearLayers?.();
@@ -267,6 +378,12 @@
         `Distanz: ${escapeHtml(formatKm(connection.distance))}`,
         `Kapazität: ${escapeHtml(capacity)}`,
       ].join('<br>'));
+      if (!isRail) {
+        line.on?.('click', event => handleDrawingRoadClick(connection, event));
+        line.on?.('mouseover', () => {
+          if (drawing && editorMode === 'draw') setEditorStatus('Bestehende Straße anklicken, um hier eine T-Kreuzung anzulegen');
+        });
+      }
 
       networkLineLayer.addLayer(glow);
       networkLineLayer.addLayer(casing);
@@ -314,7 +431,7 @@
     if (!visible && map.hasLayer(networkLineLayer)) map.removeLayer(networkLineLayer);
   }
 
-  const api = {initNetworkLayer, renderNetworkLines, clearNetworkLines, setNetworkLayerVisible, renderProjectPreview, clearProjectPreview, beginRoadDrawing, handleDrawingCityClick, setManualNodeMode};
+  const api = {initNetworkLayer, renderNetworkLines, clearNetworkLines, setNetworkLayerVisible, renderProjectPreview, clearProjectPreview, beginRoadDrawing, handleDrawingCityClick, setManualNodeMode, setEditorMode, deleteSelected, undoDrawingPoint, redoDrawingPoint, clearDrawingRoute};
   window.HFNetworkLayer = api;
   window.HFNetwork = {...(window.HFNetwork || {}), ...api};
   window.addEventListener?.('hf:network:capacity-changed', refreshRenderedNetwork);
