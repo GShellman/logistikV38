@@ -123,3 +123,26 @@ test('nahe parallele OSRM-Geometrien erzeugen keine Kette aus Miniabschnitten', 
   assert.equal(state.junctions.length, 0);
   assert.ok(api.findPath('west', 'parallel-east', {state, mode:'road'}));
 });
+
+test('gemeinsamer Straßenkorridor wird an Ein- und Ausfahrt verbunden statt doppelt gebaut', () => {
+  const existingGeometry = Array.from({length: 401}, (_, index) => [0, index / 200]);
+  const shared = Array.from({length: 321}, (_, index) => [0.0002, 0.2 + index / 200]);
+  const projectGeometry = [[0.01, -0.5], ...shared, [0.01, 2.5]];
+  const cities = [
+    {id:'west',lat:0.01,lng:-0.5}, {id:'east',lat:0.01,lng:2.5},
+    {id:'road-west',lat:0,lng:0}, {id:'road-east',lat:0,lng:2},
+  ];
+  const {api,state} = setup(cities, [road('existing', 'road-west', 'road-east', existingGeometry)]);
+
+  const parts = build(api, state, 'west', 'east', projectGeometry);
+  assert.equal(parts.length, 2, 'der parallele Mittelteil muss durch die bestehende Straße ersetzt werden');
+  assert.equal(state.junctions.length, 2, 'der gemeinsame Korridor benötigt nur Ein- und Ausfahrt');
+  assert.equal(state.connections.length, 5, 'bestehende Straße wird dreigeteilt und nur zwei Zufahrten werden ergänzt');
+  assert.ok(api.findPath('west', 'east', {state, mode:'road'}));
+  const sharedEdges = state.connections.filter(edge => sameEndpointsForTest(edge, parts[0].b, parts[1].a));
+  assert.equal(sharedEdges.length, 1, 'zwischen den Anschlussknoten darf nur die bestehende Straße liegen');
+});
+
+function sameEndpointsForTest(edge, a, b) {
+  return (edge.a === a && edge.b === b) || (edge.a === b && edge.b === a);
+}
