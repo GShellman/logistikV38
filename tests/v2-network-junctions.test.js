@@ -146,3 +146,21 @@ test('gemeinsamer Straßenkorridor wird an Ein- und Ausfahrt verbunden statt dop
 function sameEndpointsForTest(edge, a, b) {
   return (edge.a === a && edge.b === b) || (edge.a === b && edge.b === a);
 }
+
+test('Kreuzungen in der Stadtzufahrt bleiben eine durchgehende Straße bis ins Zentrum', () => {
+  const cities = [{id:'centre',lat:0,lng:0},{id:'outside',lat:0,lng:0.1}];
+  const existing = [];
+  for (const [index, lng] of [0.001, 0.0025, 0.004, 0.02].entries()) {
+    const south = `city-s-${index}`, north = `city-n-${index}`;
+    cities.push({id:south,lat:-0.01,lng},{id:north,lat:0.01,lng});
+    existing.push(road(`city-cross-${index}`, south, north, [[-0.01,lng],[0.01,lng]]));
+  }
+  const {api,state} = setup(cities, existing);
+
+  const parts = build(api, state, 'centre', 'outside', [[0,0],[0,0.1]]);
+  assert.equal(parts.length, 2, 'die drei zentrumsnahen Kreuzungen dürfen die Zufahrt nicht zerstückeln');
+  assert.equal(state.junctions.length, 1, 'nur die Kreuzung außerhalb der Stadtzufahrt wird zum Netzknoten');
+  assert.equal(state.connections.filter(edge => edge.a === 'centre' || edge.b === 'centre').length, 1,
+    'vom Zentrum darf pro Richtung nur ein Straßenabschnitt wegführen');
+  assert.ok(api.findPath('centre', 'city-n-3', {state, mode:'road'}));
+});

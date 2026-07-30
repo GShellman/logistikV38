@@ -9,6 +9,8 @@
   // has the same meaning everywhere on the map.
   const JUNCTION_SNAP_KM = 0.05;
   const ROAD_REUSE_MIN_KM = 0.15;
+  const CITY_APPROACH_MAX_KM = 3;
+  const CITY_APPROACH_ROUTE_RATIO = 0.08;
   const CAPACITY_WINDOW_MINUTES = 60;
   const MAX_ROUTE_GEOMETRY_POINTS = 2000;
   let intersectionStats = {segmentChecks: 0, bboxRejects: 0};
@@ -412,6 +414,12 @@
     const newCuts = [];
     const replacements = new Map();
     const projectBounds = geometryBounds(projectGeometry, JUNCTION_SNAP_KM / 110);
+    const projectDistance = geometryDistance(projectGeometry);
+    // OSRM routes from several cities fan in/out over many slightly different
+    // streets around the same centre. Turning every crossing in that approach
+    // into a graph node produces dozens of tiny edges and stacked markers.
+    // Keep the final approach as one edge; reuse/crossing starts outside it.
+    const cityApproachDistance = Math.min(CITY_APPROACH_MAX_KM, projectDistance * CITY_APPROACH_ROUTE_RATIO);
 
     for (const edge of targetState.connections || []) {
       if (!isRoadType(edge.type)) continue;
@@ -422,8 +430,10 @@
 
       const existingCuts = [];
       for (const hit of hits) {
+        if (hit.aOffset > JUNCTION_SNAP_KM && hit.aOffset < projectDistance - JUNCTION_SNAP_KM
+          && (hit.aOffset < cityApproachDistance || hit.aOffset > projectDistance - cityApproachDistance)) continue;
         const projectAtStart = hit.aOffset <= INTERSECTION_EPS;
-        const projectAtEnd = hit.aOffset >= geometryDistance(projectGeometry) - INTERSECTION_EPS;
+        const projectAtEnd = hit.aOffset >= projectDistance - INTERSECTION_EPS;
         const existingAtStart = hit.bOffset <= INTERSECTION_EPS;
         const existingAtEnd = hit.bOffset >= geometryDistance(existingGeometry) - INTERSECTION_EPS;
         const projectNode = projectAtStart ? project.a : (projectAtEnd ? project.b : null);
