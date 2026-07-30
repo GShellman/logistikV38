@@ -617,6 +617,8 @@
       title: 'Netzwerkplanung',
       subtitle: origin.name,
       bodyHtml: renderRoadTypePicker(cityId),
+      movable: true,
+      modeless: true,
     });
   }
 

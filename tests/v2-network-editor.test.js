@@ -47,6 +47,18 @@ test('Bauen ist nur bei einer gültigen Verbindung aktiv',()=>{
   assert.match(menu,/project\.geometry\?\.length >= 2/);
 });
 
+test('Straßenbaufenster bleibt beim Zeichnen sichtbar und verschiebbar',()=>{
+  const menu=readFileSync('v2/network-menu.js','utf8');
+  const modal=readFileSync('v2/modal.js','utf8');
+  const styles=readFileSync('v2/styles.css','utf8');
+  assert.match(menu,/movable: true/);
+  assert.match(menu,/modeless: true/);
+  assert.match(modal,/startModalDrag/);
+  assert.match(modal,/moveModalWithKeyboard/);
+  assert.match(styles,/\.hf-v2-modal-back\.is-modeless/);
+  assert.match(styles,/pointer-events: none/);
+});
+
 test('Straße ohne Editor-Geometrie ist weder plan- noch bestätigbar', async()=>{
   const window=contextFor();
   const cities=[{id:'a',lat:47,lng:8},{id:'b',lat:47.4,lng:8.6}];

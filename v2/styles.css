@@ -578,6 +578,11 @@ code {
   z-index: 2000;
 }
 .hf-v2-modal-back[hidden] { display: none; }
+.hf-v2-modal-back.is-modeless {
+  background: transparent;
+  pointer-events: none;
+}
+.hf-v2-modal-back.is-modeless .hf-v2-modal { pointer-events: auto; }
 .hf-v2-modal {
   background: var(--surface-work);
   border: 1px solid var(--border-strong);
@@ -595,6 +600,23 @@ code {
   width: 100%;
 }
 .hf-v2-modal.show { transform: translateY(0) scale(1); }
+.hf-v2-modal.is-movable {
+  margin: 0;
+  position: fixed;
+  transform: none;
+}
+.hf-v2-modal.is-movable .hf-v2-modal-header { cursor: move; touch-action: none; user-select: none; }
+.hf-v2-modal.is-movable .hf-v2-modal-header::before {
+  color: var(--hf-muted);
+  content: '⠿ Ziehen';
+  font-size: 11px;
+  font-weight: 800;
+  grid-column: 1 / -1;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.hf-v2-modal.is-movable .hf-v2-modal-header:focus-visible { outline: 3px solid var(--interaction-primary); outline-offset: -3px; }
+.hf-v2-modal.is-movable.is-moving { opacity: .94; transition: none; }
 .hf-v2-modal-header {
   align-items: start;
   background: var(--surface-work-muted);
