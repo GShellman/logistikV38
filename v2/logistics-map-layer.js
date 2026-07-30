@@ -324,10 +324,14 @@
     const departure = shipment.status === 'returning' ? shipment.returnDepartureAbsMinute : shipment.departureAbsMinute;
     const arrival = shipment.status === 'returning' ? shipment.returnArrivalAbsMinute : shipment.arrivalAbsMinute;
     const percent = Math.round(clamp01(progress) * 100);
+    const now = Number(window.HFV2Logistics?.absoluteMinute?.(window.HFV2Time?.getState?.())) || 0;
+    const handlingStatus = shipment.status === 'active' && now < Number(shipment.departureAbsMinute) ? 'Wird beladen'
+      : shipment.status === 'active' && (shipment.stops || []).some(stop => now >= Number(stop.arrivalAbsMinute) && now < Number(stop.unloadingEndAbsMinute)) ? 'Wird entladen'
+        : shipment.status;
     const status = tripLabel(shipment);
     return `<article class="hf-v2-transport-detail" tabindex="-1" aria-label="Transportdetails ${escapeHtml(from)} nach ${escapeHtml(to)}">
       <header><span class="hf-v2-transport-detail__kind hf-v2-transport-detail__kind--${escapeHtml(status.toLowerCase())}">${escapeHtml(status)}</span><h3>${escapeHtml(from)} <span aria-hidden="true">→</span> ${escapeHtml(to)}</h3></header>
-      <section aria-label="Route und Status"><h4>Route &amp; Status</h4><dl><div><dt>Status</dt><dd>${escapeHtml(shipment.status || status)}</dd></div><div><dt>Fortschritt</dt><dd><strong>${percent}%</strong></dd></div></dl><div class="hf-v2-transport-detail__progress" role="progressbar" aria-label="Fortschritt" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><i style="width:${percent}%"></i></div></section>
+      <section aria-label="Route und Status"><h4>Route &amp; Status</h4><dl><div><dt>Status</dt><dd>${escapeHtml(handlingStatus || status)}</dd></div><div><dt>Fortschritt</dt><dd><strong>${percent}%</strong></dd></div></dl><div class="hf-v2-transport-detail__progress" role="progressbar" aria-label="Fortschritt" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><i style="width:${percent}%"></i></div></section>
       <section aria-label="Ladung"><h4>Ladung</h4>${isEmptyTransport(shipment) ? `<p>Keine Ladung · ${shipment.status === 'returning' ? 'Rückfahrt' : 'Repositionierung'}</p>` : shipment.type === 'waiting' ? '<p>Keine Ladung · verfügbar</p>' : stopsMarkup(shipment)}</section>
       <section aria-label="Fahrzeugdaten"><h4>Fahrzeugdaten</h4>${vehiclesSection(shipment, fleet)}</section>
       <section aria-label="Zeitplan"><h4>Zeitplan</h4><dl><div><dt>Abfahrt</dt><dd><strong>${escapeHtml(Number.isFinite(Number(departure)) ? formatAbsMinute(departure) : '–')}</strong></dd></div><div><dt>Erwartete Ankunft</dt><dd><strong>${escapeHtml(Number.isFinite(Number(arrival)) ? formatAbsMinute(arrival) : '–')}</strong></dd></div></dl></section>
