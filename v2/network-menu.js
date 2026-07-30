@@ -15,6 +15,24 @@
   let activeOriginId = null;
   let activeTargetId = null;
   let manualNodeMode = false;
+  let activeEditorMode = 'draw';
+
+  function renderEditorTools(mode = activeEditorMode) {
+    const tools = [['draw', 'Straße zeichnen'], ['node', 'Knoten setzen'], ['edit', 'Punkte bearbeiten']];
+    return `<div class="hf-v2-editor-tools" role="toolbar" aria-label="Editorwerkzeug">
+      ${tools.map(([value, label]) => `<button type="button" data-action="set-editor-mode" data-mode="${value}" class="${mode === value ? 'is-active' : ''}" aria-pressed="${mode === value}">${label}</button>`).join('')}
+    </div>`;
+  }
+
+  function renderEditorActions({canUndo = false, canRedo = false, valid = false} = {}) {
+    return `<div class="hf-v2-route-editor__actions">
+      <button type="button" data-action="undo-point" ${canUndo ? '' : 'disabled'}>Letzten Punkt rückgängig</button>
+      <button type="button" data-action="redo-point" ${canRedo ? '' : 'disabled'}>Wiederholen</button>
+      <button type="button" data-action="clear-route">Trasse löschen</button>
+      <button type="button" data-action="cancel-planning">Abbrechen <kbd>Esc</kbd></button>
+      <button type="button" data-action="confirm-project" class="hf-v2-network-build" ${valid ? '' : 'disabled'}>Bauen</button>
+    </div>`;
+  }
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"]/g, char => ({
@@ -211,9 +229,10 @@
     return `<div class="hf-v2-network-menu hf-v2-route-editor" data-network-origin="${escapeHtml(originId)}">
       <p class="hf-v2-network-eyebrow">Zeichenmodus</p>
       <h3>${escapeHtml(DISPLAY_NAMES[type] || spec?.name)} ab ${escapeHtml(origin?.name || originId)}</h3>
-      <p class="hf-v2-network-hint">Klicke in die Karte, um Stützpunkte fortlaufend anzulegen. Ziehe einen Punkt zum Verschieben oder lösche ihn mit Rechtsklick. Ein Klick auf eine zulässige Zielstadt beendet die Trasse.</p>
+      ${renderEditorTools('draw')}
+      <p class="hf-v2-network-hint">Nächster Schritt: Setze einen Stützpunkt auf der Karte oder wähle eine zulässige Zielstadt. Punkte lassen sich auswählen und mit <kbd>Delete</kbd> löschen.</p>
       <p><strong>${Math.max(0, pointCount - 1)} Stützpunkte gesetzt</strong></p>
-      <div class="hf-v2-route-editor__actions"><button type="button" data-action="cancel-planning">Zeichnen abbrechen</button></div>
+      ${renderEditorActions({canUndo: pointCount > 1, valid: false})}
     </div>`;
   }
 
@@ -331,20 +350,15 @@
     return `<div class="hf-v2-network-menu hf-v2-route-editor" data-network-origin="${escapeHtml(project.a)}" data-network-target-id="${escapeHtml(project.b)}">
       <p class="hf-v2-network-eyebrow">Planungsphase</p>
       <h3>Route auf Karte bearbeiten</h3>
-      <p class="hf-v2-network-hint">Die gezeichnete Trasse kann auf der Karte weiter bearbeitet werden. Ziehe Stützpunkte; per Rechtsklick werden sie entfernt.</p>
+      ${renderEditorTools(activeEditorMode)}
+      <p class="hf-v2-network-hint">Nächster Schritt: ${activeEditorMode === 'node' ? 'Klicke auf die Trasse, um ausdrücklich einen Knoten zu setzen.' : 'Wähle einen Punkt aus und ziehe ihn oder lösche ihn mit Delete.'}</p>
       <div class="hf-v2-network-comparison">
         <span><em>Distanz</em><strong>${formatKm(project.distance)}</strong></span>
         <span><em>Baukosten</em><strong>${formatMoney(project.cost)}</strong></span>
         <span><em>Unterhalt</em><strong>${formatMoney(project.maintenance)}</strong></span>
         <span><em>Anschlussknoten</em><strong>${enabledConnections}</strong></span>
       </div>
-      <div class="hf-v2-route-editor__actions">
-        <button type="button" data-action="add-waypoint">Wegpunkt hinzufügen</button>
-        <button type="button" data-action="remove-waypoint" ${(project.waypoints || []).length ? '' : 'disabled'}>Wegpunkt entfernen</button>
-        <button type="button" data-action="set-connection" class="${manualNodeMode ? 'is-active' : ''}" aria-pressed="${manualNodeMode ? 'true' : 'false'}">Knotenmodus ${manualNodeMode ? 'aktiv' : 'inaktiv'}</button>
-        <button type="button" data-action="cancel-planning">Bearbeitung abbrechen</button>
-        <button type="button" data-action="confirm-project" class="hf-v2-network-badge--primary" ${project.a && project.b && project.geometry?.length >= 2 ? '' : 'disabled'}>Bau bestätigen</button>
-      </div>
+      ${renderEditorActions({canUndo: (project.waypoints || []).length > 0, valid: !!(project.a && project.b && project.geometry?.length >= 2 && project.ok !== false && !busy)})}
     </div>`;
   }
 
@@ -358,8 +372,9 @@
       onAddManualJunction: point => addManualJunction(point),
       onMoveManualJunction: (index, point) => moveManualJunction(index, point),
       onRemoveManualJunction: index => removeManualJunction(index),
+      onCancel: cancelPlanning,
     });
-    window.HFNetworkLayer?.setManualNodeMode?.(manualNodeMode);
+    window.HFNetworkLayer?.setEditorMode?.(activeEditorMode);
   }
 
   async function changeWaypoints(waypoints) {
@@ -374,10 +389,20 @@
 
   function addManualJunction(point) {
     const project = network()?.getState?.().pendingProject;
-    if (!project) return;
+    if (!project) return false;
     const result = network()?.createManualJunction?.(project, point);
-    if (!result?.ok) return;
+    if (!result?.ok) return result || false;
     showProject(project);
+    return result;
+  }
+
+  function cancelPlanning() {
+    manualNodeMode = false;
+    activeEditorMode = 'draw';
+    const state = network()?.getState?.();
+    if (state) state.pendingProject = null;
+    window.HFNetworkLayer?.clearProjectPreview?.();
+    setBody(renderRoadTypePicker(activeOriginId));
   }
 
   function moveManualJunction(index, point) {
@@ -454,6 +479,7 @@
         }
         if (project) showProject(project);
       },
+      onCancel: cancelPlanning,
     });
     if (!started) setBody(renderBuildFailure());
   }
@@ -523,12 +549,48 @@
         return;
       }
 
+      if (action === 'set-editor-mode') {
+        activeEditorMode = actionButton.dataset.mode || 'edit';
+        manualNodeMode = activeEditorMode === 'node';
+        window.HFNetworkLayer?.setEditorMode?.(activeEditorMode);
+        const project = network()?.getState?.().pendingProject;
+        if (project) showProject(project);
+        else actionButton.closest?.('.hf-v2-editor-tools')?.querySelectorAll?.('button').forEach(button => {
+          const active = button.dataset.mode === activeEditorMode;
+          button.classList.toggle('is-active', active);
+          button.setAttribute('aria-pressed', String(active));
+        });
+        return;
+      }
+
+      if (action === 'undo-point') {
+        if (!window.HFNetworkLayer?.undoDrawingPoint?.()) {
+          const project = network()?.getState?.().pendingProject;
+          if (project?.waypoints?.length) changeWaypoints(project.waypoints.slice(0, -1));
+        }
+        return;
+      }
+
+      if (action === 'redo-point') {
+        window.HFNetworkLayer?.redoDrawingPoint?.();
+        return;
+      }
+
+      if (action === 'clear-route') {
+        if (!window.HFNetworkLayer?.clearDrawingRoute?.()) {
+          const project = network()?.getState?.().pendingProject;
+          if (project) {
+            project.geometry = [];
+            project.waypoints = [];
+            project.ok = false;
+            showProject(project);
+          }
+        }
+        return;
+      }
+
       if (action === 'cancel-planning') {
-        manualNodeMode = false;
-        const project = network()?.getState?.();
-        if (project) project.pendingProject = null;
-        window.HFNetworkLayer?.clearProjectPreview?.();
-        setBody(renderRoadTypePicker(activeOriginId));
+        cancelPlanning();
         return;
       }
 
@@ -555,6 +617,8 @@
       title: 'Netzwerkplanung',
       subtitle: origin.name,
       bodyHtml: renderRoadTypePicker(cityId),
+      movable: true,
+      modeless: true,
     });
   }
 
