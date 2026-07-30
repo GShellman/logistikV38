@@ -16,8 +16,8 @@
     window.HFV2Modal?.closeModal?.();
   }
 
-  function planConnection(originId, targetId, type) {
-    return window.HFNetwork?.planConnection?.(originId, targetId, type) || null;
+  function planConnection(originId, targetId, type, options) {
+    return window.HFNetwork?.planConnection?.(originId, targetId, type, options) || null;
   }
 
   function confirmProject() {

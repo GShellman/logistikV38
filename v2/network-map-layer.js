@@ -8,6 +8,8 @@
   let previewLayer = null;
   let previewProject = null;
   let previewCallbacks = {};
+  let drawing = null;
+  let drawingCursor = null;
 
   function transportSpec(type) {
     return window.HFNetwork?.TRANSPORT_TYPES?.[type] || window.HFNetwork?.TRANSPORT_TYPES?.mainroad || {};
@@ -95,11 +97,75 @@
     previewLayer = null;
     previewProject = null;
     networkMap?.off?.('click', handlePreviewMapClick);
+    networkMap?.off?.('mousemove', handleDrawingMouseMove);
+    drawing = null;
+    drawingCursor = null;
   }
 
   function handlePreviewMapClick(event) {
+    if (drawing) {
+      if (event?.originalEvent?.target?.closest?.('.leaflet-marker-icon')) return;
+      drawing.points.push([event.latlng.lat, event.latlng.lng]);
+      renderDrawing();
+      drawing.callbacks.onChange?.(drawing.points.map(point => [...point]));
+      return;
+    }
     if (!previewProject || event?.originalEvent?.target?.closest?.('.leaflet-marker-icon')) return;
     previewCallbacks.onAddWaypoint?.({lat: event.latlng.lat, lng: event.latlng.lng});
+  }
+
+  function handleDrawingMouseMove(event) {
+    if (!drawing) return;
+    drawingCursor = [event.latlng.lat, event.latlng.lng];
+    renderDrawing();
+  }
+
+  function renderDrawing() {
+    if (!drawing || !networkMap || !window.L) return;
+    previewLayer?.clearLayers?.();
+    const spec = transportSpec(drawing.type);
+    const points = drawing.points;
+    for (let index = 1; index < points.length; index += 1) {
+      previewLayer.addLayer(L.polyline([points[index - 1], points[index]], {color: spec.color || '#15a6a6', weight: 7, opacity: .95}));
+    }
+    if (drawingCursor) previewLayer.addLayer(L.polyline([points[points.length - 1], drawingCursor], {color: spec.color || '#15a6a6', weight: 5, opacity: .7, dashArray: '8 8', interactive: false}));
+    previewLayer.addLayer(L.marker(points[0], {icon: markerIcon('start', 'A'), draggable: false, title: 'Gewählte Startstadt'}));
+    points.slice(1).forEach((point, offset) => {
+      const index = offset + 1;
+      const marker = L.marker(point, {icon: markerIcon('waypoint', String(index)), draggable: true, title: 'Stützpunkt ziehen oder per Rechtsklick löschen'});
+      marker.on('drag', event => { drawing.points[index] = [event.latlng.lat, event.latlng.lng]; renderDrawing(); });
+      marker.on('dragend', () => drawing.callbacks.onChange?.(drawing.points.map(entry => [...entry])));
+      marker.on('contextmenu', () => { drawing.points.splice(index, 1); renderDrawing(); drawing.callbacks.onChange?.(drawing.points.map(entry => [...entry])); });
+      previewLayer.addLayer(marker);
+    });
+  }
+
+  function beginRoadDrawing({originId, type, allowedTargetIds = [], onChange, onComplete} = {}) {
+    clearProjectPreview();
+    const start = nodeInfo(originId, renderedCitiesById);
+    if (!networkMap || !window.L || !start) return false;
+    previewLayer = L.layerGroup().addTo(networkMap);
+    previewCallbacks = {};
+    previewProject = {a: originId, type};
+    drawing = {originId, type, points: [[start.lat, start.lng]], allowedTargetIds: new Set(allowedTargetIds), callbacks: {onChange, onComplete}};
+    networkMap.on?.('click', handlePreviewMapClick);
+    networkMap.on?.('mousemove', handleDrawingMouseMove);
+    renderDrawing();
+    return true;
+  }
+
+  function handleDrawingCityClick(cityId) {
+    if (!drawing || cityId === drawing.originId || !drawing.allowedTargetIds.has(cityId)) return false;
+    const target = nodeInfo(cityId, renderedCitiesById);
+    if (!target) return false;
+    const geometry = [...drawing.points.map(point => [...point]), [target.lat, target.lng]];
+    const complete = drawing.callbacks.onComplete;
+    drawing = null;
+    drawingCursor = null;
+    networkMap?.off?.('mousemove', handleDrawingMouseMove);
+    networkMap?.off?.('click', handlePreviewMapClick);
+    complete?.({targetId: cityId, geometry});
+    return true;
   }
 
   function markerIcon(kind, label) {
@@ -235,7 +301,7 @@
     if (!visible && map.hasLayer(networkLineLayer)) map.removeLayer(networkLineLayer);
   }
 
-  const api = {initNetworkLayer, renderNetworkLines, clearNetworkLines, setNetworkLayerVisible, renderProjectPreview, clearProjectPreview};
+  const api = {initNetworkLayer, renderNetworkLines, clearNetworkLines, setNetworkLayerVisible, renderProjectPreview, clearProjectPreview, beginRoadDrawing, handleDrawingCityClick};
   window.HFNetworkLayer = api;
   window.HFNetwork = {...(window.HFNetwork || {}), ...api};
   window.addEventListener?.('hf:network:capacity-changed', refreshRenderedNetwork);

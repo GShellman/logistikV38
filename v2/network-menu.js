@@ -14,8 +14,6 @@
 
   let activeOriginId = null;
   let activeTargetId = null;
-  let routeRequestId = 0;
-  let routeAbortController = null;
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"]/g, char => ({
@@ -185,6 +183,39 @@
       </div>`;
   }
 
+  function renderRoadTypePicker(originId) {
+    activeOriginId = originId;
+    activeTargetId = null;
+    const origin = cityById(originId);
+    const specs = network()?.TRANSPORT_TYPES || {};
+    return `<div class="hf-v2-network-menu" data-network-origin="${escapeHtml(originId)}">
+      <p class="hf-v2-network-eyebrow">Straßenbau</p>
+      <h3>Ab ${escapeHtml(origin?.name || originId)} zeichnen</h3>
+      ${renderCashBadge()}
+      <p class="hf-v2-network-hint">Wähle zuerst den Straßentyp. Setze danach auf der Karte beliebig viele Stützpunkte und klicke zum Abschluss auf eine zulässige Zielstadt.</p>
+      <div class="hf-v2-network-grid">${ROAD_TYPES.map(type => {
+        const spec = specs[type];
+        if (!spec) return '';
+        return `<button class="hf-v2-network-option" type="button" data-action="start-road-drawing" data-origin="${escapeHtml(originId)}" data-type="${escapeHtml(type)}">
+          <span class="hf-v2-network-option__header"><span class="hf-v2-network-icon" aria-hidden="true">${escapeHtml(spec.icon)}</span><span class="hf-v2-network-option__title"><strong>${escapeHtml(DISPLAY_NAMES[type] || spec.name)}</strong><small>${formatMoney(spec.buildKm)} je km · ${escapeHtml(spec.speed)} km/h</small></span></span>
+          <span class="hf-v2-network-option__desc">${escapeHtml(spec.desc || '')}</span>
+        </button>`;
+      }).join('')}</div>
+    </div>`;
+  }
+
+  function renderDrawingPhase(originId, type, pointCount = 1) {
+    const origin = cityById(originId);
+    const spec = network()?.TRANSPORT_TYPES?.[type];
+    return `<div class="hf-v2-network-menu hf-v2-route-editor" data-network-origin="${escapeHtml(originId)}">
+      <p class="hf-v2-network-eyebrow">Zeichenmodus</p>
+      <h3>${escapeHtml(DISPLAY_NAMES[type] || spec?.name)} ab ${escapeHtml(origin?.name || originId)}</h3>
+      <p class="hf-v2-network-hint">Klicke in die Karte, um Stützpunkte fortlaufend anzulegen. Ziehe einen Punkt zum Verschieben oder lösche ihn mit Rechtsklick. Ein Klick auf eine zulässige Zielstadt beendet die Trasse.</p>
+      <p><strong>${Math.max(0, pointCount - 1)} Stützpunkte gesetzt</strong></p>
+      <div class="hf-v2-route-editor__actions"><button type="button" data-action="cancel-planning">Zeichnen abbrechen</button></div>
+    </div>`;
+  }
+
   function currentCash() {
     return window.HFV2Save?.getCash?.() ?? 0;
   }
@@ -299,21 +330,19 @@
     return `<div class="hf-v2-network-menu hf-v2-route-editor" data-network-origin="${escapeHtml(project.a)}" data-network-target-id="${escapeHtml(project.b)}">
       <p class="hf-v2-network-eyebrow">Planungsphase</p>
       <h3>Route auf Karte bearbeiten</h3>
-      <p class="hf-v2-network-hint">Klicke auf die Karte, um einen Wegpunkt hinzuzufügen. Ziehe Wegpunkte; per Rechtsklick werden sie entfernt. Kreuzungsmarker schalten optionale Anschlüsse um.</p>
+      <p class="hf-v2-network-hint">Die gezeichnete Trasse kann auf der Karte weiter bearbeitet werden. Ziehe Stützpunkte; per Rechtsklick werden sie entfernt.</p>
       <div class="hf-v2-network-comparison">
         <span><em>Distanz</em><strong>${formatKm(project.distance)}</strong></span>
         <span><em>Baukosten</em><strong>${formatMoney(project.cost)}</strong></span>
         <span><em>Unterhalt</em><strong>${formatMoney(project.maintenance)}</strong></span>
         <span><em>Anschlussknoten</em><strong>${enabledConnections}</strong></span>
       </div>
-      ${busy ? '<p role="status">Route wird aktualisiert …</p>' : ''}
       <div class="hf-v2-route-editor__actions">
         <button type="button" data-action="add-waypoint">Wegpunkt hinzufügen</button>
         <button type="button" data-action="remove-waypoint" ${(project.waypoints || []).length ? '' : 'disabled'}>Wegpunkt entfernen</button>
         <button type="button" data-action="set-connection">Anschlussknoten setzen</button>
-        <button type="button" data-action="restore-route">Automatische Route wiederherstellen</button>
         <button type="button" data-action="cancel-planning">Bearbeitung abbrechen</button>
-        <button type="button" data-action="confirm-project" class="hf-v2-network-badge--primary">Bau bestätigen</button>
+        <button type="button" data-action="confirm-project" class="hf-v2-network-badge--primary" ${project.a && project.b && project.geometry?.length >= 2 ? '' : 'disabled'}>Bau bestätigen</button>
       </div>
     </div>`;
   }
@@ -332,16 +361,11 @@
   async function changeWaypoints(waypoints) {
     const old = network()?.getState?.().pendingProject;
     if (!old) return;
-    const requestId = ++routeRequestId;
-    routeAbortController?.abort?.();
-    routeAbortController = new AbortController();
-    showProject({...old, waypoints}, true);
-    try {
-      const project = await window.HF_V2?.planConnection?.(old.a, old.b, old.type, {waypoints, connectionPoints: old.connectionPoints, signal: routeAbortController.signal});
-      if (requestId === routeRequestId && project) showProject(project);
-    } catch (error) {
-      if (error?.name !== 'AbortError') console.error('Route konnte nicht aktualisiert werden', error);
-    }
+    const start = cityById(old.a);
+    const target = cityById(old.b);
+    const geometry = [[start.lat, start.lng], ...waypoints.map(point => [point.lat, point.lng]), [target.lat, target.lng]];
+    const project = await window.HF_V2?.planConnection?.(old.a, old.b, old.type, {geometry, connectionPoints: old.connectionPoints});
+    if (project) showProject(project);
   }
 
   function toggleConnection(id) {
@@ -351,12 +375,6 @@
     showProject(project);
   }
 
-  function nextPaint() {
-    return typeof window.requestAnimationFrame === 'function'
-      ? new Promise(resolve => window.requestAnimationFrame(resolve))
-      : Promise.resolve();
-  }
-
   async function handleBuild(type, originId = activeOriginId, targetId = activeTargetId, buildButton = null) {
     activeOriginId = originId;
     activeTargetId = targetId;
@@ -364,13 +382,8 @@
     if (buildButton) {
       buildButton.disabled = true;
       buildButton.setAttribute?.('aria-busy', 'true');
-      const badges = buildButton.querySelector?.('.hf-v2-network-option__badges');
-      if (badges) badges.innerHTML = '<span class="hf-v2-network-badge hf-v2-network-badge--primary">Route und Kreuzungen werden berechnet …</span>';
     }
     try {
-      // Give the browser a frame to display feedback before routing and network
-      // splitting start. The optimized splitter then keeps the blocking phase short.
-      await nextPaint();
       const project = await window.HF_V2?.planConnection?.(originId, targetId, type);
       if (!project) return;
       if (project.ok === false && project.reason === 'not-enough-cash') {
@@ -398,6 +411,31 @@
     }
   }
 
+  function startRoadDrawing(originId, type) {
+    activeOriginId = originId;
+    activeTargetId = null;
+    const allowedTargetIds = candidateTargets(originId)
+      .filter(city => !connectionState(originId, city.id).road)
+      .map(city => city.id);
+    setBody(renderDrawingPhase(originId, type));
+    const started = window.HFNetworkLayer?.beginRoadDrawing?.({
+      originId,
+      type,
+      allowedTargetIds,
+      onChange: geometry => setBody(renderDrawingPhase(originId, type, geometry.length)),
+      onComplete: async ({targetId, geometry}) => {
+        activeTargetId = targetId;
+        const project = await window.HF_V2?.planConnection?.(originId, targetId, type, {geometry});
+        if (project?.ok === false) {
+          setBody(project.reason === 'not-enough-cash' ? `<div class="hf-v2-network-menu"><h3>Nicht genug Kapital</h3><p>Benötigt ${formatMoney(project.cost)}, verfügbar ${formatMoney(project.cash)}.</p><button type="button" data-action="cancel-planning">Zurück</button></div>` : renderBuildFailure());
+          return;
+        }
+        if (project) showProject(project);
+      },
+    });
+    if (!started) setBody(renderBuildFailure());
+  }
+
   function bindNetworkMenuEvents() {
     document.addEventListener('click', event => {
       const actionButton = event.target.closest?.('[data-action]');
@@ -413,6 +451,11 @@
 
       if (action === 'select-target') {
         setBody(renderBuildOptions(activeOriginId, target));
+        return;
+      }
+
+      if (action === 'start-road-drawing') {
+        startRoadDrawing(origin, type);
         return;
       }
 
@@ -453,13 +496,11 @@
 
       if (action === 'set-connection') return;
 
-      if (action === 'restore-route') { changeWaypoints([]); return; }
-
       if (action === 'cancel-planning') {
         const project = network()?.getState?.();
         if (project) project.pendingProject = null;
         window.HFNetworkLayer?.clearProjectPreview?.();
-        setBody(renderBuildOptions(activeOriginId, activeTargetId));
+        setBody(renderRoadTypePicker(activeOriginId));
         return;
       }
 
@@ -485,11 +526,11 @@
       className: 'hf-v2-network-modal',
       title: 'Netzwerkplanung',
       subtitle: origin.name,
-      bodyHtml: renderTargetPicker(cityId),
+      bodyHtml: renderRoadTypePicker(cityId),
     });
   }
 
   bindNetworkMenuEvents();
 
-  window.HFNetworkMenu = {openNetworkMenuForCity, renderTargetPicker, renderBuildOptions, renderPlanningPhase, handleBuild};
+  window.HFNetworkMenu = {openNetworkMenuForCity, renderTargetPicker, renderRoadTypePicker, renderBuildOptions, renderPlanningPhase, handleBuild, startRoadDrawing};
 })();
