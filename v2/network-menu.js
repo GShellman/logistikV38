@@ -14,6 +14,8 @@
 
   let activeOriginId = null;
   let activeTargetId = null;
+  let routeRequestId = 0;
+  let routeAbortController = null;
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"]/g, char => ({
@@ -292,6 +294,63 @@
       </div>`;
   }
 
+  function renderPlanningPhase(project, busy = false) {
+    const enabledConnections = (project.connectionPoints || []).filter(point => point.enabled !== false).length;
+    return `<div class="hf-v2-network-menu hf-v2-route-editor" data-network-origin="${escapeHtml(project.a)}" data-network-target-id="${escapeHtml(project.b)}">
+      <p class="hf-v2-network-eyebrow">Planungsphase</p>
+      <h3>Route auf Karte bearbeiten</h3>
+      <p class="hf-v2-network-hint">Klicke auf die Karte, um einen Wegpunkt hinzuzufügen. Ziehe Wegpunkte; per Rechtsklick werden sie entfernt. Kreuzungsmarker schalten optionale Anschlüsse um.</p>
+      <div class="hf-v2-network-comparison">
+        <span><em>Distanz</em><strong>${formatKm(project.distance)}</strong></span>
+        <span><em>Baukosten</em><strong>${formatMoney(project.cost)}</strong></span>
+        <span><em>Unterhalt</em><strong>${formatMoney(project.maintenance)}</strong></span>
+        <span><em>Anschlussknoten</em><strong>${enabledConnections}</strong></span>
+      </div>
+      ${busy ? '<p role="status">Route wird aktualisiert …</p>' : ''}
+      <div class="hf-v2-route-editor__actions">
+        <button type="button" data-action="add-waypoint">Wegpunkt hinzufügen</button>
+        <button type="button" data-action="remove-waypoint" ${(project.waypoints || []).length ? '' : 'disabled'}>Wegpunkt entfernen</button>
+        <button type="button" data-action="set-connection">Anschlussknoten setzen</button>
+        <button type="button" data-action="restore-route">Automatische Route wiederherstellen</button>
+        <button type="button" data-action="cancel-planning">Bearbeitung abbrechen</button>
+        <button type="button" data-action="confirm-project" class="hf-v2-network-badge--primary">Bau bestätigen</button>
+      </div>
+    </div>`;
+  }
+
+  function showProject(project, busy = false) {
+    if (!project) return;
+    setBody(renderPlanningPhase(project, busy));
+    window.HFNetworkLayer?.renderProjectPreview?.(project, {
+      onAddWaypoint: point => changeWaypoints([...(project.waypoints || []), point]),
+      onMoveWaypoint: (index, point) => changeWaypoints((project.waypoints || []).map((old, i) => i === index ? {lat: point.lat, lng: point.lng} : old)),
+      onRemoveWaypoint: index => changeWaypoints((project.waypoints || []).filter((_, i) => i !== index)),
+      onToggleConnection: id => toggleConnection(id),
+    });
+  }
+
+  async function changeWaypoints(waypoints) {
+    const old = network()?.getState?.().pendingProject;
+    if (!old) return;
+    const requestId = ++routeRequestId;
+    routeAbortController?.abort?.();
+    routeAbortController = new AbortController();
+    showProject({...old, waypoints}, true);
+    try {
+      const project = await window.HF_V2?.planConnection?.(old.a, old.b, old.type, {waypoints, connectionPoints: old.connectionPoints, signal: routeAbortController.signal});
+      if (requestId === routeRequestId && project) showProject(project);
+    } catch (error) {
+      if (error?.name !== 'AbortError') console.error('Route konnte nicht aktualisiert werden', error);
+    }
+  }
+
+  function toggleConnection(id) {
+    const project = network()?.getState?.().pendingProject;
+    if (!project) return;
+    project.connectionPoints = (project.connectionPoints || []).map(point => point.id === id ? {...point, enabled: point.enabled === false} : point);
+    showProject(project);
+  }
+
   function nextPaint() {
     return typeof window.requestAnimationFrame === 'function'
       ? new Promise(resolve => window.requestAnimationFrame(resolve))
@@ -325,12 +384,7 @@
         </div>`);
         return;
       }
-      const confirmedEdge = await window.HF_V2?.confirmProject?.();
-      if (!confirmedEdge) {
-        setBody(renderBuildFailure());
-        return;
-      }
-      window.HFV2Modal?.closeModal?.();
+      showProject(project);
     } catch (error) {
       console.error('Netzwerkprojekt konnte nicht gebaut werden', error);
       setBody(renderBuildFailure());
@@ -383,6 +437,41 @@
         return;
       }
 
+      if (action === 'add-waypoint') {
+        const project = network()?.getState?.().pendingProject;
+        const geometry = project?.geometry || [];
+        const middle = geometry[Math.floor(geometry.length / 2)];
+        if (middle) changeWaypoints([...(project.waypoints || []), {lat: middle[0], lng: middle[1]}]);
+        return;
+      }
+
+      if (action === 'remove-waypoint') {
+        const project = network()?.getState?.().pendingProject;
+        changeWaypoints((project?.waypoints || []).slice(0, -1));
+        return;
+      }
+
+      if (action === 'set-connection') return;
+
+      if (action === 'restore-route') { changeWaypoints([]); return; }
+
+      if (action === 'cancel-planning') {
+        const project = network()?.getState?.();
+        if (project) project.pendingProject = null;
+        window.HFNetworkLayer?.clearProjectPreview?.();
+        setBody(renderBuildOptions(activeOriginId, activeTargetId));
+        return;
+      }
+
+      if (action === 'confirm-project') {
+        const edge = window.HF_V2?.confirmProject?.();
+        if (edge) {
+          window.HFNetworkLayer?.clearProjectPreview?.();
+          window.HFV2Modal?.closeModal?.();
+        } else setBody(renderBuildFailure());
+        return;
+      }
+
       if (action === 'close-network-modal') {
         window.HF_V2?.closeModal?.();
       }
@@ -402,5 +491,5 @@
 
   bindNetworkMenuEvents();
 
-  window.HFNetworkMenu = {openNetworkMenuForCity, renderTargetPicker, renderBuildOptions};
+  window.HFNetworkMenu = {openNetworkMenuForCity, renderTargetPicker, renderBuildOptions, renderPlanningPhase, handleBuild};
 })();

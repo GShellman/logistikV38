@@ -155,6 +155,9 @@
       minute: normalizeTimeUnit(sourceTime.minute, timeDefaults.minute, 0, 59),
     };
     network.connections = Array.isArray(network.connections) ? network.connections : [];
+    // Route-editor drafts are deliberately session-local. Loading a save starts
+    // from the last confirmed graph and never turns waypoints into durable nodes.
+    network.pendingProject = null;
     network.junctions = Array.isArray(network.junctions) ? network.junctions : [];
     network.cities = network.cities && typeof network.cities === 'object' ? network.cities : {};
     network.cities.zurich = {...(network.cities.zurich || {}), unlocked: true};
