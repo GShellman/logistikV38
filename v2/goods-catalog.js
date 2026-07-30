@@ -51,6 +51,10 @@
   ]);
 
   function good(id, name, icon, category, unit, price, properties, allowedVehicleGroups, assetGlobal, economics = {}) {
+    const loose = allowedVehicleGroups.includes('bulk');
+    const packaging = loose
+      ? {loadCarrier: 'loose', maxNetKgPerCarrier: null, carrierTareKg: 0, stackable: false}
+      : {loadCarrier: 'euro-pallet', maxNetKgPerCarrier: 700, carrierTareKg: 25, stackable: true};
     return Object.freeze({
       id,
       name,
@@ -60,6 +64,7 @@
       price,
       properties,
       transport: Object.freeze({allowedVehicleGroups: Object.freeze([...allowedVehicleGroups])}),
+      packaging: Object.freeze(packaging),
       economics: Object.freeze({...economics}),
       assetGlobal,
     });
