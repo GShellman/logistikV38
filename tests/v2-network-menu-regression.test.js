@@ -62,7 +62,8 @@ test('Straßenauswahl öffnet zuerst die Planungsphase und bestätigt erst auf W
 
   assert.deepEqual(calls, ['plan', 'set-body']);
   assert.match(modalBodyHtml, /Route auf Karte bearbeiten/);
-  assert.match(modalBodyHtml, /Bau bestätigen/);
+  assert.match(modalBodyHtml, />Bauen<\/button>/);
+  assert.match(modalBodyHtml, /class="hf-v2-network-build" disabled/);
 
   const confirmButton = {dataset: {action: 'confirm-project'}, closest: selector => selector === '[data-action]' ? confirmButton : null};
   clickHandler({target: confirmButton, preventDefault() {}});
