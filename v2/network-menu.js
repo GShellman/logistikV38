@@ -287,28 +287,56 @@
       </div>`;
   }
 
-  async function handleBuild(type, originId = activeOriginId, targetId = activeTargetId) {
+  function nextPaint() {
+    return typeof window.requestAnimationFrame === 'function'
+      ? new Promise(resolve => window.requestAnimationFrame(resolve))
+      : Promise.resolve();
+  }
+
+  async function handleBuild(type, originId = activeOriginId, targetId = activeTargetId, buildButton = null) {
     activeOriginId = originId;
     activeTargetId = targetId;
-    const project = await window.HF_V2?.planConnection?.(originId, targetId, type);
-    if (!project) return;
-    if (project.ok === false && project.reason === 'not-enough-cash') {
-      setBody(`
-        <div class="hf-v2-network-menu">
-          <p class="hf-v2-network-eyebrow">Nicht genug Kapital</p>
-          <h3>Projekt nicht planbar</h3>
-          ${renderCashBadge()}
-          <p class="hf-v2-network-hint">Benötigt ${formatMoney(project.cost)}, verfügbar ${formatMoney(project.cash)}.</p>
-          <button class="hf-v2-network-back" type="button" data-action="back-to-build-options">Weitere Option wählen</button>
-      </div>`);
-      return;
+    const previousLabel = buildButton?.querySelector?.('.hf-v2-network-option__badges')?.innerHTML;
+    if (buildButton) {
+      buildButton.disabled = true;
+      buildButton.setAttribute?.('aria-busy', 'true');
+      const badges = buildButton.querySelector?.('.hf-v2-network-option__badges');
+      if (badges) badges.innerHTML = '<span class="hf-v2-network-badge hf-v2-network-badge--primary">Route und Kreuzungen werden berechnet …</span>';
     }
-    const confirmedEdge = await window.HF_V2?.confirmProject?.();
-    if (!confirmedEdge) {
+    try {
+      // Give the browser a frame to display feedback before routing and network
+      // splitting start. The optimized splitter then keeps the blocking phase short.
+      await nextPaint();
+      const project = await window.HF_V2?.planConnection?.(originId, targetId, type);
+      if (!project) return;
+      if (project.ok === false && project.reason === 'not-enough-cash') {
+        setBody(`
+          <div class="hf-v2-network-menu">
+            <p class="hf-v2-network-eyebrow">Nicht genug Kapital</p>
+            <h3>Projekt nicht planbar</h3>
+            ${renderCashBadge()}
+            <p class="hf-v2-network-hint">Benötigt ${formatMoney(project.cost)}, verfügbar ${formatMoney(project.cash)}.</p>
+            <button class="hf-v2-network-back" type="button" data-action="back-to-build-options">Weitere Option wählen</button>
+        </div>`);
+        return;
+      }
+      const confirmedEdge = await window.HF_V2?.confirmProject?.();
+      if (!confirmedEdge) {
+        setBody(renderBuildFailure());
+        return;
+      }
+      window.HFV2Modal?.closeModal?.();
+    } catch (error) {
+      console.error('Netzwerkprojekt konnte nicht gebaut werden', error);
       setBody(renderBuildFailure());
-      return;
+    } finally {
+      if (buildButton?.isConnected) {
+        buildButton.disabled = false;
+        buildButton.removeAttribute?.('aria-busy');
+        const badges = buildButton.querySelector?.('.hf-v2-network-option__badges');
+        if (badges && previousLabel !== undefined) badges.innerHTML = previousLabel;
+      }
     }
-    window.HFV2Modal?.closeModal?.();
   }
 
   function bindNetworkMenuEvents() {
@@ -336,7 +364,7 @@
       }
 
       if (action === 'plan-connection') {
-        handleBuild(type, origin, target);
+        handleBuild(type, origin, target, actionButton);
         return;
       }
 

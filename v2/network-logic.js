@@ -8,7 +8,12 @@
   // not to join neighbouring streets accidentally.  Unlike a degree epsilon it
   // has the same meaning everywhere on the map.
   const JUNCTION_SNAP_KM = 0.05;
+  const ROAD_REUSE_MIN_KM = 0.15;
+  const CITY_APPROACH_MAX_KM = 3;
+  const CITY_APPROACH_ROUTE_RATIO = 0.08;
   const CAPACITY_WINDOW_MINUTES = 60;
+  const MAX_ROUTE_GEOMETRY_POINTS = 2000;
+  let intersectionStats = {segmentChecks: 0, bboxRejects: 0};
 
   const TRANSPORT_TYPES = {
     localroad: {name: 'Gemeindestraße', short: 'GEMEINDE', mode: 'road', icon: '🛤️', capacity: 3, capacityUnit: 'Fahrzeuge', speed: 35, baseCost: 4000, buildKm: 280, maintenanceKm: 12, color: '#85796b', weight: 2, desc: 'Sehr günstig, aber langsam und mit geringer Tageskapazität.'},
@@ -117,14 +122,40 @@
     return total;
   }
 
-  function geometryPointOffset(coords, segmentIndex, segmentT) {
-    let total = 0;
-    for (let i = 0; i < segmentIndex; i++) {
-      total += dist({lat: coords[i][0], lng: coords[i][1]}, {lat: coords[i + 1][0], lng: coords[i + 1][1]});
+  function geometryMetrics(coords) {
+    const offsets = new Array(coords.length).fill(0);
+    const segmentLengths = new Array(Math.max(0, coords.length - 1));
+    for (let i = 0; i < coords.length - 1; i++) {
+      segmentLengths[i] = dist({lat: coords[i][0], lng: coords[i][1]}, {lat: coords[i + 1][0], lng: coords[i + 1][1]});
+      offsets[i + 1] = offsets[i] + segmentLengths[i];
     }
+    return {offsets, segmentLengths, total: offsets[offsets.length - 1] || 0};
+  }
+
+  function geometryPointOffset(coords, segmentIndex, segmentT, metrics = geometryMetrics(coords)) {
     const a = coords[segmentIndex];
     const b = coords[segmentIndex + 1];
-    return total + dist({lat: a[0], lng: a[1]}, {lat: a[0] + (b[0] - a[0]) * segmentT, lng: a[1] + (b[1] - a[1]) * segmentT});
+    // Scaling a straight segment by t also scales its great-circle distance
+    // sufficiently accurately for the short OSRM segments used here.
+    return metrics.offsets[segmentIndex] + metrics.segmentLengths[segmentIndex] * Math.max(0, Math.min(1, segmentT));
+  }
+
+  function segmentBounds(a, b, padding = 0) {
+    return {minLat: Math.min(a[0], b[0]) - padding, maxLat: Math.max(a[0], b[0]) + padding,
+      minLng: Math.min(a[1], b[1]) - padding, maxLng: Math.max(a[1], b[1]) + padding};
+  }
+
+  function boundsOverlap(a, b) {
+    return a.minLat <= b.maxLat && a.maxLat >= b.minLat && a.minLng <= b.maxLng && a.maxLng >= b.minLng;
+  }
+
+  function geometryBounds(coords, padding = 0) {
+    const result = {minLat: Infinity, maxLat: -Infinity, minLng: Infinity, maxLng: -Infinity};
+    for (const point of coords) {
+      result.minLat = Math.min(result.minLat, point[0] - padding); result.maxLat = Math.max(result.maxLat, point[0] + padding);
+      result.minLng = Math.min(result.minLng, point[1] - padding); result.maxLng = Math.max(result.maxLng, point[1] + padding);
+    }
+    return result;
   }
 
   function segmentIntersection(a, b, c, d) {
@@ -153,6 +184,7 @@
     const qpx = cx - ax, qpy = cy - ay;
     const t = (qpx * sY - qpy * sX) / denom;
     const u = (qpx * rY - qpy * rX) / denom;
+    if (t < -INTERSECTION_EPS || t > 1 + INTERSECTION_EPS || u < -INTERSECTION_EPS || u > 1 + INTERSECTION_EPS) return null;
     return {point: [ay + rY * t, ax + rX * t], t, u};
   }
 
@@ -165,10 +197,43 @@
     return {point: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], t};
   }
 
+  function segmentsAreParallel(a, b, c, d) {
+    const latitude = (a[0] + b[0] + c[0] + d[0]) / 4 * Math.PI / 180;
+    const ax = (b[1] - a[1]) * Math.cos(latitude), ay = b[0] - a[0];
+    const bx = (d[1] - c[1]) * Math.cos(latitude), by = d[0] - c[0];
+    const lengths = Math.hypot(ax, ay) * Math.hypot(bx, by);
+    return lengths > 1e-14 && Math.abs((ax * bx + ay * by) / lengths) >= 0.94;
+  }
+
   function geometryIntersections(aCoords, bCoords) {
     const hits = [];
+    const aMetrics = geometryMetrics(aCoords);
+    const bMetrics = geometryMetrics(bCoords);
+    // A conservative degree padding retains the existing 50 m near-miss/T-join
+    // behaviour before doing the more expensive geodesic test.
+    const padding = JUNCTION_SNAP_KM / 110;
+    const aBounds = aCoords.slice(0, -1).map((point, index) => segmentBounds(point, aCoords[index + 1], padding));
+    const bBounds = bCoords.slice(0, -1).map((point, index) => segmentBounds(point, bCoords[index + 1], padding));
+    const corridorVertices = new Map();
     for (let ai = 0; ai < aCoords.length - 1; ai++) {
       for (let bi = 0; bi < bCoords.length - 1; bi++) {
+        if (!boundsOverlap(aBounds[ai], bBounds[bi])) {
+          intersectionStats.bboxRejects += 1;
+          continue;
+        }
+        intersectionStats.segmentChecks += 1;
+        if (segmentsAreParallel(aCoords[ai], aCoords[ai + 1], bCoords[bi], bCoords[bi + 1])) {
+          for (const vertexIndex of [ai, ai + 1]) {
+            const projected = closestPointOnSegment(aCoords[vertexIndex], bCoords[bi], bCoords[bi + 1]);
+            const separation = dist({lat: aCoords[vertexIndex][0], lng: aCoords[vertexIndex][1]},
+              {lat: projected.point[0], lng: projected.point[1]});
+            const previous = corridorVertices.get(vertexIndex);
+            if (separation <= JUNCTION_SNAP_KM && (!previous || separation < previous.separation)) {
+              corridorVertices.set(vertexIndex, {vertexIndex, point: projected.point, separation,
+                bIndex: bi, bT: projected.t, bOffset: geometryPointOffset(bCoords, bi, projected.t, bMetrics)});
+            }
+          }
+        }
         const result = segmentIntersection(aCoords[ai], aCoords[ai + 1], bCoords[bi], bCoords[bi + 1]);
         const exactHits = Array.isArray(result) ? result : (result ? [result] : []);
         for (const hit of exactHits) hits.push({
@@ -177,30 +242,87 @@
           aT: hit.t,
           bIndex: bi,
           bT: hit.u,
-          aOffset: geometryPointOffset(aCoords, ai, hit.t),
-          bOffset: geometryPointOffset(bCoords, bi, hit.u),
+          aOffset: geometryPointOffset(aCoords, ai, hit.t, aMetrics),
+          bOffset: geometryPointOffset(bCoords, bi, hit.u, bMetrics),
         });
         if (exactHits.length) continue;
-        // Near misses primarily arise at route endpoints.  Testing all four
-        // endpoint projections also covers T joins and interior polyline points.
+        // Snapping every OSRM shape point to a nearby/parallel road creates a
+        // junction every few metres. Near misses are meaningful only where one
+        // of the complete polylines ends (a T join or shared route endpoint).
+        // Interior crossings are handled by the exact intersection above.
         const candidates = [];
-        for (const [point, onA] of [[aCoords[ai], true], [aCoords[ai + 1], true], [bCoords[bi], false], [bCoords[bi + 1], false]]) {
+        const endpoints = [];
+        if (ai === 0) endpoints.push([aCoords[ai], true, 0]);
+        if (ai === aCoords.length - 2) endpoints.push([aCoords[ai + 1], true, 1]);
+        if (bi === 0) endpoints.push([bCoords[bi], false, 0]);
+        if (bi === bCoords.length - 2) endpoints.push([bCoords[bi + 1], false, 1]);
+        for (const [point, onA, endpointT] of endpoints) {
           const projected = onA ? closestPointOnSegment(point, bCoords[bi], bCoords[bi + 1]) : closestPointOnSegment(point, aCoords[ai], aCoords[ai + 1]);
           if (dist({lat: point[0], lng: point[1]}, {lat: projected.point[0], lng: projected.point[1]}) > JUNCTION_SNAP_KM) continue;
-          const aT = onA ? (samePoint(point, aCoords[ai]) ? 0 : 1) : projected.t;
-          const bT = onA ? projected.t : (samePoint(point, bCoords[bi]) ? 0 : 1);
+          const aT = onA ? endpointT : projected.t;
+          const bT = onA ? projected.t : endpointT;
           candidates.push({point: onA ? point : projected.point, aT, bT});
         }
         for (const hit of candidates) hits.push({point: hit.point, aIndex: ai, aT: hit.aT, bIndex: bi, bT: hit.bT,
-          aOffset: geometryPointOffset(aCoords, ai, hit.aT), bOffset: geometryPointOffset(bCoords, bi, hit.bT)});
+          aOffset: geometryPointOffset(aCoords, ai, hit.aT, aMetrics), bOffset: geometryPointOffset(bCoords, bi, hit.bT, bMetrics)});
+      }
+    }
+    // Nearby OSRM results for the same physical road commonly run a few metres
+    // apart and therefore never intersect exactly. Collapse every sufficiently
+    // long, continuous parallel run to its entry and exit. The splitter can then
+    // connect there and discard the duplicate project edge between those nodes.
+    const vertices = [...corridorVertices.values()].sort((a, b) => a.vertexIndex - b.vertexIndex);
+    const runs = [];
+    for (const vertex of vertices) {
+      const run = runs[runs.length - 1];
+      const previous = run?.[run.length - 1];
+      const aGap = previous ? aMetrics.offsets[vertex.vertexIndex] - aMetrics.offsets[previous.vertexIndex] : 0;
+      const continues = previous && vertex.vertexIndex === previous.vertexIndex + 1
+        && Math.abs(vertex.bOffset - previous.bOffset) <= Math.max(0.5, aGap * 3);
+      if (continues) run.push(vertex); else runs.push([vertex]);
+    }
+    for (const run of runs) {
+      const first = run[0], last = run[run.length - 1];
+      if (aMetrics.offsets[last.vertexIndex] - aMetrics.offsets[first.vertexIndex] < ROAD_REUSE_MIN_KM) continue;
+      for (const vertex of first === last ? [first] : [first, last]) {
+        const aIndex = Math.min(vertex.vertexIndex, aCoords.length - 2);
+        const aT = vertex.vertexIndex === aCoords.length - 1 ? 1 : 0;
+        const aOffset = geometryPointOffset(aCoords, aIndex, aT, aMetrics);
+        const endpointWindow = Math.max(ROAD_REUSE_MIN_KM, (aMetrics.segmentLengths[aIndex] || 0) * 2);
+        // Coarsely sampled routes may enter a shared corridor one shape point
+        // after an already detected existing-road endpoint. Prefer that stable
+        // graph node instead of adding a junction a few metres farther along.
+        const hasNearbyEndpointHit = hits.some(hit => Math.abs(hit.aOffset - aOffset) <= endpointWindow
+          && ((hit.bOffset <= INTERSECTION_EPS && vertex.bOffset <= endpointWindow)
+            || (hit.bOffset >= bMetrics.total - INTERSECTION_EPS && vertex.bOffset >= bMetrics.total - endpointWindow)));
+        if (hasNearbyEndpointHit) continue;
+        hits.push({point: vertex.point, aIndex, aT, bIndex: vertex.bIndex, bT: vertex.bT,
+          aOffset, bOffset: vertex.bOffset, corridor: true});
       }
     }
     return hits;
   }
 
   function uniqueIntersections(hits) {
-    return hits.sort((a, b) => a.aOffset - b.aOffset || a.bOffset - b.bOffset)
-      .filter((hit, index, sorted) => !sorted.slice(0, index).some(other => dist({lat: other.point[0], lng: other.point[1]}, {lat: hit.point[0], lng: hit.point[1]}) < JUNCTION_SNAP_KM));
+    const sorted = hits.sort((a, b) => a.aOffset - b.aOffset || a.bOffset - b.bOffset);
+    const cellDegrees = JUNCTION_SNAP_KM / 110;
+    const cells = new Map();
+    const unique = [];
+    for (const hit of sorted) {
+      const x = Math.floor(hit.point[1] / cellDegrees);
+      const y = Math.floor(hit.point[0] / cellDegrees);
+      let duplicate = false;
+      for (let dx = -1; dx <= 1 && !duplicate; dx++) for (let dy = -1; dy <= 1 && !duplicate; dy++) {
+        duplicate = (cells.get(`${x + dx}:${y + dy}`) || []).some(other => dist(
+          {lat: other.point[0], lng: other.point[1]}, {lat: hit.point[0], lng: hit.point[1]}) < JUNCTION_SNAP_KM);
+      }
+      if (duplicate) continue;
+      unique.push(hit);
+      const key = `${x}:${y}`;
+      if (!cells.has(key)) cells.set(key, []);
+      cells.get(key).push(hit);
+    }
+    return unique;
   }
 
   function normalizeCuts(coords, cuts) {
@@ -281,6 +403,7 @@
   }
 
   function splitRoadsForAutomaticJunctions(project, targetState = state) {
+    intersectionStats = {segmentChecks: 0, bboxRejects: 0};
     const projectSpec = transportSpec(project.type);
     if (projectSpec.mode !== 'road') return [edgeWithGeometry(project, project.a, project.b, project.type,
       project.geometry || [[nodeInfo(project.a, targetState).lat, nodeInfo(project.a, targetState).lng], [nodeInfo(project.b, targetState).lat, nodeInfo(project.b, targetState).lng]], targetState)];
@@ -290,17 +413,27 @@
       : [[nodeInfo(project.a, targetState).lat, nodeInfo(project.a, targetState).lng], [nodeInfo(project.b, targetState).lat, nodeInfo(project.b, targetState).lng]];
     const newCuts = [];
     const replacements = new Map();
+    const projectBounds = geometryBounds(projectGeometry, JUNCTION_SNAP_KM / 110);
+    const projectDistance = geometryDistance(projectGeometry);
+    // OSRM routes from several cities fan in/out over many slightly different
+    // streets around the same centre. Turning every crossing in that approach
+    // into a graph node produces dozens of tiny edges and stacked markers.
+    // Keep the final approach as one edge; reuse/crossing starts outside it.
+    const cityApproachDistance = Math.min(CITY_APPROACH_MAX_KM, projectDistance * CITY_APPROACH_ROUTE_RATIO);
 
     for (const edge of targetState.connections || []) {
       if (!isRoadType(edge.type)) continue;
       const existingGeometry = edgeGeometry(edge, targetState);
+      if (!boundsOverlap(projectBounds, geometryBounds(existingGeometry, JUNCTION_SNAP_KM / 110))) continue;
       const hits = uniqueIntersections(geometryIntersections(projectGeometry, existingGeometry));
       if (!hits.length) continue;
 
       const existingCuts = [];
       for (const hit of hits) {
+        if (hit.aOffset > JUNCTION_SNAP_KM && hit.aOffset < projectDistance - JUNCTION_SNAP_KM
+          && (hit.aOffset < cityApproachDistance || hit.aOffset > projectDistance - cityApproachDistance)) continue;
         const projectAtStart = hit.aOffset <= INTERSECTION_EPS;
-        const projectAtEnd = hit.aOffset >= geometryDistance(projectGeometry) - INTERSECTION_EPS;
+        const projectAtEnd = hit.aOffset >= projectDistance - INTERSECTION_EPS;
         const existingAtStart = hit.bOffset <= INTERSECTION_EPS;
         const existingAtEnd = hit.bOffset >= geometryDistance(existingGeometry) - INTERSECTION_EPS;
         const projectNode = projectAtStart ? project.a : (projectAtEnd ? project.b : null);
@@ -665,10 +798,30 @@
       const data = await res.json();
       const route = data.routes?.[0];
       if (data.code !== 'Ok' || !route) throw new Error(data.code || 'Keine Route');
-      return {distance: route.distance / 1000, duration: route.duration / 3600, geometry: route.geometry.coordinates.map(([lng, lat]) => [lat, lng])};
+      return {distance: route.distance / 1000, duration: route.duration / 3600, geometry: simplifyRouteGeometry(route.geometry.coordinates.map(([lng, lat]) => [lat, lng]))};
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  function simplifyRouteGeometry(coords) {
+    if (!Array.isArray(coords) || coords.length <= 2) return coords;
+    // Radial simplification preserves both endpoints. Start at five metres and
+    // increase only for exceptionally detailed routes; snapping remains 50 m.
+    let tolerance = 0.005;
+    let simplified = coords;
+    do {
+      simplified = [coords[0]];
+      let anchor = coords[0];
+      for (let i = 1; i < coords.length - 1; i++) {
+        if (dist({lat: anchor[0], lng: anchor[1]}, {lat: coords[i][0], lng: coords[i][1]}) >= tolerance) {
+          simplified.push(coords[i]); anchor = coords[i];
+        }
+      }
+      simplified.push(coords[coords.length - 1]);
+      tolerance *= 2;
+    } while (simplified.length > MAX_ROUTE_GEOMETRY_POINTS);
+    return simplified;
   }
 
   async function planConnection(fromId, toId, type) {
@@ -711,5 +864,5 @@
     return edges[0];
   }
 
-  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, JUNCTION_SNAP_KM, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject, segmentIntersection, geometryIntersections, splitRoadsForAutomaticJunctions, getEdgeOccupancy, getEdgeSchedule, pathEdgeOccupations, pathCapacityStatus, findEarliestPathSlot, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
+  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, JUNCTION_SNAP_KM, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject, segmentIntersection, geometryIntersections, splitRoadsForAutomaticJunctions, getIntersectionStats: () => ({...intersectionStats}), simplifyRouteGeometry, getEdgeOccupancy, getEdgeSchedule, pathEdgeOccupations, pathCapacityStatus, findEarliestPathSlot, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
 })();
