@@ -214,6 +214,14 @@
     return `<option value="${escapeHtml(value)}"${selected ? ' selected' : ''}>${escapeHtml(label)}</option>`;
   }
 
+  function choiceCards(name, entries, label, className = '') {
+    return `<fieldset class="hf-v2-choice-field ${className}"><legend>${escapeHtml(label)}</legend><div class="hf-v2-choice-cards">${entries.map((entry, index) => `<label class="hf-v2-choice-card"><input type="radio" name="${escapeHtml(name)}" value="${escapeHtml(entry.value)}"${entry.selected || (!entries.some(item => item.selected) && index === 0) ? ' checked' : ''}><span aria-hidden="true">${escapeHtml(entry.icon || '◆')}</span><b>${escapeHtml(entry.label)}</b>${entry.detail ? `<small>${escapeHtml(entry.detail)}</small>` : ''}</label>`).join('')}</div></fieldset>`;
+  }
+
+  function vehicleCards(vehicles, selectedType = '') {
+    return choiceCards('vehicleType', vehicles.map(item => ({value: item.type, selected: item.type === selectedType, icon: item.spec.icon || '🚚', label: item.spec.name || item.type, detail: `jetzt ${item.nowCount} verfügbar · insgesamt/voraussichtlich ${item.totalCount} verfügbar · ${formatWeightKg(window.HFV2Logistics?.vehicleCapacityKg?.(item.type) || 0)}`})), 'Fahrzeugtyp', 'hf-v2-vehicle-choices');
+  }
+
   function orderModalBody(targetCity) {
     const sources = sourceOptions(targetCity.id);
     const demands = demandOptions(targetCity.id);
@@ -227,10 +235,10 @@
         <label>Quellstadt<select name="fromCityId">${sources.map(city => option(city.id, city.name)).join('')}</select></label>
         <label>Ware<select name="goodId">${demands.map(([goodId, kg]) => option(goodId, `${goodById(goodId).name} · Tagesbedarf ${formatWeightKg(kg)}`)).join('')}</select></label>
         ${demandHint}
-        <label>Frequenz<select name="frequency">${option('daily', 'Täglich', true)}${option('weekly', 'Wöchentlich')}</select></label>
-        <label>Verpackung<select name="packagingStrategy">${option('automatic', 'Automatisch', true)}${option('pallet', 'Palette')}${option('swap-body', 'Wechselbehälter')}</select></label>
+        ${choiceCards('frequency', [{value: 'daily', label: 'Täglich', icon: '☀️', selected: true}, {value: 'weekly', label: 'Wöchentlich', icon: '7'}], 'Frequenz')}
+        ${choiceCards('packagingStrategy', [{value: 'automatic', label: 'Automatisch', icon: '✨', selected: true}, {value: 'pallet', label: 'Palette', icon: '▦'}, {value: 'swap-body', label: 'Wechselbehälter', icon: '▣'}], 'Verpackung')}
         <label id="hfV2OrderWeekday" hidden>Wochentag<select name="weekday" required disabled>${['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag'].map((label, index) => option(index, label)).join('')}</select></label>
-        <label>Fahrzeugtyp<select name="vehicleType">${vehicles.map(item => option(item.type, vehicleOptionLabel(item))).join('')}</select></label>
+        <div id="hfV2VehicleChoices">${vehicleCards(vehicles)}</div>
         <div class="hf-v2-network-option__rows" id="hfV2OrderPreview"></div>
         <p class="hf-v2-network-empty" id="hfV2OrderError" hidden></p>
         <button class="hf-v2-network-back" type="submit" style="padding:12px 14px;font-weight:900;">Waren bestellen</button>
@@ -261,8 +269,9 @@
     if (weekdayField) weekdayField.hidden = data.frequency !== 'weekly';
     if (form.elements.weekday) form.elements.weekday.disabled = data.frequency !== 'weekly';
     const vehicles = vehicleOptions(data.fromCityId);
-    setSelectOptions(form.elements.vehicleType, vehicles.map(item => option(item.type, vehicleOptionLabel(item), item.type === data.vehicleType)));
-    if (!form.elements.vehicleType?.value && vehicles[0]) form.elements.vehicleType.value = vehicles[0].type;
+    const vehicleContainer = form.querySelector('#hfV2VehicleChoices');
+    const availableTypes = vehicles.map(item => item.type);
+    if (!availableTypes.includes(data.vehicleType) && vehicleContainer) vehicleContainer.innerHTML = vehicleCards(vehicles, vehicles[0]?.type);
     data.vehicleType = form.elements.vehicleType?.value || '';
     const demand = Math.max(0, Number(window.HFV2Goods?.getCityDailyDemandMap?.(data.toCityId)?.[data.goodId]) || 0);
     const inventoryKg = Math.max(0, Number(window.HFV2Goods?.getCityInventory?.(data.fromCityId)?.[data.goodId]) || 0);

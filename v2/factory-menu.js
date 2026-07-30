@@ -52,6 +52,20 @@
       .sort((a, b) => b.kg - a.kg || a.name.localeCompare(b.name, 'de-CH'));
   }
 
+  function factoryFlowEntries(factory, key) {
+    const totals = {};
+    const recipes = factoryRecipeOptions(factory);
+    for (const recipe of recipes) {
+      const values = recipe?.[key] || (recipe.id === factory?.id ? factory?.[key] : {}) || {};
+      for (const [goodId, kg] of Object.entries(values)) totals[goodId] = (totals[goodId] || 0) + Math.max(0, Number(kg) || 0);
+    }
+    return Object.entries(totals).filter(([, kg]) => kg > 0).map(([goodId, kg]) => ({goodId, kg, good: goodById(goodId)}));
+  }
+
+  function flowGoods(entries, emptyText) {
+    return entries.length ? entries.map(({good, goodId, kg}) => `<span class="hf-v2-production-good"><i aria-hidden="true">${escapeHtml(good.icon || '📦')}</i><b>${escapeHtml(good.name || goodId)}</b><small>${formatDailyKg(kg)}</small></span>`).join('') : `<span class="hf-v2-production-empty">${escapeHtml(emptyText)}</span>`;
+  }
+
   function factoryOutputsText(factory, outputMultiplier = 1) {
     const entries = factoryOutputEntries(factory, outputMultiplier);
     if (!entries.length) return 'Keine Outputs im Katalog';
@@ -176,9 +190,12 @@
     const state = result.ok ? 'buildable' : result.reason === 'not-enough-cash' ? 'expensive' : result.reason === 'no-free-slots' ? 'no-slot' : 'locked';
     const stateLabel = result.ok ? 'Baubar' : buildDisabledTitle(result);
     const minTier = Math.max(1, Number(result?.minTier ?? factory.minTier ?? factory.minCityTier) || 1);
+    const inputs = factoryFlowEntries(factory, 'inputs');
+    const outputs = factoryOutputEntries(factory).map(entry => ({...entry, good: goodById(entry.goodId)}));
+    const advantage = inputs.length ? 'Kurze Zulieferwege erhöhen die Auslastung' : 'Unabhängige Rohstoffproduktion am Standort';
 
     return `
-      <article class="hf-v2-catalog-row is-${state}">
+      <article class="hf-v2-catalog-row hf-v2-build-card is-${state}">
         <div class="hf-v2-catalog-row__visual" aria-hidden="true">${factoryVisual(factory.id, factory)}</div>
         <div class="hf-v2-catalog-row__main">
           <div class="hf-v2-catalog-row__head">
@@ -189,13 +206,11 @@
             <span class="hf-v2-catalog-badge">${escapeHtml(ownedLabel)}</span>
           </div>
           <p>${escapeHtml(factory.desc || 'Baubarer Betrieb für diese Stadt.')}</p>
-          <dl class="hf-v2-catalog-row__facts">
-            <div><dt>Produktion</dt><dd>${formatDailyKg(capacityKg)}</dd></div>
-            <div><dt>Output</dt><dd title="${escapeHtml(outputsTitle)}">${escapeHtml(outputsSummary)}</dd></div>
-            <div><dt>Voraussetzung</dt><dd>Netzanschluss · Stadtstufe ${minTier}</dd></div>
-          </dl>
+          <div class="hf-v2-production-chain" aria-label="Produktionskette"><div><small>Benötigt</small>${flowGoods(inputs, 'Keine Inputs')}</div><span class="hf-v2-production-chain__arrow" aria-hidden="true">→</span><div><small>Erzeugt</small>${flowGoods(outputs, 'Noch keine Ware')}</div></div>
+          <div class="hf-v2-location-benefit"><span aria-hidden="true">◆</span><div><small>Standortvorteil</small><b>${escapeHtml(advantage)}</b></div></div>
+          <p class="hf-v2-build-requirement${result.ok ? '' : ' is-locked'}"><span aria-hidden="true">${result.ok ? '✓' : '🔒'}</span> Netzanschluss · Stadtstufe ${minTier} · ${formatDailyKg(capacityKg)}</p>
         </div>
-        <div class="hf-v2-catalog-row__action"><span class="hf-v2-catalog-state">${escapeHtml(stateLabel)}</span><strong>${formatMoney(factory.cost)}</strong><button class="hf-v2-catalog-build" type="button" data-action="build-factory" data-city-id="${escapeHtml(cityId)}" data-factory-id="${escapeHtml(factory.id)}"${disabledText}>Bauen</button></div>
+        <div class="hf-v2-catalog-row__action"><span class="hf-v2-catalog-state">${escapeHtml(stateLabel)}</span><small>Investition</small><strong>${formatMoney(factory.cost)}</strong><button class="hf-v2-catalog-build" type="button" data-action="build-factory" data-city-id="${escapeHtml(cityId)}" data-factory-id="${escapeHtml(factory.id)}"${disabledText}>Bauen</button></div>
       </article>`;
   }
 

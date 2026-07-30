@@ -191,6 +191,10 @@
     return `<div class="hf-v2-fleet-cash" aria-label="Verfügbares Kapital"><span>Kapital</span><strong>${formatMoney(currentCash())}</strong></div>`;
   }
 
+  function renderRoutePreview(origin, target) {
+    return `<section class="hf-v2-route-preview" aria-label="Kartenvorschau von ${escapeHtml(origin.name)} nach ${escapeHtml(target.name)}"><div class="hf-v2-route-preview__grid" aria-hidden="true"></div><span class="hf-v2-route-city is-origin"><i></i><b>${escapeHtml(origin.name)}</b><small>Ursprung</small></span><span class="hf-v2-route-line" aria-hidden="true"><i></i></span><span class="hf-v2-route-city is-target"><i></i><b>${escapeHtml(target.name)}</b><small>Ziel</small></span><strong class="hf-v2-route-distance">${formatKm(estimatedDistanceForType(origin, target, 'mainroad'))}</strong></section>`;
+  }
+
   function recommendationForBuildOption(origin, target, type) {
     const hfNetwork = network();
     const specs = hfNetwork?.TRANSPORT_TYPES || {};
@@ -229,6 +233,7 @@
     const statusLabel = exists ? 'Bereits gebaut' : canAfford ? 'Planbar' : 'Budget fehlt';
     const recommendation = recommendationForBuildOption(origin, target, type);
     const ctaLabel = exists ? 'Verbindung besteht' : canAfford ? `Für ${formatMoney(quote.cost)} bauen` : `${formatMoney(quote?.cost || 0)} benötigt`;
+    const buildTime = quote?.buildDays ?? quote?.days ?? Math.max(1, Math.ceil(distance / Math.max(1, Number(spec.speed) || 1) / 8));
     const badgeClass = disabled ? ' hf-v2-network-badge--disabled' : ' hf-v2-network-badge--primary';
     return `
       <button class="hf-v2-network-option${disabled ? ' is-disabled' : ''}" type="button" data-action="plan-connection" data-origin="${escapeHtml(origin.id)}" data-target="${escapeHtml(target.id)}" data-type="${escapeHtml(type)}" ${disabled ? 'disabled' : ''}>
@@ -244,12 +249,11 @@
           </span>
         </span>
         <span class="hf-v2-network-option__desc">${escapeHtml(spec.desc || '')}</span>
-        <span class="hf-v2-network-option__rows">
+        <span class="hf-v2-network-option__rows hf-v2-network-comparison">
+          <span><em>Kosten</em><strong>${formatMoney(quote?.cost || 0)}</strong></span>
+          <span><em>Bauzeit</em><strong>${buildTime} Tag${buildTime === 1 ? '' : 'e'}</strong></span>
+          <span><em>Tempo</em><strong>${escapeHtml(spec.speed)} km/h</strong></span>
           <span><em>Kapazität</em><strong>${escapeHtml(spec.capacity)} ${escapeHtml(spec.capacityUnit || 'Einheiten')}</strong></span>
-          <span><em>Geschwindigkeit</em><strong>${escapeHtml(spec.speed)} km/h</strong></span>
-          <span><em>Distanz</em><strong>${formatKm(distance)}</strong></span>
-          <span><em>Unterhalt</em><strong>${formatMoney(quote?.maintenance || 0)}/Tag</strong></span>
-          <span><em>Status</em><strong>${escapeHtml(statusLabel)}</strong></span>
         </span>
       </button>`;
   }
@@ -267,6 +271,7 @@
         <p class="hf-v2-network-eyebrow">Netzwerkplanung</p>
         <h3>Verbindung ${escapeHtml(origin.name)} → ${escapeHtml(target.name)}</h3>
         ${renderCashBadge()}
+        ${renderRoutePreview(origin, target)}
         <div class="hf-v2-network-grid">${BUILD_TYPES.map(type => renderBuildOption(origin, target, type)).join('')}</div>
         <p class="hf-v2-network-hint">Nach Auswahl wird das Projekt mit Kosten, Distanz und Route in der Netzwerklogik vorgemerkt.</p>
       </div>`;

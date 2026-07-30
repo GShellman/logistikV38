@@ -47,7 +47,7 @@
   }
 
   function depotSelect(selectedCityId = '') {
-    return `<label class="hf-v2-fleet-depot"><span>Initiales Depot</span><select data-fleet-depot aria-label="Tatsächlichen ersten Standort auswählen"><option value="">Depot auswählen …</option>${unlockedCities().map(city => `<option value="${escapeHtml(city.id)}"${city.id === selectedCityId ? ' selected' : ''}>${escapeHtml(city.name)}</option>`).join('')}</select><small>Das gewählte Depot wird als erster realer Fahrzeugstandort gespeichert.</small></label>`;
+    return `<fieldset class="hf-v2-choice-field hf-v2-fleet-depot"><legend>Initiales Depot</legend><div class="hf-v2-choice-cards">${unlockedCities().map(city => `<label class="hf-v2-choice-card"><input type="radio" name="fleetDepot" data-fleet-depot value="${escapeHtml(city.id)}"${city.id === selectedCityId ? ' checked' : ''}><span aria-hidden="true">📍</span><b>${escapeHtml(city.name)}</b><small>Erster Standort</small></label>`).join('')}</div><small>Das gewählte Depot wird als erster realer Fahrzeugstandort gespeichert.</small></fieldset>`;
   }
 
   function fleetInventory(cityId = null) {
@@ -81,14 +81,18 @@
     if (!filtered.length) return '<p class="hf-v2-fleet-empty">Keine Fahrzeuge in dieser Ansicht.</p>';
     const state = logisticsState();
     const plan = window.HFV2FleetDispatch?.ensurePlan?.() || state.dispatchPlan;
-    return `<section class="hf-v2-fleet-live" aria-label="Fahrzeuge nach Typ, Standort und Status"><div class="hf-v2-fleet-section-head"><span>Fahrzeugdisposition</span><strong>${filtered.length.toLocaleString('de-CH')} Einheiten</strong></div><div class="hf-v2-fleet-table-wrap"><table class="hf-v2-fleet-table"><thead><tr><th>Fahrzeug / Typ</th><th>Standort / Strecke</th><th>Status</th><th>Assignment</th><th>Ziel</th><th>Ankunft</th><th>Nächste Fahrt</th><th>Freie Zeit</th></tr></thead><tbody>${filtered.map(vehicle => {
+    const now = Number(window.HFV2Time?.getAbsoluteMinute?.() ?? window.HFV2Time?.getState?.().absoluteMinute) || 0;
+    return `<section class="hf-v2-fleet-live" aria-label="Fahrzeuge nach Typ, Standort und Status"><div class="hf-v2-fleet-section-head"><span>Fahrzeugdisposition</span><strong>${filtered.length.toLocaleString('de-CH')} Einheiten</strong></div><div class="hf-v2-fleet-deployments">${filtered.map(vehicle => {
       const spec = api.VEHICLES?.[vehicle.vehicleType] || {};
       const assignment = assignmentFor(vehicle, state);
       const next = nextLegFor(vehicle, plan);
       const target = assignment?.toCityId || vehicle.routeSegment?.toCityId;
       const arrival = assignment?.arrivalAbsMinute ?? vehicle.availableAbsMinute;
-      return `<tr><td><b>${escapeHtml(vehicle.licensePlate || '–')} · ${escapeHtml(spec.name || vehicle.vehicleType)}</b><small>${escapeHtml(vehicle.vehicleType)} · interne ID #${vehicle.id}</small></td><td>${escapeHtml(vehicleLocation(vehicle, assignment))}</td><td><span class="hf-v2-fleet-status is-${escapeHtml(vehicle.status)}">${vehicle.status === 'available' ? 'Verfügbar' : vehicle.status === 'returning' ? 'Rückfahrt' : 'Im Einsatz'}</span></td><td>${escapeHtml(assignment?.id || vehicle.activeAssignmentId || '–')}</td><td>${escapeHtml(target ? cityName(target) : '–')}</td><td>${vehicle.activeAssignmentId ? formatAbsMinute(arrival) : '–'}</td><td>${next ? `${escapeHtml(cityName(next.fromCityId))} → ${escapeHtml(cityName(next.toCityId))}<small>${formatAbsMinute(next.departureAbsMinute)}</small>` : '–'}</td><td>${formatAbsMinute(Math.max(Number(vehicle.availableAbsMinute) || 0, Number(next?.arrivalAbsMinute) || 0))}</td></tr>`;
-    }).join('')}</tbody></table></div></section>`;
+      const departure = Number(assignment?.departureAbsMinute ?? vehicle.routeSegment?.departureAbsMinute ?? now);
+      const progress = vehicle.activeAssignmentId && Number(arrival) > departure ? Math.max(0, Math.min(100, ((now - departure) / (Number(arrival) - departure)) * 100)) : 0;
+      const cargo = assignment?.amountKg ?? assignment?.loadKg ?? vehicle.cargoKg ?? 0;
+      return `<article class="hf-v2-deployment-card"><div class="hf-v2-deployment-card__visual">${vehicleVisual(vehicle.vehicleType, spec)}</div><div class="hf-v2-deployment-card__body"><header><span><b>${escapeHtml(vehicle.licensePlate || 'Ohne Kennzeichen')}</b><small>${escapeHtml(spec.name || vehicle.vehicleType)}</small></span><span class="hf-v2-fleet-status is-${escapeHtml(vehicle.status)}">${vehicle.status === 'available' ? 'Verfügbar' : vehicle.status === 'returning' ? 'Rückfahrt' : 'Im Einsatz'}</span></header><strong class="hf-v2-deployment-route">${escapeHtml(vehicleLocation(vehicle, assignment))}</strong><div class="hf-v2-deployment-meta"><span>📦 ${cargo ? formatLoad(cargo) : 'Keine Ladung'}</span><time>🕒 ${vehicle.activeAssignmentId ? formatAbsMinute(arrival) : 'Bereit'}</time></div><div class="hf-v2-deployment-progress" role="progressbar" aria-label="Fahrtfortschritt" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress)}"><i style="width:${progress.toFixed(1)}%"></i></div><small>${vehicle.activeAssignmentId ? `${Math.round(progress)} % der Strecke` : next ? `Nächste Fahrt ${cityName(next.fromCityId)} → ${cityName(next.toCityId)}` : 'Kein Einsatz geplant'}</small><details><summary>Technische Details</summary><dl><div><dt>Fahrzeug-ID</dt><dd>#${escapeHtml(vehicle.id)}</dd></div><div><dt>Assignment</dt><dd>${escapeHtml(assignment?.id || vehicle.activeAssignmentId || '–')}</dd></div><div><dt>Ziel-ID</dt><dd>${escapeHtml(target || '–')}</dd></div><div><dt>Verfügbar</dt><dd>${formatAbsMinute(Math.max(Number(vehicle.availableAbsMinute) || 0, Number(next?.arrivalAbsMinute) || 0))}</dd></div></dl></details></div></article>`;
+    }).join('')}</div></section>`;
   }
 
   const PLAN_REASONS = {'no-on-time-vehicle': 'kein Fahrzeug rechtzeitig verfügbar', 'capacity-invalid': 'Kapazität unzureichend', 'no-route': 'keine Route', 'stock-limited': 'Ware nicht verfügbar', 'route-overloaded': 'Route ausgelastet', 'repositioning-overloaded': 'keine Kapazität für Leerfahrt'};
@@ -134,7 +138,7 @@
       const modalBody = document.getElementById('hfV2ModalBody'); if (modalBody && !modalBody.contains(button)) return;
       event.preventDefault();
       const menu = button.closest('[data-fleet-city-id]');
-      const depotId = menu?.querySelector('[data-fleet-depot]')?.value;
+      const depotId = menu?.querySelector('[data-fleet-depot]:checked')?.value;
       if (!depotId) { menu?.querySelector('[data-fleet-depot]')?.focus(); return; }
       const result = fleetApi()?.buyVehicle?.(depotId, button.dataset.vehicleType);
       if (result?.ok) refreshFleetMenu(menu?.dataset.fleetCityId || null);
