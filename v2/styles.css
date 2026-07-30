@@ -2655,6 +2655,30 @@ code {
   .hf-v2-feedback-item { animation: none; }
 }
 
+/* Kataloggesteuerte Frachtansicht im Transport-Popup. */
+.hf-v2-cargo-visualization { display: grid; gap: 10px; margin-bottom: 12px; min-width: 0; }
+.hf-v2-cargo-vehicle { border: 1px solid var(--border-subtle); border-radius: var(--radius-control); min-width: 0; padding: 8px; }
+.hf-v2-cargo-vehicle h5 { font-size: 12px; margin: 0 0 7px; overflow-wrap: anywhere; }
+.hf-v2-cargo-slots { display: grid; gap: 5px; grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); list-style: none; margin: 0; padding: 0; }
+.hf-v2-cargo-slot { align-content: space-between; background: #f8fafc; border: 1px dashed #94a3b8; display: grid; isolation: isolate; min-height: 62px; overflow: hidden; padding: 4px; position: relative; }
+.hf-v2-cargo-slot.is-occupied { border-style: solid; }
+.hf-v2-cargo-slot > * { position: relative; z-index: 1; }
+.hf-v2-cargo-slot__fill { background: #dbeafe; bottom: 0; height: var(--fill); left: 0; position: absolute; width: 100%; z-index: 0; }
+.hf-v2-cargo-slot b { font-size: 10px; }
+.hf-v2-cargo-slot small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hf-v2-cargo-region { background: #f8fafc; border: 2px solid #475569; border-radius: 5px 5px 9px 9px; height: 58px; overflow: hidden; }
+.hf-v2-cargo-fill { align-items: stretch; display: flex; height: 100%; }
+.hf-v2-cargo-segment { align-items: center; background: var(--segment-color); display: flex; justify-content: center; min-width: 0; overflow: hidden; }
+.hf-v2-cargo-good-icon { background: rgb(255 255 255 / 80%); border-radius: 50%; height: 24px; object-fit: contain; padding: 2px; width: 24px; }
+.hf-v2-cargo-legend { display: grid; gap: 4px; list-style: none; margin: 7px 0 0; padding: 0; }
+.hf-v2-cargo-legend li { align-items: start; display: grid; gap: 6px; grid-template-columns: auto minmax(0, 1fr); }
+.hf-v2-cargo-legend strong, .hf-v2-cargo-legend small { display: block; overflow-wrap: anywhere; }
+.hf-v2-cargo-empty { background: #f8fafc; border: 1px dashed #94a3b8; padding: 8px; }
+@media (max-width: 420px) {
+  .hf-v2-cargo-slots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hf-v2-cargo-vehicle { padding: 6px; }
+}
+
 /* Permanent road capacity indicator; Leaflet positions the transparent wrapper. */
 .hf-v2-capacity-marker {
   background: transparent;
