@@ -46,8 +46,8 @@ test('alte Savegames erhalten bei der Normalisierung berechnete Ladungsträgerda
   }
 });
 
-test('Tourenplanung dimensioniert die Fahrzeuganzahl nach Bruttogewicht', () => {
+test('Tourenplanung verwendet die gemeinsame Gewichts- und Stellplatzkapazität', () => {
   const source = readFileSync('v2/fleet-dispatch-logic.js', 'utf8');
-  assert.match(source, /count = Math\.ceil\(cargo\.grossKg \/ capacityKg\(type\)\)/);
-  assert.match(source, /grossLoad \+ legGross <= cap/);
+  assert.match(source, /count = requiredVehicleCount\(type, \[cargo\]\)/);
+  assert.match(source, /capacityCheck\(first\.vehicleType, \[\.\.\.group, legCargo\]/);
 });

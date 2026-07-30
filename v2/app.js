@@ -417,6 +417,16 @@
     return `${formatWeightKg(netKg)}${carrier} · ${formatWeightKg(cargo?.grossKg ?? netKg)} brutto`;
   }
 
+  function transportCapacitySummary(record) {
+    const cargoes = shipmentStops(record).length ? shipmentStops(record) : [record];
+    const result = window.HFV2VehicleCapacity?.evaluate?.(record?.vehicleType, cargoes, Number(record?.vehicleCount) || record?.vehicleIds?.length || 1);
+    if (!result) return '';
+    const weight = `${formatWeightKg(result.usage.grossKg)}/${formatWeightKg(result.capacity.grossKg)}`;
+    const slots = `${result.usage.palletSlots.toLocaleString('de-CH')}/${result.capacity.palletSlots.toLocaleString('de-CH')} Paletten`;
+    const reason = result.limitingFactor === 'volume' ? 'Volumenlimitiert' : 'Gewichtslimitiert';
+    return `${weight} · ${slots} · ${reason}`;
+  }
+
   function orderCardMarkup(order) {
     const good = goodById(order.goodId);
     const dispatchResult = order.lastDispatchResult || 'wartet';
@@ -465,7 +475,7 @@
     const title = isBundled ? 'Sammellieferung' : escapeHtml(good.name || shipment.goodId);
     const amountMarkup = isBundled ? stopAmountsMarkup(stops) : `${cargoSummary(shipment)}`;
     const routeMarkup = isBundled ? `<span><small>Route</small>${escapeHtml(shipmentRouteLabel(shipment))}</span>` : '';
-    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row"><b>${title}</b>${routeMarkup}<span><small>${isBundled ? 'Stopps' : 'Menge'}</small>${amountMarkup}</span><span><small>Fahrzeuge</small>${(Number(shipment.vehicleCount) || 0).toLocaleString('de-CH')} × ${escapeHtml(vehicleLabel(shipment.vehicleType))}</span><span><small>Fortschritt</small>${progress.toLocaleString('de-CH', {maximumFractionDigits: 0})}%</span><span><small>${arrivalLabel}</small>${formatAbsMinute(arrivalAbsMinute)}</span><span><small>Status</small>${escapeHtml(shipmentStatusLabel(shipment))}</span></article>`;
+    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row"><b>${title}</b>${routeMarkup}<span><small>${isBundled ? 'Stopps' : 'Menge'}</small>${amountMarkup}</span><span><small>Kapazität</small>${escapeHtml(transportCapacitySummary(shipment))}</span><span><small>Fahrzeuge</small>${(Number(shipment.vehicleCount) || 0).toLocaleString('de-CH')} × ${escapeHtml(vehicleLabel(shipment.vehicleType))}</span><span><small>Fortschritt</small>${progress.toLocaleString('de-CH', {maximumFractionDigits: 0})}%</span><span><small>${arrivalLabel}</small>${formatAbsMinute(arrivalAbsMinute)}</span><span><small>Status</small>${escapeHtml(shipmentStatusLabel(shipment))}</span></article>`;
   }
 
   function repositioningCardMarkup(assignment) {
