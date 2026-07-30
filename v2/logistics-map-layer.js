@@ -318,6 +318,91 @@
     }).join('')}</ol>`;
   }
 
+  function activeCargo(shipment) {
+    if (isEmptyTransport(shipment) || shipment?.type === 'waiting') return [];
+    const returning = shipment?.status === 'returning';
+    const source = returning ? shipment?.returnStops : shipment?.stops;
+    if (Array.isArray(source) && source.length) return source.filter(stop => stop?.goodId && Number(stop.amountKg) > 0 && !FINISHED_STOP_STATUSES.has(String(stop.status || '').toLowerCase()));
+    const goodId = returning ? shipment?.returnGoodId : shipment?.goodId;
+    const amountKg = Number(returning ? shipment?.returnAmountKg : shipment?.amountKg);
+    return goodId && amountKg > 0 ? [{goodId, amountKg, loadCarrier: shipment.loadCarrier, carrierCount: shipment.carrierCount, grossKg: shipment.grossKg, maxNetKgPerCarrier: shipment.maxNetKgPerCarrier}] : [];
+  }
+
+  // DOM-unabhängiges View-Model: neue Träger/Fahrzeuge benötigen nur Katalogdaten.
+  function normalizeCargoVisualization(shipment, fleet = new Map()) {
+    const catalog = window.HFV2LoadCarrierCatalog?.LOAD_CARRIER_CATALOG || {};
+    const ids = vehicleIds(shipment);
+    const vehicles = (ids.length ? ids : ['']).map(id => {
+      const vehicle = fleet instanceof Map ? fleet.get(id) : (Array.isArray(fleet) ? fleet.find(item => String(item.id) === id) : fleet?.[id]);
+      const type = vehicle?.vehicleType || shipment?.vehicleType;
+      const spec = window.HFVehicleCatalog?.VEHICLE_CATALOG?.[type] || {};
+      const capacityKg = Math.max(0, Number(vehicle?.capacityKg) || Number(spec.load) * 1000 || 0);
+      const regions = Array.isArray(spec.loadRegions) ? spec.loadRegions : [{id: 'load', label: 'Laderaum', visualKind: spec.palletSlots ? 'slot' : 'container', capacityMode: spec.palletSlots ? 'discrete' : 'proportional', slotCount: Number(spec.palletSlots) || 0, capacityKg}];
+      return {id, label: vehicleLabel(vehicle, shipment), capacityKg, regions, cargo: []};
+    });
+    const cargo = activeCargo(shipment).map((item, order) => {
+      const good = goodById(item.goodId);
+      const carrierId = item.loadCarrier || good.packaging?.loadCarrier || shipment.loadCarrier || 'loose';
+      const carrier = catalog[carrierId] || {id: carrierId, name: carrierId, visualKind: 'container', label: 'Laderaum', capacityMode: 'proportional'};
+      const netKg = Math.max(0, Number(item.amountKg) || 0);
+      const maxNetKg = Math.max(0, Number(item.maxNetKgPerCarrier) || Number(good.packaging?.maxNetKgPerCarrier) || Number(carrier.netCapacityKg) || 0);
+      const count = Math.max(0, Number(item.carrierCount) || (carrier.capacityMode === 'discrete' && maxNetKg ? Math.ceil(netKg / maxNetKg) : 0));
+      const tareKg = Math.max(0, Number(carrier.tareKg) || 0) * count;
+      return {order, goodId: item.goodId, goodName: good.name || item.goodId, icon: good.icon || '📦', carrierId, carrierName: carrier.name || carrierId, visualKind: ['slot', 'bulk', 'liquid', 'container'].includes(carrier.visualKind) ? carrier.visualKind : 'container', capacityMode: carrier.capacityMode === 'discrete' ? 'discrete' : 'proportional', color: carrier.color || '', netKg, grossKg: Math.max(netKg + tareKg, Number(item.grossKg) || 0), carrierCount: count, maxNetKgPerCarrier: maxNetKg};
+    });
+    let vehicleIndex = 0;
+    cargo.forEach(item => {
+      if (item.capacityMode === 'discrete' && item.carrierCount) {
+        let remainingKg = item.netKg;
+        for (let index = 0; index < item.carrierCount; index += 1) {
+          while (vehicleIndex < vehicles.length - 1 && vehicles[vehicleIndex].cargo.filter(unit => unit.capacityMode === 'discrete').length >= Number(vehicles[vehicleIndex].regions.find(region => region.capacityMode === 'discrete')?.slotCount || Infinity)) vehicleIndex += 1;
+          const netKg = index === item.carrierCount - 1 ? remainingKg : Math.min(remainingKg, item.maxNetKgPerCarrier || remainingKg);
+          remainingKg -= netKg;
+          vehicles[vehicleIndex]?.cargo.push({...item, netKg, grossKg: netKg + Math.max(0, Number(catalog[item.carrierId]?.tareKg) || 0), carrierCount: 1});
+        }
+      } else {
+        let remainingNet = item.netKg;
+        let remainingGross = item.grossKg;
+        vehicles.forEach((vehicle, index) => {
+          if (remainingNet <= 0) return;
+          const used = vehicle.cargo.reduce((sum, unit) => sum + unit.grossKg, 0);
+          const shareGross = index === vehicles.length - 1 ? remainingGross : Math.min(remainingGross, Math.max(0, vehicle.capacityKg - used));
+          const shareNet = index === vehicles.length - 1 ? remainingNet : (item.grossKg ? item.netKg * shareGross / item.grossKg : 0);
+          if (shareNet > 0) vehicle.cargo.push({...item, netKg: shareNet, grossKg: shareGross, carrierCount: 0});
+          remainingNet -= shareNet;
+          remainingGross -= shareGross;
+        });
+      }
+    });
+    return {state: shipment?.type === 'waiting' ? 'waiting' : (isEmptyTransport(shipment) ? 'empty' : cargo.length ? 'loaded' : 'empty'), vehicles, cargo};
+  }
+
+  function cargoVisualizationMarkup(shipment, fleet = new Map()) {
+    const model = normalizeCargoVisualization(shipment, fleet);
+    if (model.state === 'waiting') return '<p class="hf-v2-cargo-empty">Fahrzeug wartet · keine Ladung</p>';
+    if (model.state === 'empty') return `<p class="hf-v2-cargo-empty">${shipment?.status === 'returning' ? 'Keine Ladung · Rückfahrt (Leerfahrt)' : 'Leerfahrt · keine Ladung'}</p>`;
+    return `<div class="hf-v2-cargo-visualization">${model.vehicles.map(vehicle => {
+      if (!(vehicle.capacityKg > 0)) return `<section class="hf-v2-cargo-vehicle"><h5>${escapeHtml(vehicle.label)}</h5><p>Kapazitätsdaten fehlen; Ladung: ${escapeHtml(formatWeightKg(vehicle.cargo.reduce((sum, item) => sum + item.grossKg, 0)))}</p></section>`;
+      const discrete = vehicle.regions.some(region => region.capacityMode === 'discrete');
+      const units = vehicle.cargo.filter(unit => unit.capacityMode === 'discrete');
+      let visual;
+      if (discrete) {
+        const slots = Math.max(0, Number(vehicle.regions.find(region => region.capacityMode === 'discrete')?.slotCount) || 0);
+        visual = `<ol class="hf-v2-cargo-slots" aria-label="${slots} nummerierte Stellplätze">${Array.from({length: slots}, (_, index) => { const item = units[index]; const fill = item?.maxNetKgPerCarrier ? Math.round(clamp01(item.netKg / item.maxNetKgPerCarrier) * 100) : item ? 100 : 0; return `<li class="hf-v2-cargo-slot${item ? ' is-occupied' : ''}" aria-label="Stellplatz ${index + 1}: ${item ? `${item.goodName}, ${fill} Prozent belegt` : 'frei'}"><b>${index + 1}</b>${item ? `<span class="hf-v2-cargo-slot__fill" style="--fill:${fill}%"></span>${cargoVisualIcon(item)}<small>${escapeHtml(item.goodName)}</small>` : '<small>frei</small>'}</li>`; }).join('')}</ol>`;
+      } else {
+        const total = vehicle.cargo.reduce((sum, item) => sum + item.grossKg, 0);
+        visual = `<div class="hf-v2-cargo-region" role="img" aria-label="Laderaum zu ${Math.round(clamp01(total / vehicle.capacityKg) * 100)} Prozent belegt"><div class="hf-v2-cargo-fill">${vehicle.cargo.map(item => `<span class="hf-v2-cargo-segment" style="width:${clamp01(item.grossKg / vehicle.capacityKg) * 100}%;--segment-color:${escapeHtml(item.color || '#64748b')}" title="${escapeHtml(item.goodName)}">${cargoVisualIcon(item)}</span>`).join('')}</div></div>`;
+      }
+      const legend = `<ul class="hf-v2-cargo-legend">${vehicle.cargo.map(item => `<li><span aria-hidden="true">${escapeHtml(item.icon)}</span><span><strong>${escapeHtml(item.goodName)}</strong><small>${escapeHtml(formatGoodAmount(item.goodId, item.netKg))} · ${escapeHtml(item.carrierName)} · ${escapeHtml(formatWeightKg(item.grossKg))} Kapazität</small></span></li>`).join('')}</ul>`;
+      return `<section class="hf-v2-cargo-vehicle"><h5>${escapeHtml(vehicle.label)}</h5>${visual}${legend}</section>`;
+    }).join('')}</div>`;
+  }
+
+  function cargoVisualIcon(item) {
+    const src = window.HFV2GoodsAssets?.goodImage?.(item.goodId) || '';
+    return src ? `<img class="hf-v2-cargo-good-icon" src="${escapeHtml(src)}" alt="" aria-hidden="true" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="hf-v2-cargo-good-icon" aria-hidden="true" hidden>${escapeHtml(item.icon)}</span>` : `<span class="hf-v2-cargo-good-icon" aria-hidden="true">${escapeHtml(item.icon)}</span>`;
+  }
+
   function shipmentTooltip(shipment, fromCity, toCity, progress = 0, fleet = new Map()) {
     const from = fromCity?.name || shipment.fromCityId || shipment.currentCityId || '–';
     const to = toCity?.name || shipment.toCityId || shipment.currentCityId || '–';
@@ -332,7 +417,7 @@
     return `<article class="hf-v2-transport-detail" tabindex="-1" aria-label="Transportdetails ${escapeHtml(from)} nach ${escapeHtml(to)}">
       <header><span class="hf-v2-transport-detail__kind hf-v2-transport-detail__kind--${escapeHtml(status.toLowerCase())}">${escapeHtml(status)}</span><h3>${escapeHtml(from)} <span aria-hidden="true">→</span> ${escapeHtml(to)}</h3></header>
       <section aria-label="Route und Status"><h4>Route &amp; Status</h4><dl><div><dt>Status</dt><dd>${escapeHtml(handlingStatus || status)}</dd></div><div><dt>Fortschritt</dt><dd><strong>${percent}%</strong></dd></div></dl><div class="hf-v2-transport-detail__progress" role="progressbar" aria-label="Fortschritt" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><i style="width:${percent}%"></i></div></section>
-      <section aria-label="Ladung"><h4>Ladung</h4>${isEmptyTransport(shipment) ? `<p>Keine Ladung · ${shipment.status === 'returning' ? 'Rückfahrt' : 'Repositionierung'}</p>` : shipment.type === 'waiting' ? '<p>Keine Ladung · verfügbar</p>' : stopsMarkup(shipment)}</section>
+      <section aria-label="Ladung"><h4>Ladung</h4>${cargoVisualizationMarkup(shipment, fleet)}${isEmptyTransport(shipment) || shipment.type === 'waiting' ? '' : stopsMarkup(shipment)}</section>
       <section aria-label="Fahrzeugdaten"><h4>Fahrzeugdaten</h4>${vehiclesSection(shipment, fleet)}</section>
       <section aria-label="Zeitplan"><h4>Zeitplan</h4><dl><div><dt>Abfahrt</dt><dd><strong>${escapeHtml(Number.isFinite(Number(departure)) ? formatAbsMinute(departure) : '–')}</strong></dd></div><div><dt>Erwartete Ankunft</dt><dd><strong>${escapeHtml(Number.isFinite(Number(arrival)) ? formatAbsMinute(arrival) : '–')}</strong></dd></div></dl></section>
     </article>`;
@@ -482,5 +567,5 @@
     if (!visible && map.hasLayer(logisticsVehicleLayer)) map.removeLayer(logisticsVehicleLayer);
   }
 
-  window.HFV2LogisticsLayer = {initLogisticsLayer, renderActiveShipments, clearLogisticsVehicles, animateMarkerTo, setLogisticsLayerVisible};
+  window.HFV2LogisticsLayer = {initLogisticsLayer, renderActiveShipments, clearLogisticsVehicles, animateMarkerTo, setLogisticsLayerVisible, stopsMarkup, normalizeCargoVisualization, cargoVisualizationMarkup};
 })();

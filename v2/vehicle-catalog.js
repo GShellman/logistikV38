@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  const LOAD_REGION_KINDS = Object.freeze(['slot', 'bulk', 'liquid', 'container']);
+
   const VEHICLE_CATALOG = {
     'fluto-gianco': {
       id: 'fluto-gianco',
@@ -15,6 +17,7 @@
       palletSlots: 4,
       euroPalletSlots: 4,
       containerSlots: 2,
+      loadRegions: Object.freeze([{id: 'deck', label: 'Laderaum', visualKind: 'slot', capacityMode: 'discrete', slotCount: 4, capacityKg: 2000}]),
       supportedLoadCarriers: Object.freeze(['loose', 'euro-pallet', 'industrial-pallet']),
       speed: 82,
       cost: 32000,
@@ -36,6 +39,7 @@
       palletSlots: 3,
       euroPalletSlots: 3,
       containerSlots: 1,
+      loadRegions: Object.freeze([{id: 'deck', label: 'Kühl-Laderaum', visualKind: 'slot', capacityMode: 'discrete', slotCount: 3, capacityKg: 1700}]),
       supportedLoadCarriers: Object.freeze(['loose', 'euro-pallet', 'industrial-pallet']),
       speed: 80,
       cost: 41000,
@@ -50,5 +54,6 @@
   window.HFVehicleCatalog = Object.freeze({
     VEHICLE_CATALOG: Object.freeze(VEHICLE_CATALOG),
     VEHICLE_TYPES,
+    LOAD_REGION_KINDS,
   });
 })();
