@@ -47,6 +47,27 @@
       kmCost: 5.2,
       desc: 'Kompakter Kühltransporter für temperaturempfindliche Waren und eine zuverlässige Kühlkette in Stadt und Region.',
     },
+    'pcp-mr3': {
+      id: 'pcp-mr3',
+      brandId: 'pcp',
+      brand: 'PCP',
+      model: 'MR3',
+      category: 'Transporter',
+      name: 'PCP MR3',
+      icon: '🚐',
+      mode: 'road',
+      load: 3.2,
+      palletSlots: 6,
+      euroPalletSlots: 6,
+      containerSlots: 3,
+      speed: 76,
+      cost: 48000,
+      daily: 280,
+      kmCost: 5.8,
+      supportedLoadCarriers: Object.freeze(['loose', 'euro-pallet', 'industrial-pallet']),
+      loadRegions: Object.freeze([{id: 'deck', label: 'Laderaum', visualKind: 'slot', capacityMode: 'discrete', slotCount: 6, capacityKg: 3200}]),
+      desc: 'Geräumiger Transporter mit 3,2 t Nutzlast für größere regionale Lieferungen und gebündelte Stadttransporte.',
+    },
   };
 
   const VEHICLE_TYPES = Object.freeze(Object.keys(VEHICLE_CATALOG));

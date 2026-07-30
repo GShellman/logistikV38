@@ -20,10 +20,10 @@ function loadCatalog() {
   return window.HFVehicleCatalog.VEHICLE_CATALOG;
 }
 
-test('VEHICLE_TYPES enthält exakt die beiden Fluto-Modelle', () => {
+test('VEHICLE_TYPES enthält die beiden Fluto-Modelle und den PCP MR3', () => {
   const window = {};
   load('v2/vehicle-catalog.js', window);
-  assert.deepEqual(Array.from(window.HFVehicleCatalog.VEHICLE_TYPES), ['fluto-gianco', 'fluto-gianco-fr']);
+  assert.deepEqual(Array.from(window.HFVehicleCatalog.VEHICLE_TYPES), ['fluto-gianco', 'fluto-gianco-fr', 'pcp-mr3']);
 });
 
 test('Fluto Gianco ist mit Stammdaten und passenden PNG-Assets registriert', () => {
@@ -60,6 +60,26 @@ test('Fluto Gianco FR ist ein eigenständiger Kühltransporter mit Hauptasset', 
   assert.equal(existsSync(join(ROOT, 'v2', roadAsset)), true);
 });
 
+test('PCP MR3 ist mit Stammdaten, Kapazität, Kosten und PNG-Assets registriert', () => {
+  const catalog = loadCatalog();
+  const vehicle = catalog['pcp-mr3'];
+  assert.ok(vehicle, 'PCP MR3 fehlt im Fahrzeugkatalog');
+  assert.equal(vehicle.brand, 'PCP');
+  assert.equal(vehicle.model, 'MR3');
+  assert.equal(vehicle.load, 3.2);
+  assert.equal(vehicle.palletSlots, 6);
+  assert.equal(vehicle.euroPalletSlots, 6);
+  assert.equal(vehicle.containerSlots, 3);
+  assert.equal(vehicle.cost, 48000);
+  assert.equal(vehicle.daily, 280);
+  assert.equal(vehicle.kmCost, 5.8);
+
+  const window = {};
+  load('v2/vehicle-assets.js', window);
+  assert.equal(window.HFV2VehicleAssets.vehicleImage(vehicle.id), 'assets/vehicles/pcp-mr3.png');
+  assert.equal(window.HFV2VehicleAssets.roadVehicleImage(vehicle.id), 'assets/vehicles/pcp-mr3-road.png');
+});
+
 test('Fahrzeugkatalog enthält vollständige, eindeutige Modelle und Pflichtassets', () => {
   const catalog = loadCatalog();
   const ids = new Set();
@@ -81,7 +101,7 @@ test('Fahrzeugkatalog enthält vollständige, eindeutige Modelle und Pflichtasse
   }
 });
 
-test('Fluto-Modelle bleiben beim Kaufen, Speichern und Laden getrennte Fahrzeugtypen', () => {
+test('Fahrzeugmodelle bleiben beim Kaufen, Speichern und Laden getrennte Fahrzeugtypen', () => {
   const catalog = loadCatalog();
   const models = Object.values(catalog);
 

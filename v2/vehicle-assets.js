@@ -8,12 +8,14 @@
   const VEHICLE_PNG_ASSETS = Object.freeze({
     'fluto-gianco': 'assets/vehicles/fluto-gianco.png',
     'fluto-gianco-fr': 'assets/vehicles/fluto-gianco-fr.png',
+    'pcp-mr3': 'assets/vehicles/pcp-mr3.png',
     freightTrain: 'assets/vehicles/freight_train.png',
   });
 
   const VEHICLE_ROAD_PNG_ASSETS = Object.freeze({
     'fluto-gianco': 'assets/vehicles/fluto-gianco-road.png',
     'fluto-gianco-fr': 'assets/vehicles/fluto-gianco-fr-road.png',
+    'pcp-mr3': 'assets/vehicles/pcp-mr3-road.png',
   });
 
   function normalizeVehicleId(vehicleId) {
