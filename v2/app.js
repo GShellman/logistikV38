@@ -403,6 +403,9 @@
       'no-vehicle': 'Kein Fahrzeug verfügbar',
       'not-enough-vehicles': 'Zu wenige Fahrzeuge',
       'route-overloaded': 'Straße zur Uhrzeit überlastet',
+      'loading-bay-delayed': 'Abfahrt wegen belegter Rampe verschoben',
+      'loading-bay-unavailable': 'Keine Rampe im Planungszeitraum frei',
+      'container-terminal-required': 'Containerterminal erforderlich',
       wartet: 'Wartet auf Abfahrtszeit',
     }[code] || code;
   }
@@ -521,7 +524,11 @@
     const outgoingOrders = orders.filter(order => order.fromCityId === city.id);
     const calendarRows = shipmentCalendarRows(city, shipments, orders, logistics.dispatchPlan, logistics.assignments);
     const total = incomingOrders.length + outgoingOrders.length + calendarRows.length + assignments.length + waitingVehicles.length;
-    return `<section class="hf-v2-demand-card hf-v2-city-logistics" aria-labelledby="hfV2LogisticsTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Warenlogistik</p><h3 id="hfV2LogisticsTitle">Warenlogistik</h3></div><strong>${total.toLocaleString('de-CH')}</strong></div><h4>Eingehende Bestellungen</h4>${logisticsListMarkup(incomingOrders, 'Keine eingehenden Bestellungen.', orderCardMarkup, `${city.id}:incoming-orders`)}<h4>Ausgehende Bestellungen</h4>${logisticsListMarkup(outgoingOrders, 'Keine ausgehenden Bestellungen.', orderCardMarkup, `${city.id}:outgoing-orders`)}<h4>Leerfahrten / Repositionierungen</h4>${logisticsListMarkup(assignments, 'Keine disponierten Leerfahrten.', repositioningCardMarkup, `${city.id}:assignments`)}<h4>Wartende Fahrzeuge</h4>${logisticsListMarkup(waitingVehicles, 'Keine verfügbaren Fahrzeuge an diesem Standort.', waitingVehicleCardMarkup, `${city.id}:waiting-vehicles`)}<h4>Transportkalender</h4>${shipmentCalendarMarkup(city)}</section>`;
+    const now = window.HFV2Logistics?.absoluteMinute?.(currentTimeState()) || 0;
+    const terminal = window.HFV2Terminal?.utilization?.(city.id, now) || {occupiedBays: 0, loadingBays: 1, nextFreeAbsMinute: now, averageWaitingMinutes: 0, level: {handlingSpeedMultiplier: 1}};
+    const secondBay = window.HFV2Terminal?.UPGRADES?.['second-bay'];
+    const forklift = window.HFV2Terminal?.UPGRADES?.forklift;
+    return `<section class="hf-v2-demand-card hf-v2-city-logistics" aria-labelledby="hfV2LogisticsTitle"><div class="hf-v2-demand-head"><div><p class="hf-v2-kicker">Warenlogistik</p><h3 id="hfV2LogisticsTitle">Warenlogistik</h3></div><strong>${total.toLocaleString('de-CH')}</strong></div><div class="hf-v2-terminal"><div><small>Belegte Rampen</small><strong>${terminal.occupiedBays} / ${terminal.loadingBays}</strong></div><div><small>Nächste freie Zeit</small><strong>${formatAbsMinute(terminal.nextFreeAbsMinute)}</strong></div><div><small>Mittlere Wartezeit</small><strong>${Math.round(terminal.averageWaitingMinutes)} Min.</strong></div><div class="hf-v2-terminal__upgrades"><button type="button" data-hf-v2-terminal-upgrade="second-bay" data-city-id="${escapeHtml(city.id)}">${secondBay?.label || 'Zweite Rampe'} · CHF ${(secondBay?.cost || 0).toLocaleString('de-CH')}</button><button type="button" data-hf-v2-terminal-upgrade="forklift" data-city-id="${escapeHtml(city.id)}">${forklift?.label || 'Gabelstapler'} · CHF ${(forklift?.cost || 0).toLocaleString('de-CH')}</button></div></div><h4>Eingehende Bestellungen</h4>${logisticsListMarkup(incomingOrders, 'Keine eingehenden Bestellungen.', orderCardMarkup, `${city.id}:incoming-orders`)}<h4>Ausgehende Bestellungen</h4>${logisticsListMarkup(outgoingOrders, 'Keine ausgehenden Bestellungen.', orderCardMarkup, `${city.id}:outgoing-orders`)}<h4>Leerfahrten / Repositionierungen</h4>${logisticsListMarkup(assignments, 'Keine disponierten Leerfahrten.', repositioningCardMarkup, `${city.id}:assignments`)}<h4>Wartende Fahrzeuge</h4>${logisticsListMarkup(waitingVehicles, 'Keine verfügbaren Fahrzeuge an diesem Standort.', waitingVehicleCardMarkup, `${city.id}:waiting-vehicles`)}<h4>Transportkalender</h4>${shipmentCalendarMarkup(city)}</section>`;
   }
 
   function isCityUnlocked(cityId) {
@@ -1027,6 +1034,13 @@
         const factoryRef = upgradeButton.dataset.factoryRef;
         window.HFV2Factories?.upgradeFactory?.(cityId, factoryRef);
         refreshNetworkView();
+        refreshSelectedCity();
+        return;
+      }
+      const terminalUpgrade = event.target?.closest?.('[data-hf-v2-terminal-upgrade]');
+      if (terminalUpgrade) {
+        window.HFV2Terminal?.applyUpgrade?.(terminalUpgrade.dataset.cityId, terminalUpgrade.dataset.hfV2TerminalUpgrade);
+        window.HFV2FleetDispatch?.ensurePlan?.();
         refreshSelectedCity();
         return;
       }

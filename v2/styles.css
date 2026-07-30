@@ -2693,3 +2693,10 @@ code {
   padding: 0 8px;
   white-space: nowrap;
 }
+
+.hf-v2-terminal { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; margin: .8rem 0 1rem; padding: .75rem; border: 1px solid var(--color-line, #d6d3cc); border-radius: .7rem; background: rgba(255,255,255,.55); }
+.hf-v2-terminal > div { display: flex; flex-direction: column; gap: .2rem; }
+.hf-v2-terminal small { color: var(--color-muted, #64748b); }
+.hf-v2-terminal__upgrades { grid-column: 1 / -1; flex-direction: row !important; flex-wrap: wrap; }
+.hf-v2-terminal__upgrades button { padding: .45rem .65rem; }
+@media (max-width: 700px) { .hf-v2-terminal { grid-template-columns: 1fr; } .hf-v2-terminal__upgrades { grid-column: auto; } }

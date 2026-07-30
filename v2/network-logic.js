@@ -39,6 +39,7 @@
       cities: {zurich: {unlocked: true}},
       junctions: [],
       usedCapacity: {},
+      terminalReservations: {},
       ...overrides,
     };
   }
