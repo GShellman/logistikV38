@@ -9,8 +9,6 @@
   // has the same meaning everywhere on the map.
   const JUNCTION_SNAP_KM = 0.05;
   const ROAD_REUSE_MIN_KM = 0.15;
-  const CITY_APPROACH_MAX_KM = 3;
-  const CITY_APPROACH_ROUTE_RATIO = 0.08;
   const CAPACITY_WINDOW_MINUTES = 60;
   let intersectionStats = {segmentChecks: 0, bboxRejects: 0};
 
@@ -365,16 +363,49 @@
     while (used.has(id)) id = `junction-${key}-${suffix++}`;
     const junction = {
       id,
-      name: 'Automatischer Netzknoten',
+      name: 'Netzknoten',
       lat: point[0],
       lng: point[1],
       tier: 0,
       slots: 0,
       isJunction: true,
-      automatic: true,
+      automatic: false,
     };
     targetState.junctions.push(junction);
     return junction;
+  }
+
+  function closestPointOnGeometry(point, geometry) {
+    if (!Array.isArray(geometry) || geometry.length < 2) return null;
+    const metrics = geometryMetrics(geometry);
+    let closest = null;
+    for (let index = 0; index < geometry.length - 1; index += 1) {
+      const projected = closestPointOnSegment(point, geometry[index], geometry[index + 1]);
+      const distance = dist({lat: point[0], lng: point[1]}, {lat: projected.point[0], lng: projected.point[1]});
+      if (!closest || distance < closest.distance) closest = {point: projected.point, distance, segmentIndex: index,
+        segmentT: projected.t, offset: geometryPointOffset(geometry, index, projected.t, metrics)};
+    }
+    return closest;
+  }
+
+  // Manual nodes are deliberately kept on the pending project until it is
+  // confirmed. This makes cancelling side-effect free and gives the map layer
+  // one authoritative validation/snap operation for clicks and drags.
+  function createManualJunction(project, value, targetState = state) {
+    const geometry = project?.geometry;
+    const point = Array.isArray(value) ? [Number(value[0]), Number(value[1])] : [Number(value?.lat), Number(value?.lng)];
+    if (!project || transportSpec(project.type).mode !== 'road' || point.some(coordinate => !Number.isFinite(coordinate))) {
+      return {ok: false, reason: 'invalid-junction'};
+    }
+    const snapped = closestPointOnGeometry(point, geometry);
+    if (!snapped || snapped.distance > JUNCTION_SNAP_KM) return {ok: false, reason: 'junction-off-route', maxDistanceKm: JUNCTION_SNAP_KM};
+    project.manualJunctions = Array.isArray(project.manualJunctions) ? project.manualJunctions : [];
+    const existing = project.manualJunctions.find(node => dist(node, {lat: snapped.point[0], lng: snapped.point[1]}) < JUNCTION_SNAP_KM);
+    if (existing) return {ok: true, junction: existing, snapped: true};
+    const junction = {id: `manual-${Date.now()}-${project.manualJunctions.length + 1}`, name: 'Netzknoten',
+      lat: snapped.point[0], lng: snapped.point[1], automatic: false};
+    project.manualJunctions.push(junction);
+    return {ok: true, junction, snapped: snapped.distance > INTERSECTION_EPS};
   }
 
   function edgeWithGeometry(base, a, b, type, coords, targetState = state) {
@@ -402,25 +433,6 @@
     return id;
   }
 
-  function connectionPointKey(hit, edge) {
-    return `${edge.id || `${edge.a}:${edge.b}`}@${hit.point[0].toFixed(6)},${hit.point[1].toFixed(6)}`;
-  }
-
-  function findConnectionCandidates(project, targetState = state) {
-    if (transportSpec(project.type).mode !== 'road') return [];
-    const geometry = project.geometry || [];
-    if (geometry.length < 2) return [];
-    const bounds = geometryBounds(geometry, JUNCTION_SNAP_KM / 110);
-    return (targetState.connections || []).filter(edge => isRoadType(edge.type)).flatMap(edge => {
-      const existing = edgeGeometry(edge, targetState);
-      if (!boundsOverlap(bounds, geometryBounds(existing, JUNCTION_SNAP_KM / 110))) return [];
-      return uniqueIntersections(geometryIntersections(geometry, existing)).map(hit => ({
-        id: connectionPointKey(hit, edge), edgeId: edge.id, point: hit.point,
-        lat: hit.point[0], lng: hit.point[1], automatic: false, enabled: true,
-      }));
-    }).filter((candidate, index, all) => all.findIndex(item => item.id === candidate.id) === index);
-  }
-
   function splitRoadsForAutomaticJunctions(project, targetState = state) {
     intersectionStats = {segmentChecks: 0, bboxRejects: 0};
     const projectSpec = transportSpec(project.type);
@@ -432,42 +444,26 @@
       : [[nodeInfo(project.a, targetState).lat, nodeInfo(project.a, targetState).lng], [nodeInfo(project.b, targetState).lat, nodeInfo(project.b, targetState).lng]];
     const newCuts = [];
     const replacements = new Map();
-    const projectBounds = geometryBounds(projectGeometry, JUNCTION_SNAP_KM / 110);
-    const projectDistance = geometryDistance(projectGeometry);
-    // Roads from several cities fan in/out over many slightly different
-    // streets around the same centre. Turning every crossing in that approach
-    // into a graph node produces dozens of tiny edges and stacked markers.
-    // Keep the final approach as one edge; reuse/crossing starts outside it.
-    const cityApproachDistance = Math.min(CITY_APPROACH_MAX_KM, projectDistance * CITY_APPROACH_ROUTE_RATIO);
+    const manualJunctions = (project.manualJunctions || []).filter(node => node?.automatic === false);
+
+    for (const manual of manualJunctions) {
+      const onProject = closestPointOnGeometry([manual.lat, manual.lng], projectGeometry);
+      if (!onProject || onProject.distance > JUNCTION_SNAP_KM) continue;
+      const junction = createJunction(onProject.point, targetState);
+      newCuts.push({...onProject, point: [junction.lat, junction.lng], junctionId: junction.id, type: project.type});
+    }
 
     for (const edge of targetState.connections || []) {
       if (!isRoadType(edge.type)) continue;
       const existingGeometry = edgeGeometry(edge, targetState);
-      if (!boundsOverlap(projectBounds, geometryBounds(existingGeometry, JUNCTION_SNAP_KM / 110))) continue;
-      const hits = uniqueIntersections(geometryIntersections(projectGeometry, existingGeometry));
-      if (!hits.length) continue;
-
       const existingCuts = [];
-      for (const hit of hits) {
-        const selectedPoints = Array.isArray(project.connectionPoints) ? project.connectionPoints : null;
-        if (selectedPoints && !selectedPoints.some(point => (point.enabled !== false) && (point.id === connectionPointKey(hit, edge)
-          || dist({lat: point.lat ?? point.point?.[0], lng: point.lng ?? point.point?.[1]}, {lat: hit.point[0], lng: hit.point[1]}) <= JUNCTION_SNAP_KM))) continue;
-        if (hit.aOffset > JUNCTION_SNAP_KM && hit.aOffset < projectDistance - JUNCTION_SNAP_KM
-          && (hit.aOffset < cityApproachDistance || hit.aOffset > projectDistance - cityApproachDistance)) continue;
-        const projectAtStart = hit.aOffset <= INTERSECTION_EPS;
-        const projectAtEnd = hit.aOffset >= projectDistance - INTERSECTION_EPS;
-        const existingAtStart = hit.bOffset <= INTERSECTION_EPS;
-        const existingAtEnd = hit.bOffset >= geometryDistance(existingGeometry) - INTERSECTION_EPS;
-        const projectNode = projectAtStart ? project.a : (projectAtEnd ? project.b : null);
-        const existingNode = existingAtStart ? edge.a : (existingAtEnd ? edge.b : null);
-        // This one point is already represented by the same graph node.  Other
-        // hits between these two polylines are deliberately still processed.
-        if (projectNode && projectNode === existingNode) continue;
-        const junctionId = projectNode || existingNode || createJunction(hit.point, targetState).id;
-        const node = nodeInfo(junctionId, targetState);
-        const point = node ? [node.lat, node.lng] : hit.point;
-        newCuts.push({offset: hit.aOffset, segmentIndex: hit.aIndex, point, junctionId, type: edge.type});
-        existingCuts.push({offset: hit.bOffset, segmentIndex: hit.bIndex, point, junctionId});
+      for (const manual of manualJunctions) {
+        const onProject = closestPointOnGeometry([manual.lat, manual.lng], projectGeometry);
+        const onExisting = closestPointOnGeometry(onProject?.point || [manual.lat, manual.lng], existingGeometry);
+        if (!onProject || !onExisting || onProject.distance > JUNCTION_SNAP_KM || onExisting.distance > JUNCTION_SNAP_KM) continue;
+        const junction = targetState.junctions.find(node => dist(node, {lat: onProject.point[0], lng: onProject.point[1]}) < JUNCTION_SNAP_KM);
+        if (!junction) continue;
+        existingCuts.push({...onExisting, point: [junction.lat, junction.lng], junctionId: junction.id});
       }
       const sortedExistingCuts = normalizeCuts(existingGeometry, existingCuts);
       if (!sortedExistingCuts.length) continue;
@@ -838,10 +834,8 @@
     }
     const project = {kind: 'build', a: fromId, b: toId, type, distance, duration: distance / t.speed, geometry, cost: quote.cost, maintenance: quote.maintenance,
       waypoints: geometry.slice(1, -1).map(([lat, lng]) => ({lat, lng}))};
-    const candidates = findConnectionCandidates(project);
-    project.connectionPoints = Array.isArray(options.connectionPoints)
-      ? candidates.map(candidate => ({...candidate, enabled: options.connectionPoints.some(point => point.enabled !== false && point.id === candidate.id)}))
-      : candidates;
+    project.manualJunctions = [];
+    for (const junction of options.manualJunctions || []) createManualJunction(project, junction);
     state.pendingProject = project;
     return state.pendingProject;
   }
@@ -871,5 +865,5 @@
     return edges[0];
   }
 
-  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, JUNCTION_SNAP_KM, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, findConnectionCandidates, getState, confirmProject, segmentIntersection, geometryIntersections, splitRoadsForAutomaticJunctions, getIntersectionStats: () => ({...intersectionStats}), getEdgeOccupancy, getEdgeSchedule, pathEdgeOccupations, pathCapacityStatus, findEarliestPathSlot, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
+  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, JUNCTION_SNAP_KM, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, createManualJunction, getState, confirmProject, segmentIntersection, geometryIntersections, splitRoadsForAutomaticJunctions, getIntersectionStats: () => ({...intersectionStats}), getEdgeOccupancy, getEdgeSchedule, pathEdgeOccupations, pathCapacityStatus, findEarliestPathSlot, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
 })();

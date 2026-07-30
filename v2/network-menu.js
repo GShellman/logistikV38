@@ -14,6 +14,7 @@
 
   let activeOriginId = null;
   let activeTargetId = null;
+  let manualNodeMode = false;
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"]/g, char => ({
@@ -326,7 +327,7 @@
   }
 
   function renderPlanningPhase(project, busy = false) {
-    const enabledConnections = (project.connectionPoints || []).filter(point => point.enabled !== false).length;
+    const enabledConnections = (project.manualJunctions || []).length;
     return `<div class="hf-v2-network-menu hf-v2-route-editor" data-network-origin="${escapeHtml(project.a)}" data-network-target-id="${escapeHtml(project.b)}">
       <p class="hf-v2-network-eyebrow">Planungsphase</p>
       <h3>Route auf Karte bearbeiten</h3>
@@ -340,7 +341,7 @@
       <div class="hf-v2-route-editor__actions">
         <button type="button" data-action="add-waypoint">Wegpunkt hinzufügen</button>
         <button type="button" data-action="remove-waypoint" ${(project.waypoints || []).length ? '' : 'disabled'}>Wegpunkt entfernen</button>
-        <button type="button" data-action="set-connection">Anschlussknoten setzen</button>
+        <button type="button" data-action="set-connection" class="${manualNodeMode ? 'is-active' : ''}" aria-pressed="${manualNodeMode ? 'true' : 'false'}">Knotenmodus ${manualNodeMode ? 'aktiv' : 'inaktiv'}</button>
         <button type="button" data-action="cancel-planning">Bearbeitung abbrechen</button>
         <button type="button" data-action="confirm-project" class="hf-v2-network-badge--primary" ${project.a && project.b && project.geometry?.length >= 2 ? '' : 'disabled'}>Bau bestätigen</button>
       </div>
@@ -354,8 +355,11 @@
       onAddWaypoint: point => changeWaypoints([...(project.waypoints || []), point]),
       onMoveWaypoint: (index, point) => changeWaypoints((project.waypoints || []).map((old, i) => i === index ? {lat: point.lat, lng: point.lng} : old)),
       onRemoveWaypoint: index => changeWaypoints((project.waypoints || []).filter((_, i) => i !== index)),
-      onToggleConnection: id => toggleConnection(id),
+      onAddManualJunction: point => addManualJunction(point),
+      onMoveManualJunction: (index, point) => moveManualJunction(index, point),
+      onRemoveManualJunction: index => removeManualJunction(index),
     });
+    window.HFNetworkLayer?.setManualNodeMode?.(manualNodeMode);
   }
 
   async function changeWaypoints(waypoints) {
@@ -364,14 +368,32 @@
     const start = cityById(old.a);
     const target = cityById(old.b);
     const geometry = [[start.lat, start.lng], ...waypoints.map(point => [point.lat, point.lng]), [target.lat, target.lng]];
-    const project = await window.HF_V2?.planConnection?.(old.a, old.b, old.type, {geometry, connectionPoints: old.connectionPoints});
+    const project = await window.HF_V2?.planConnection?.(old.a, old.b, old.type, {geometry, manualJunctions: old.manualJunctions});
     if (project) showProject(project);
   }
 
-  function toggleConnection(id) {
+  function addManualJunction(point) {
     const project = network()?.getState?.().pendingProject;
     if (!project) return;
-    project.connectionPoints = (project.connectionPoints || []).map(point => point.id === id ? {...point, enabled: point.enabled === false} : point);
+    const result = network()?.createManualJunction?.(project, point);
+    if (!result?.ok) return;
+    showProject(project);
+  }
+
+  function moveManualJunction(index, point) {
+    const project = network()?.getState?.().pendingProject;
+    const previous = project?.manualJunctions?.[index];
+    if (!project || !previous) return;
+    project.manualJunctions.splice(index, 1);
+    const result = network()?.createManualJunction?.(project, point);
+    if (!result?.ok) project.manualJunctions.splice(index, 0, previous);
+    showProject(project);
+  }
+
+  function removeManualJunction(index) {
+    const project = network()?.getState?.().pendingProject;
+    if (!project) return;
+    project.manualJunctions = (project.manualJunctions || []).filter((_, itemIndex) => itemIndex !== index);
     showProject(project);
   }
 
@@ -494,9 +516,15 @@
         return;
       }
 
-      if (action === 'set-connection') return;
+      if (action === 'set-connection') {
+        manualNodeMode = !manualNodeMode;
+        const project = network()?.getState?.().pendingProject;
+        if (project) showProject(project);
+        return;
+      }
 
       if (action === 'cancel-planning') {
+        manualNodeMode = false;
         const project = network()?.getState?.();
         if (project) project.pendingProject = null;
         window.HFNetworkLayer?.clearProjectPreview?.();
