@@ -1,7 +1,7 @@
 :root {
   color-scheme: light;
 
-  /* Semantische Leitstellen-Palette */
+  /* Schweizer Leitstelle: alle Komponentenfarben werden aus Rollen abgeleitet. */
   --color-dispatch-blue: #164a73;
   --color-signal-yellow: #f2c94c;
   --color-success-green: #237a4b;
@@ -22,6 +22,31 @@
   --border-subtle: #cbd4dc;
   --border-strong: #8795a3;
 
+  /* Zustandsrollen */
+  --surface-selected: #fff3bf;
+  --surface-success: #e6f3eb;
+  --surface-warning: #fff1db;
+  --surface-error: #fdebed;
+  --surface-disabled: #e3e8ec;
+  --text-disabled: #697682;
+  --border-interactive: var(--color-dispatch-blue);
+  --border-selected: #c39400;
+  --interaction-primary: var(--color-dispatch-blue);
+  --interaction-primary-hover: #0f3d61;
+  --interaction-primary-pressed: #0a2e49;
+  --interaction-secondary: var(--surface-work);
+  --interaction-secondary-hover: #e7edf2;
+  --interaction-secondary-pressed: #d8e1e8;
+  --interaction-danger: var(--color-error-red);
+  --interaction-danger-hover: #8d1823;
+  --interaction-danger-pressed: #68121a;
+  --interaction-focus: var(--color-signal-yellow);
+  --overlay-scrim: rgba(9, 24, 36, .72);
+  --instrument-border: #3e5364;
+  --text-on-success: #155d38;
+  --text-on-warning: #743f08;
+  --text-on-error: #841923;
+
   /* 4-Pixel-Abstandsraster */
   --space-1: 4px;
   --space-2: 8px;
@@ -31,8 +56,9 @@
   --space-8: 32px;
 
   --radius-control: 4px;
-  --radius-card: 8px;
-  --radius-panel: 10px;
+  --radius-card: 6px;
+  --radius-panel: 8px;
+  --radius-pill: 999px;
   --shadow-raised: 0 2px 8px rgba(16, 37, 54, .12);
   --shadow-modal: 0 8px 24px rgba(16, 37, 54, .18);
   --font-ui: Manrope, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -46,7 +72,7 @@
   --hf-line: var(--border-subtle);
   --hf-primary: var(--color-dispatch-blue);
   --green: var(--color-success-green);
-  --hf-primary-2: #23648f;
+  --hf-primary-2: var(--color-dispatch-blue);
   --hf-accent: var(--color-warning-orange);
   --hf-shadow: var(--shadow-raised);
 }
@@ -542,7 +568,8 @@ code {
 
 .hf-v2-modal-back {
   align-items: center;
-  background: rgba(15, 36, 27, .48);
+  background: var(--overlay-scrim);
+  backdrop-filter: none;
   display: flex;
   inset: 0;
   justify-content: center;
@@ -552,10 +579,10 @@ code {
 }
 .hf-v2-modal-back[hidden] { display: none; }
 .hf-v2-modal {
-  background: rgba(255, 255, 255, .98);
-  border: 1px solid rgba(255, 255, 255, .72);
-  border-radius: 18px;
-  box-shadow: var(--hf-shadow);
+  background: var(--surface-work);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-modal);
   display: flex;
   flex-direction: column;
   max-height: min(86vh, 760px);
@@ -570,11 +597,12 @@ code {
 .hf-v2-modal.show { transform: translateY(0) scale(1); }
 .hf-v2-modal-header {
   align-items: start;
-  border-bottom: 1px solid var(--hf-line);
+  background: var(--surface-work-muted);
+  border-bottom: 1px solid var(--border-subtle);
   display: grid;
   gap: 14px;
   grid-template-columns: 1fr auto;
-  padding: 24px 24px 16px;
+  padding: var(--space-4) var(--space-6) var(--space-3);
 }
 .hf-v2-modal__close {
   align-items: center;
@@ -1880,11 +1908,11 @@ code {
 
 .hf-v2-shipment-marker {
   align-items: center;
-  background: rgba(245, 248, 252, .95);
-  border: 1px solid rgba(93, 109, 127, .38);
-  border-radius: 999px;
-  box-shadow: 0 6px 14px rgba(15, 31, 52, .16);
-  display: flex;
+  background: var(--surface-work);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-raised);
+  display: inline-flex;
   height: 34px;
   justify-content: center;
   overflow: hidden;
@@ -2123,18 +2151,6 @@ code {
   min-width: 6px;
 }
 
-.hf-v2-shipment-marker {
-  align-items: center;
-  background: rgba(245, 248, 252, .95);
-  border: 1px solid rgba(93, 109, 127, .38);
-  border-radius: 999px;
-  box-shadow: 0 6px 14px rgba(15, 31, 52, .16);
-  display: inline-flex;
-  height: 34px;
-  justify-content: center;
-  overflow: hidden;
-  width: 44px;
-}
 
 .hf-v2-shipment-asset {
   display: block;
@@ -2323,11 +2339,11 @@ body { font-size: 14px; }
 }
 .hf-v2-hud {
   align-items: stretch;
-  background: #102943;
-  border: 1px solid rgba(255,255,255,.14);
-  border-radius: 14px;
-  box-shadow: 0 8px 24px rgba(15,31,52,.18);
-  color: #fff;
+  background: var(--surface-instrument);
+  border: 1px solid var(--instrument-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-raised);
+  color: var(--text-on-dark);
   display: grid;
   gap: 10px;
   grid-column: 1 / -1;
@@ -2402,10 +2418,6 @@ body {
 .hf-v2-panel { gap: var(--space-3); }
 .hf-v2-panel-card { padding: var(--space-4); }
 
-.hf-v2-modal-back {
-  background: rgba(9, 24, 36, .68);
-  backdrop-filter: none;
-}
 
 .hf-v2-modal {
   background: var(--surface-work);
@@ -2414,19 +2426,13 @@ body {
   box-shadow: var(--shadow-modal);
 }
 
-.hf-v2-modal-header {
-  background: var(--surface-work-muted);
-  border-bottom: 1px solid var(--border-subtle);
-  padding: var(--space-4) var(--space-6) var(--space-3);
-}
 
 .hf-v2-modal-scroll { padding: var(--space-4) var(--space-6) var(--space-6); }
 .hf-v2-modal__close { border-radius: var(--radius-control); }
 
-.hf-v2-hud,
 .hf-v2-system-menu__popover {
   background: var(--surface-instrument);
-  border: 1px solid #3e5364;
+  border: 1px solid var(--instrument-border);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-raised);
   color: var(--text-on-dark);
@@ -2724,3 +2730,139 @@ code {
 .hf-v2-terminal__upgrades { grid-column: 1 / -1; flex-direction: row !important; flex-wrap: wrap; }
 .hf-v2-terminal__upgrades button { padding: .45rem .65rem; }
 @media (max-width: 700px) { .hf-v2-terminal { grid-template-columns: 1fr; } .hf-v2-terminal__upgrades { grid-column: auto; } }
+
+/* ========================================================================== */
+/* Kanonische Komponentenregeln                                               */
+/* Keine Modulfarbe unterhalb dieser Grenze: Varianten benutzen Rollen oben.  */
+/* ========================================================================== */
+
+/* Instrumentenrahmen, Arbeitsflächen und Seitenpanel */
+.hf-v2-hud-stat { border-color: var(--instrument-border); }
+.hf-v2-hud-stat span { color: var(--border-subtle); }
+.hf-v2-hud-stat strong.is-positive { color: var(--surface-success); }
+.hf-v2-hud-stat strong.is-negative { color: #ffb7bd; }
+.hf-v2-map-card,
+.hf-v2-panel-card,
+.hf-v2-fact,
+.hf-v2-logistics-card,
+.hf-v2-fleet-live,
+.hf-v2-fleet-plan,
+.hf-v2-fleet-purchase {
+  background: var(--surface-work);
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: none;
+}
+
+/* Modals: ein Scrim, ein Rahmen, ein Kopf. */
+.hf-v2-modal {
+  background: var(--surface-work);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-modal);
+}
+
+/* Einheitliche Interaktionszustände für alle Menümodule. */
+:is(.hf-v2-save-button, .hf-v2-action-primary, .hf-v2-catalog-build,
+    .hf-v2-fleet-buy, .hf-v2-factory-build,
+    .hf-v2-factory-production-upgrade > button) {
+  background: var(--interaction-primary);
+  border: 1px solid var(--interaction-primary);
+  border-radius: var(--radius-control);
+  color: var(--text-on-dark);
+  cursor: pointer;
+}
+:is(.hf-v2-save-button, .hf-v2-action-primary, .hf-v2-catalog-build,
+    .hf-v2-fleet-buy, .hf-v2-factory-build,
+    .hf-v2-factory-production-upgrade > button):hover { background: var(--interaction-primary-hover); border-color: var(--interaction-primary-hover); }
+:is(.hf-v2-save-button, .hf-v2-action-primary, .hf-v2-catalog-build,
+    .hf-v2-fleet-buy, .hf-v2-factory-build,
+    .hf-v2-factory-production-upgrade > button):active { background: var(--interaction-primary-pressed); border-color: var(--interaction-primary-pressed); transform: translateY(1px); }
+
+:is(.hf-v2-save-button--ghost, .hf-v2-modal__close,
+    .hf-v2-system-menu__popover button, .hf-v2-catalog-nav button) {
+  background: var(--interaction-secondary);
+  border: 1px solid var(--border-interactive);
+  border-radius: var(--radius-control);
+  color: var(--interaction-primary);
+}
+:is(.hf-v2-save-button--ghost, .hf-v2-modal__close,
+    .hf-v2-system-menu__popover button, .hf-v2-catalog-nav button):hover { background: var(--interaction-secondary-hover); }
+:is(.hf-v2-save-button--ghost, .hf-v2-modal__close,
+    .hf-v2-system-menu__popover button, .hf-v2-catalog-nav button):active { background: var(--interaction-secondary-pressed); transform: translateY(1px); }
+
+:is(button, [role="button"]):focus-visible { outline: 3px solid var(--interaction-focus); outline-offset: 2px; }
+:is(button, [role="button"]):disabled,
+:is(button, [role="button"])[aria-disabled="true"],
+.is-locked :is(button, [role="button"]) {
+  background: var(--surface-disabled);
+  border-color: var(--border-subtle);
+  color: var(--text-disabled);
+  cursor: not-allowed;
+  opacity: 1;
+  transform: none;
+}
+.hf-v2-action-danger {
+  background: var(--interaction-danger);
+  border: 1px solid var(--interaction-danger);
+  border-radius: var(--radius-control);
+  color: var(--text-on-dark);
+}
+.hf-v2-action-danger:hover { background: var(--interaction-danger-hover); border-color: var(--interaction-danger-hover); }
+.hf-v2-action-danger:active { background: var(--interaction-danger-pressed); border-color: var(--interaction-danger-pressed); transform: translateY(1px); }
+
+/* Auswahl und Tabs */
+:is(.hf-v2-city-tabs, .hf-v2-fleet-tabs) {
+  background: var(--surface-work-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+:is(.hf-v2-city-tabs button, .hf-v2-fleet-tabs button, .hf-v2-catalog-nav button).is-active,
+:is(.hf-v2-city-tabs button, .hf-v2-fleet-tabs button)[aria-selected="true"] {
+  background: var(--surface-instrument);
+  border-color: var(--surface-instrument);
+  box-shadow: inset 0 -4px var(--interaction-focus);
+  color: var(--text-on-dark);
+}
+
+/* Katalogkarten */
+.hf-v2-catalog-row {
+  --catalog-state: var(--color-success-green);
+  background: var(--surface-work);
+  border-color: var(--border-subtle);
+  border-left-color: var(--catalog-state);
+  border-radius: var(--radius-card);
+}
+.hf-v2-catalog-row.is-expensive { --catalog-state: var(--color-warning-orange); background: var(--surface-warning); }
+.hf-v2-catalog-row.is-locked { --catalog-state: var(--text-disabled); background: var(--surface-disabled); }
+.hf-v2-catalog-row.is-no-slot { --catalog-state: var(--color-error-red); background: var(--surface-error); }
+.hf-v2-catalog-badge,
+.hf-v2-catalog-count { background: var(--surface-work-muted); border-radius: var(--radius-pill); }
+
+/* Status-Badges */
+.hf-v2-badge,
+.hf-v2-network-badge,
+.hf-v2-fleet-status,
+.hf-v2-factory-production-status { border: 1px solid var(--border-subtle); border-radius: var(--radius-pill); }
+:is(.hf-v2-badge, .hf-v2-network-badge, .hf-v2-fleet-status, .hf-v2-factory-production-status).is-available,
+.hf-v2-fleet-status.is-available,
+.hf-v2-factory-production-status.is-ready { background: var(--surface-success); border-color: var(--color-success-green); color: var(--text-on-success); }
+:is(.hf-v2-fleet-status.is-returning, .hf-v2-factory-production-status.is-capacity, .hf-v2-factory-production-status.is-input) { background: var(--surface-warning); border-color: var(--color-warning-orange); color: var(--text-on-warning); }
+.hf-v2-factory-production-status.is-blocked { background: var(--surface-error); border-color: var(--color-error-red); color: var(--text-on-error); }
+
+/* Tabellen */
+:is(.hf-v2-fleet-table, .hf-v2-receipt__table) { border-collapse: collapse; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+:is(.hf-v2-fleet-table, .hf-v2-receipt__table) th { background: var(--surface-work-muted); border-bottom: 2px solid var(--border-strong); color: var(--text-muted); }
+:is(.hf-v2-fleet-table, .hf-v2-receipt__table) td { border-bottom: 1px solid var(--border-subtle); color: var(--text-primary); }
+
+/* Kartenmarker und Popups */
+.hf-v2-shipment-marker--delayed { border-color: var(--color-error-red); box-shadow: 0 0 0 3px var(--surface-error); }
+.leaflet-popup-content-wrapper,
+.hf-v2-transport-popup .leaflet-popup-content-wrapper {
+  background: var(--surface-work);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card) !important;
+  box-shadow: var(--shadow-modal);
+}
+.hf-v2-transport-group > header { background: var(--surface-instrument); color: var(--text-on-dark); }
+.hf-v2-transport-popup .leaflet-popup-close-button { background: var(--interaction-secondary) !important; border-radius: var(--radius-control) !important; color: var(--interaction-primary) !important; }
