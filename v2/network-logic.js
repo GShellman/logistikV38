@@ -222,14 +222,21 @@
           bOffset: geometryPointOffset(bCoords, bi, hit.u, bMetrics),
         });
         if (exactHits.length) continue;
-        // Near misses primarily arise at route endpoints.  Testing all four
-        // endpoint projections also covers T joins and interior polyline points.
+        // Snapping every OSRM shape point to a nearby/parallel road creates a
+        // junction every few metres. Near misses are meaningful only where one
+        // of the complete polylines ends (a T join or shared route endpoint).
+        // Interior crossings are handled by the exact intersection above.
         const candidates = [];
-        for (const [point, onA] of [[aCoords[ai], true], [aCoords[ai + 1], true], [bCoords[bi], false], [bCoords[bi + 1], false]]) {
+        const endpoints = [];
+        if (ai === 0) endpoints.push([aCoords[ai], true, 0]);
+        if (ai === aCoords.length - 2) endpoints.push([aCoords[ai + 1], true, 1]);
+        if (bi === 0) endpoints.push([bCoords[bi], false, 0]);
+        if (bi === bCoords.length - 2) endpoints.push([bCoords[bi + 1], false, 1]);
+        for (const [point, onA, endpointT] of endpoints) {
           const projected = onA ? closestPointOnSegment(point, bCoords[bi], bCoords[bi + 1]) : closestPointOnSegment(point, aCoords[ai], aCoords[ai + 1]);
           if (dist({lat: point[0], lng: point[1]}, {lat: projected.point[0], lng: projected.point[1]}) > JUNCTION_SNAP_KM) continue;
-          const aT = onA ? (samePoint(point, aCoords[ai]) ? 0 : 1) : projected.t;
-          const bT = onA ? projected.t : (samePoint(point, bCoords[bi]) ? 0 : 1);
+          const aT = onA ? endpointT : projected.t;
+          const bT = onA ? projected.t : endpointT;
           candidates.push({point: onA ? point : projected.point, aT, bT});
         }
         for (const hit of candidates) hits.push({point: hit.point, aIndex: ai, aT: hit.aT, bIndex: bi, bT: hit.bT,

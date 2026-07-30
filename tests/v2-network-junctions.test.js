@@ -104,3 +104,22 @@ test('lange OSRM-artige Geometrien werden mit linear begrenzten Segmentprüfunge
     `Bounding-Box-Filter führte unerwartet ${stats.segmentChecks} genaue Segmentprüfungen aus`);
   assert.ok(stats.bboxRejects > 1000000, 'Segment-Bounding-Boxen sollten den kartesischen Vergleich früh verwerfen');
 });
+
+test('nahe parallele OSRM-Geometrien erzeugen keine Kette aus Miniabschnitten', () => {
+  const points = 801;
+  const existingGeometry = Array.from({length: points}, (_, index) => [0.0002, index / (points - 1) * 2]);
+  const projectGeometry = Array.from({length: points + 801}, (_, index) => [0, -1 + index / (points + 800) * 4]);
+  const cities = [
+    {id:'west',lat:0,lng:-1}, {id:'east',lat:0,lng:3},
+    {id:'parallel-west',lat:0.0002,lng:0}, {id:'parallel-east',lat:0.0002,lng:2},
+  ];
+  const {api,state} = setup(cities, [road('parallel', 'parallel-west', 'parallel-east', existingGeometry)]);
+
+  const parts = build(api, state, 'west', 'east', projectGeometry);
+  // The middle project part has the same graph endpoints as the existing road
+  // and is intentionally discarded as a duplicate.
+  assert.equal(parts.length, 2, 'nur die beiden Endpunkte der bestehenden Straße dürfen einrasten');
+  assert.equal(state.connections.length, 3);
+  assert.equal(state.junctions.length, 0);
+  assert.ok(api.findPath('west', 'parallel-east', {state, mode:'road'}));
+});
