@@ -12,7 +12,6 @@
   const CITY_APPROACH_MAX_KM = 3;
   const CITY_APPROACH_ROUTE_RATIO = 0.08;
   const CAPACITY_WINDOW_MINUTES = 60;
-  const MAX_ROUTE_GEOMETRY_POINTS = 2000;
   let intersectionStats = {segmentChecks: 0, bboxRejects: 0};
 
   const TRANSPORT_TYPES = {
@@ -137,7 +136,7 @@
     const a = coords[segmentIndex];
     const b = coords[segmentIndex + 1];
     // Scaling a straight segment by t also scales its great-circle distance
-    // sufficiently accurately for the short OSRM segments used here.
+    // sufficiently accurately for the short drawn segments used here.
     return metrics.offsets[segmentIndex] + metrics.segmentLengths[segmentIndex] * Math.max(0, Math.min(1, segmentT));
   }
 
@@ -247,7 +246,7 @@
           bOffset: geometryPointOffset(bCoords, bi, hit.u, bMetrics),
         });
         if (exactHits.length) continue;
-        // Snapping every OSRM shape point to a nearby/parallel road creates a
+        // Snapping every shape point to a nearby/parallel road creates a
         // junction every few metres. Near misses are meaningful only where one
         // of the complete polylines ends (a T join or shared route endpoint).
         // Interior crossings are handled by the exact intersection above.
@@ -268,7 +267,7 @@
           aOffset: geometryPointOffset(aCoords, ai, hit.aT, aMetrics), bOffset: geometryPointOffset(bCoords, bi, hit.bT, bMetrics)});
       }
     }
-    // Nearby OSRM results for the same physical road commonly run a few metres
+    // Nearby drawn lines for the same physical road commonly run a few metres
     // apart and therefore never intersect exactly. Collapse every sufficiently
     // long, continuous parallel run to its entry and exit. The splitter can then
     // connect there and discard the duplicate project edge between those nodes.
@@ -435,7 +434,7 @@
     const replacements = new Map();
     const projectBounds = geometryBounds(projectGeometry, JUNCTION_SNAP_KM / 110);
     const projectDistance = geometryDistance(projectGeometry);
-    // OSRM routes from several cities fan in/out over many slightly different
+    // Roads from several cities fan in/out over many slightly different
     // streets around the same centre. Turning every crossing in that approach
     // into a graph node produces dozens of tiny edges and stacked markers.
     // Keep the final approach as one edge; reuse/crossing starts outside it.
@@ -810,48 +809,13 @@
     }));
   }
 
-  async function fetchRoadRoute(points, options = {}) {
-    if (!window.fetch) return null;
-    const routePoints = Array.isArray(points) ? points : [points, options.to].filter(Boolean);
-    if (routePoints.length < 2) return null;
-    const controller = new AbortController();
-    const externalSignal = options.signal;
-    const abort = () => controller.abort();
-    externalSignal?.addEventListener?.('abort', abort, {once: true});
-    const timer = setTimeout(() => controller.abort(), 14000);
-    try {
-      const coordinates = routePoints.map(point => `${point.lng},${point.lat}`).join(';');
-      const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=false`;
-      const res = await fetch(url, {signal: controller.signal});
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const route = data.routes?.[0];
-      if (data.code !== 'Ok' || !route) throw new Error(data.code || 'Keine Route');
-      return {distance: route.distance / 1000, duration: route.duration / 3600, geometry: simplifyRouteGeometry(route.geometry.coordinates.map(([lng, lat]) => [lat, lng]))};
-    } finally {
-      clearTimeout(timer);
-      externalSignal?.removeEventListener?.('abort', abort);
-    }
-  }
-
-  function simplifyRouteGeometry(coords) {
-    if (!Array.isArray(coords) || coords.length <= 2) return coords;
-    // Radial simplification preserves both endpoints. Start at five metres and
-    // increase only for exceptionally detailed routes; snapping remains 50 m.
-    let tolerance = 0.005;
-    let simplified = coords;
-    do {
-      simplified = [coords[0]];
-      let anchor = coords[0];
-      for (let i = 1; i < coords.length - 1; i++) {
-        if (dist({lat: anchor[0], lng: anchor[1]}, {lat: coords[i][0], lng: coords[i][1]}) >= tolerance) {
-          simplified.push(coords[i]); anchor = coords[i];
-        }
-      }
-      simplified.push(coords[coords.length - 1]);
-      tolerance *= 2;
-    } while (simplified.length > MAX_ROUTE_GEOMETRY_POINTS);
-    return simplified;
+  function editorGeometry(value, from, to) {
+    if (!Array.isArray(value) || value.length < 2) return null;
+    const coords = value.map(point => Array.isArray(point) ? [Number(point[0]), Number(point[1])] : [Number(point?.lat), Number(point?.lng)]);
+    if (coords.some(point => !Number.isFinite(point[0]) || !Number.isFinite(point[1]))) return null;
+    coords[0] = [from.lat, from.lng];
+    coords[coords.length - 1] = [to.lat, to.lng];
+    return geometryDistance(coords) > 0 ? coords : null;
   }
 
   async function planConnection(fromId, toId, type, options = {}) {
@@ -860,19 +824,20 @@
     const t = TRANSPORT_TYPES[type];
     const mode = t?.mode;
     if (!state || !from || !to || !t || dist(from, to) > MAX_CONNECTION_DISTANCE_KM || connectionExists(fromId, toId, mode)) return null;
-    const fallback = mode === 'road' ? {distance: estimateRoadDistance(dist(from, to)), duration: estimateRoadDistance(dist(from, to)) / t.speed, geometry: null} : {distance: dist(from, to), duration: dist(from, to) / t.speed, geometry: null};
-    const waypoints = Array.isArray(options.waypoints) ? options.waypoints.filter(point => Number.isFinite(point?.lat) && Number.isFinite(point?.lng)).map(point => ({lat: point.lat, lng: point.lng})) : [];
-    const route = mode === 'road' ? (await fetchRoadRoute([from, ...waypoints, to], {signal: options.signal}).catch(error => {
-      if (error?.name === 'AbortError') throw error;
-      return null;
-    })) || fallback : fallback;
-    const quote = buildQuote(type, route.distance);
+    const geometry = mode === 'road' ? editorGeometry(options.geometry, from, to) : [[from.lat, from.lng], [to.lat, to.lng]];
+    if (mode === 'road' && !geometry) {
+      state.pendingProject = null;
+      return {ok: false, reason: 'invalid-geometry'};
+    }
+    const distance = geometryDistance(geometry);
+    const quote = buildQuote(type, distance);
     const cash = window.HFV2Save?.getCash?.() ?? STARTING_CASH;
     if (cash < quote.cost) {
       state.pendingProject = null;
       return {ok: false, reason: 'not-enough-cash', cost: quote.cost, cash};
     }
-    const project = {kind: 'build', a: fromId, b: toId, type, distance: route.distance, duration: route.duration, geometry: route.geometry, cost: quote.cost, maintenance: quote.maintenance, waypoints};
+    const project = {kind: 'build', a: fromId, b: toId, type, distance, duration: distance / t.speed, geometry, cost: quote.cost, maintenance: quote.maintenance,
+      waypoints: geometry.slice(1, -1).map(([lat, lng]) => ({lat, lng}))};
     const candidates = findConnectionCandidates(project);
     project.connectionPoints = Array.isArray(options.connectionPoints)
       ? candidates.map(candidate => ({...candidate, enabled: options.connectionPoints.some(point => point.enabled !== false && point.id === candidate.id)}))
@@ -888,6 +853,9 @@
   function confirmProject() {
     const project = state?.pendingProject;
     if (!project || project.kind !== 'build') return null;
+    const start = nodeInfo(project.a);
+    const target = nodeInfo(project.b);
+    if (!start || !target || (isRoadType(project.type) && !editorGeometry(project.geometry, start, target))) return null;
     const cash = window.HFV2Save?.getCash?.() ?? STARTING_CASH;
     if (cash < project.cost) return null;
     window.HFV2Save?.changeCash?.(-project.cost, 'network-build', {reference: {networkProject: `${project.a}:${project.b}:${project.type}`}});
@@ -903,5 +871,5 @@
     return edges[0];
   }
 
-  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, JUNCTION_SNAP_KM, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, fetchRoadRoute, findConnectionCandidates, getState, confirmProject, segmentIntersection, geometryIntersections, splitRoadsForAutomaticJunctions, getIntersectionStats: () => ({...intersectionStats}), simplifyRouteGeometry, getEdgeOccupancy, getEdgeSchedule, pathEdgeOccupations, pathCapacityStatus, findEarliestPathSlot, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
+  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, JUNCTION_SNAP_KM, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, findConnectionCandidates, getState, confirmProject, segmentIntersection, geometryIntersections, splitRoadsForAutomaticJunctions, getIntersectionStats: () => ({...intersectionStats}), getEdgeOccupancy, getEdgeSchedule, pathEdgeOccupations, pathCapacityStatus, findEarliestPathSlot, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
 })();

@@ -669,11 +669,13 @@
         zIndexOffset: city.id === 'zurich' ? 500 : (city.tier === 1 ? 120 : 0),
       }).addTo(map);
       marker.on('click', () => {
+        if (window.HFNetworkLayer?.handleDrawingCityClick?.(city.id)) return;
         selectCity(city, cities);
         window.showCityActionMenu?.(city);
       });
       marker.on('keypress', event => {
         if (event.originalEvent?.key === 'Enter' || event.originalEvent?.key === ' ') {
+          if (window.HFNetworkLayer?.handleDrawingCityClick?.(city.id)) return;
           selectCity(city, cities);
           window.showCityActionMenu?.(city);
         }
