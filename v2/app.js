@@ -413,7 +413,8 @@
       : window.HFV2LoadCarrierCatalog?.metrics?.(goodId, record?.amountKg);
     const netKg = Number(cargo?.netKg ?? record?.amountKg) || 0;
     const count = Math.max(0, Math.trunc(Number(cargo?.carrierCount) || 0));
-    const carrier = count ? ` · ${count.toLocaleString('de-CH')} ${count === 1 ? 'Palette' : 'Paletten'}` : '';
+    const carrierName = cargo?.loadCarrier === 'swap-body' ? (count === 1 ? 'Wechselbehälter' : 'Wechselbehälter') : (count === 1 ? 'Palette' : 'Paletten');
+    const carrier = count ? ` · ${count.toLocaleString('de-CH')} ${carrierName}` : '';
     return `${formatWeightKg(netKg)}${carrier} · ${formatWeightKg(cargo?.grossKg ?? netKg)} brutto`;
   }
 
@@ -433,7 +434,8 @@
     const dispatchAbsMinute = Number(order.lastDispatchAbsMinute);
     const dispatchTimeMarkup = Number.isFinite(dispatchAbsMinute) ? `<span><small>Letzter Versuch</small>${formatAbsMinute(dispatchAbsMinute)}</span>` : '';
     const warningClass = dispatchResult === 'stock-limited' ? ' hf-v2-logistics-row--warning' : '';
-    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row${warningClass}"><b>${escapeHtml(cityName(order.fromCityId))} → ${escapeHtml(cityName(order.toCityId))}</b><span><small>Ware</small>${escapeHtml(good.name || order.goodId)}</span><span><small>Menge</small>${cargoSummary(order)}</span><span><small>Frequenz</small>${order.frequency === 'weekly' ? 'wöchentlich' : 'täglich'}</span><span><small>Uhrzeit</small>${formatClockTime(order.departureHour, order.departureMinute)}</span><span><small>Fahrzeugtyp</small>${escapeHtml(vehicleLabel(order.vehicleType))}</span><span><small>Status</small>${order.enabled === false ? 'Inaktiv' : 'Aktiv'}</span><span><small>Versand</small>${escapeHtml(dispatchResultLabel(dispatchResult))}</span>${dispatchTimeMarkup}<span><small>Aktion</small><button type="button" data-hf-v2-order-toggle="${order.id}">${order.enabled === false ? 'Aktivieren' : 'Deaktivieren'}</button> <button class="hf-v2-action-danger" type="button" data-hf-v2-order-delete="${order.id}">Löschen</button></span></article>`;
+    const packagingLabel = {automatic: 'Automatisch', pallet: 'Palette', 'swap-body': 'Wechselbehälter'}[order.packagingStrategy] || 'Palette';
+    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row${warningClass}"><b>${escapeHtml(cityName(order.fromCityId))} → ${escapeHtml(cityName(order.toCityId))}</b><span><small>Ware</small>${escapeHtml(good.name || order.goodId)}</span><span><small>Menge</small>${cargoSummary(order)}</span><span><small>Verpackung</small>${packagingLabel}</span><span><small>Frequenz</small>${order.frequency === 'weekly' ? 'wöchentlich' : 'täglich'}</span><span><small>Uhrzeit</small>${formatClockTime(order.departureHour, order.departureMinute)}</span><span><small>Fahrzeugtyp</small>${escapeHtml(vehicleLabel(order.vehicleType))}</span><span><small>Status</small>${order.enabled === false ? 'Inaktiv' : 'Aktiv'}</span><span><small>Versand</small>${escapeHtml(dispatchResultLabel(dispatchResult))}</span>${dispatchTimeMarkup}<span><small>Aktion</small><button type="button" data-hf-v2-order-toggle="${order.id}">${order.enabled === false ? 'Aktivieren' : 'Deaktivieren'}</button> <button class="hf-v2-action-danger" type="button" data-hf-v2-order-delete="${order.id}">Löschen</button></span></article>`;
   }
 
   function shipmentStatusLabel(shipment) {
