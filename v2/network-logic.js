@@ -8,6 +8,7 @@
   // not to join neighbouring streets accidentally.  Unlike a degree epsilon it
   // has the same meaning everywhere on the map.
   const JUNCTION_SNAP_KM = 0.05;
+  const ROAD_REUSE_MIN_KM = 0.15;
   const CAPACITY_WINDOW_MINUTES = 60;
   const MAX_ROUTE_GEOMETRY_POINTS = 2000;
   let intersectionStats = {segmentChecks: 0, bboxRejects: 0};
@@ -194,6 +195,14 @@
     return {point: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], t};
   }
 
+  function segmentsAreParallel(a, b, c, d) {
+    const latitude = (a[0] + b[0] + c[0] + d[0]) / 4 * Math.PI / 180;
+    const ax = (b[1] - a[1]) * Math.cos(latitude), ay = b[0] - a[0];
+    const bx = (d[1] - c[1]) * Math.cos(latitude), by = d[0] - c[0];
+    const lengths = Math.hypot(ax, ay) * Math.hypot(bx, by);
+    return lengths > 1e-14 && Math.abs((ax * bx + ay * by) / lengths) >= 0.94;
+  }
+
   function geometryIntersections(aCoords, bCoords) {
     const hits = [];
     const aMetrics = geometryMetrics(aCoords);
@@ -203,6 +212,7 @@
     const padding = JUNCTION_SNAP_KM / 110;
     const aBounds = aCoords.slice(0, -1).map((point, index) => segmentBounds(point, aCoords[index + 1], padding));
     const bBounds = bCoords.slice(0, -1).map((point, index) => segmentBounds(point, bCoords[index + 1], padding));
+    const corridorVertices = new Map();
     for (let ai = 0; ai < aCoords.length - 1; ai++) {
       for (let bi = 0; bi < bCoords.length - 1; bi++) {
         if (!boundsOverlap(aBounds[ai], bBounds[bi])) {
@@ -210,6 +220,18 @@
           continue;
         }
         intersectionStats.segmentChecks += 1;
+        if (segmentsAreParallel(aCoords[ai], aCoords[ai + 1], bCoords[bi], bCoords[bi + 1])) {
+          for (const vertexIndex of [ai, ai + 1]) {
+            const projected = closestPointOnSegment(aCoords[vertexIndex], bCoords[bi], bCoords[bi + 1]);
+            const separation = dist({lat: aCoords[vertexIndex][0], lng: aCoords[vertexIndex][1]},
+              {lat: projected.point[0], lng: projected.point[1]});
+            const previous = corridorVertices.get(vertexIndex);
+            if (separation <= JUNCTION_SNAP_KM && (!previous || separation < previous.separation)) {
+              corridorVertices.set(vertexIndex, {vertexIndex, point: projected.point, separation,
+                bIndex: bi, bT: projected.t, bOffset: geometryPointOffset(bCoords, bi, projected.t, bMetrics)});
+            }
+          }
+        }
         const result = segmentIntersection(aCoords[ai], aCoords[ai + 1], bCoords[bi], bCoords[bi + 1]);
         const exactHits = Array.isArray(result) ? result : (result ? [result] : []);
         for (const hit of exactHits) hits.push({
@@ -241,6 +263,39 @@
         }
         for (const hit of candidates) hits.push({point: hit.point, aIndex: ai, aT: hit.aT, bIndex: bi, bT: hit.bT,
           aOffset: geometryPointOffset(aCoords, ai, hit.aT, aMetrics), bOffset: geometryPointOffset(bCoords, bi, hit.bT, bMetrics)});
+      }
+    }
+    // Nearby OSRM results for the same physical road commonly run a few metres
+    // apart and therefore never intersect exactly. Collapse every sufficiently
+    // long, continuous parallel run to its entry and exit. The splitter can then
+    // connect there and discard the duplicate project edge between those nodes.
+    const vertices = [...corridorVertices.values()].sort((a, b) => a.vertexIndex - b.vertexIndex);
+    const runs = [];
+    for (const vertex of vertices) {
+      const run = runs[runs.length - 1];
+      const previous = run?.[run.length - 1];
+      const aGap = previous ? aMetrics.offsets[vertex.vertexIndex] - aMetrics.offsets[previous.vertexIndex] : 0;
+      const continues = previous && vertex.vertexIndex === previous.vertexIndex + 1
+        && Math.abs(vertex.bOffset - previous.bOffset) <= Math.max(0.5, aGap * 3);
+      if (continues) run.push(vertex); else runs.push([vertex]);
+    }
+    for (const run of runs) {
+      const first = run[0], last = run[run.length - 1];
+      if (aMetrics.offsets[last.vertexIndex] - aMetrics.offsets[first.vertexIndex] < ROAD_REUSE_MIN_KM) continue;
+      for (const vertex of first === last ? [first] : [first, last]) {
+        const aIndex = Math.min(vertex.vertexIndex, aCoords.length - 2);
+        const aT = vertex.vertexIndex === aCoords.length - 1 ? 1 : 0;
+        const aOffset = geometryPointOffset(aCoords, aIndex, aT, aMetrics);
+        const endpointWindow = Math.max(ROAD_REUSE_MIN_KM, (aMetrics.segmentLengths[aIndex] || 0) * 2);
+        // Coarsely sampled routes may enter a shared corridor one shape point
+        // after an already detected existing-road endpoint. Prefer that stable
+        // graph node instead of adding a junction a few metres farther along.
+        const hasNearbyEndpointHit = hits.some(hit => Math.abs(hit.aOffset - aOffset) <= endpointWindow
+          && ((hit.bOffset <= INTERSECTION_EPS && vertex.bOffset <= endpointWindow)
+            || (hit.bOffset >= bMetrics.total - INTERSECTION_EPS && vertex.bOffset >= bMetrics.total - endpointWindow)));
+        if (hasNearbyEndpointHit) continue;
+        hits.push({point: vertex.point, aIndex, aT, bIndex: vertex.bIndex, bT: vertex.bT,
+          aOffset, bOffset: vertex.bOffset, corridor: true});
       }
     }
     return hits;
