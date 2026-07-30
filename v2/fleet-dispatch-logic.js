@@ -37,8 +37,20 @@
   }
 
   function capacityKg(type) {
+    const shared = window.HFV2VehicleCapacity?.limits?.(type, 1)?.grossKg;
+    if (Number.isFinite(shared)) return shared;
     const load = Number(vehicleSpec(type).load);
     return load > 0 ? (load < 100 ? load * 1000 : load) : 0;
+  }
+
+  function capacityCheck(type, cargoes, vehicleCount = 1) {
+    return window.HFV2VehicleCapacity?.evaluate?.(type, cargoes, vehicleCount)
+      || {ok: cargoes.reduce((sum, cargo) => sum + Number(cargo.grossKg || 0), 0) <= capacityKg(type) * vehicleCount, limitingFactor: 'weight'};
+  }
+
+  function requiredVehicleCount(type, cargoes) {
+    return window.HFV2VehicleCapacity?.requiredVehicleCount?.(type, cargoes)
+      ?? Math.ceil(cargoes.reduce((sum, cargo) => sum + Number(cargo.grossKg || 0), 0) / capacityKg(type));
   }
 
   function cargoMetrics(goodId, amountKg) {
@@ -109,15 +121,14 @@
     const used = new Set(), trips = [];
     for (const first of shipments) {
       if (used.has(first.id)) continue;
-      const cap = capacityKg(first.vehicleType);
       const candidates = shipments.filter(leg => !used.has(leg.id)
         && leg.fromCityId === first.fromCityId && leg.vehicleType === first.vehicleType
         && Math.abs(leg.requestedDepartureAbsMinute - first.requestedDepartureAbsMinute) <= Math.max(0, Number(logisticsState?.bundleWindowMinutes) || 60));
       const group = []; let load = 0, grossLoad = 0;
       for (const leg of candidates.sort((a,b) => a.orderId-b.orderId)) {
         const orderGoodId=(logisticsState.orders||[]).find(order=>order.id===leg.orderId)?.goodId;
-        const legGross=Number(leg.grossKg)||cargoMetrics(orderGoodId,leg.amountKg).grossKg;
-        if (!group.length || grossLoad + legGross <= cap) { group.push({...leg,grossKg:legGross}); load += leg.amountKg; grossLoad += legGross; }
+        const legCargo={...cargoMetrics(orderGoodId,leg.amountKg), ...leg};
+        if (!group.length || capacityCheck(first.vehicleType, [...group, legCargo], (first.vehicleIds || []).length).ok) { group.push(legCargo); load += leg.amountKg; grossLoad += legCargo.grossKg; }
       }
       for (const leg of group) used.add(leg.id);
       const day = Math.floor(first.requestedDepartureAbsMinute / MINUTES_PER_DAY) + 1;
@@ -152,7 +163,8 @@
         else disposition={action:'return',targetCityId:first.fromCityId,fromCityId:cityId,toCityId:first.fromCityId,departureAbsMinute:slot.departureAbsMinute,arrivalAbsMinute:slot.arrivalAbsMinute,edgeTimes:slot.edgeTimes||[],pathNodeIds:path.nodes||[],pathEdgeIds:(path.edges||[]).map(edgeId),geometry:path.geometry||[],distance:Number(path.distance)||0,capacityReservationIds:commitReservations?[reservation]:[]};
       }
       if (failed) { if(commitReservations) for(const segment of segments) for(const id of segment.capacityReservationIds) window.HFNetwork?.releaseCapacityReservation?.(id); continue; }
-      trips.push({id:tripId,status:'planned',vehicleType:first.vehicleType,vehicleIds,fromCityId:first.fromCityId,departureAbsMinute:segments[0].departureAbsMinute,arrivalAbsMinute:cursor,loadKg:load,netKg:load,tareKg:grossLoad-load,grossKg:grossLoad,carrierCount:stops.reduce((sum,stop)=>sum+stop.carrierCount,0),load:stops.map(({orderId,goodId,amountKg,toCityId})=>({orderId,goodId,amountKg,toCityId})),orderIds:stops.map(stop=>stop.orderId),stops,segments,edgeTimes:segments.flatMap(segment=>segment.edgeTimes),disposition});
+      const tripCapacity=capacityCheck(first.vehicleType,stops,vehicleIds.length);
+      trips.push({id:tripId,status:'planned',vehicleType:first.vehicleType,vehicleIds,fromCityId:first.fromCityId,departureAbsMinute:segments[0].departureAbsMinute,arrivalAbsMinute:cursor,loadKg:load,netKg:load,tareKg:grossLoad-load,grossKg:grossLoad,carrierCount:stops.reduce((sum,stop)=>sum+stop.carrierCount,0),capacity:tripCapacity,limitingFactor:tripCapacity.limitingFactor,load:stops.map(({orderId,goodId,amountKg,toCityId})=>({orderId,goodId,amountKg,toCityId})),orderIds:stops.map(stop=>stop.orderId),stops,segments,edgeTimes:segments.flatMap(segment=>segment.edgeTimes),disposition});
     }
     return trips;
   }
@@ -185,7 +197,7 @@
       const amountKg = Math.min(Math.max(0, Number(order.amountKg) || 0), plannedStock.get(stockKey));
       if (!amountKg) { unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: 'stock-limited'}); continue; }
       const cargo = cargoMetrics(order.goodId, amountKg);
-      const outboundPath = route(order.fromCityId, order.toCityId), postDeliveryAction = postDeliveryDecision(order.fromCityId, order.toCityId), returnPath = postDeliveryAction === 'return' ? route(order.toCityId, order.fromCityId) : null, count = Math.ceil(cargo.grossKg / capacityKg(type));
+      const outboundPath = route(order.fromCityId, order.toCityId), postDeliveryAction = postDeliveryDecision(order.fromCityId, order.toCityId), returnPath = postDeliveryAction === 'return' ? route(order.toCityId, order.fromCityId) : null, count = requiredVehicleCount(type, [cargo]);
       if (!outboundPath?.reachable || (postDeliveryAction === 'return' && !returnPath?.reachable) || !Number.isFinite(count) || count <= 0) { unplanned.push({orderId: order.id, departureAbsMinute: occurrence.departureAbsMinute, reason: !outboundPath?.reachable || (postDeliveryAction === 'return' && !returnPath?.reachable) ? 'incomplete-round-trip-route' : 'capacity-invalid'}); continue; }
       const selected = vehicles.filter(v => v.vehicleType === type).map(vehicle => {
         const timeline = timelines.get(vehicle.id), path = timeline.cityId === order.fromCityId ? null : route(timeline.cityId, order.fromCityId);
@@ -214,7 +226,8 @@
       for(const move of chain){const id=move.id; const leg={id:`planned-repositioning-${order.id}-${occurrence.day}-${move.item.vehicle.id}`,type:'repositioning',status:'planned',orderId:order.id,fromCityId:move.item.timeline.cityId,toCityId:order.fromCityId,vehicleType:type,vehicleIds:[move.item.vehicle.id],departureAbsMinute:move.slot.departureAbsMinute,scheduledDepartureAbsMinute:move.slot.scheduledDepartureAbsMinute,arrivalAbsMinute:move.slot.arrivalAbsMinute,waitingMinutes:move.slot.waitingMinutes,edgeTimes:move.slot.edgeTimes,capacityReservationIds:id?[id]:[]}; legs.push(leg); state.assignments.push(leg);}
       const shipmentMove=allMoves.find(x=>x.kind==='shipment'), returnMove=allMoves.find(x=>x.kind==='return');
       const postDelivery = {action:postDeliveryAction,targetCityId:postDeliveryAction==='return'?order.fromCityId:order.toCityId,departureAbsMinute:returnMove?.slot.departureAbsMinute??outboundSlot.arrivalAbsMinute,arrivalAbsMinute:returnMove?.slot.arrivalAbsMinute??outboundSlot.arrivalAbsMinute,capacityReservationIds:returnMove?.id?[returnMove.id]:[]};
-      legs.push({id:shipmentId,type:'shipment',status:'planned',orderId:order.id,tripId,fromCityId:order.fromCityId,toCityId:order.toCityId,vehicleType:type,vehicleIds:selected.map(x=>x.vehicle.id),amountKg,...cargo,requestedDepartureAbsMinute:occurrence.departureAbsMinute,departureConstraint:hardDeparture?'hard':'earliest',departureAbsMinute:outboundSlot.departureAbsMinute,scheduledDepartureAbsMinute:outboundSlot.scheduledDepartureAbsMinute,arrivalAbsMinute:outboundSlot.arrivalAbsMinute,waitingMinutes:outboundSlot.departureAbsMinute-occurrence.departureAbsMinute+outboundSlot.waitingMinutes,edgeTimes:outboundSlot.edgeTimes,capacityReservationIds:shipmentMove.id?[shipmentMove.id]:[],postDeliveryAction,postDeliveryTargetCityId:postDelivery.targetCityId,postDeliveryDepartureAbsMinute:postDelivery.departureAbsMinute,postDeliveryArrivalAbsMinute:postDelivery.arrivalAbsMinute,postDeliveryReservationIds:postDelivery.capacityReservationIds,priority:occurrence.priority});
+      const loadCapacity=capacityCheck(type,[cargo],selected.length);
+      legs.push({id:shipmentId,type:'shipment',status:'planned',orderId:order.id,tripId,fromCityId:order.fromCityId,toCityId:order.toCityId,vehicleType:type,vehicleIds:selected.map(x=>x.vehicle.id),amountKg,...cargo,capacity:loadCapacity,limitingFactor:loadCapacity.limitingFactor,requestedDepartureAbsMinute:occurrence.departureAbsMinute,departureConstraint:hardDeparture?'hard':'earliest',departureAbsMinute:outboundSlot.departureAbsMinute,scheduledDepartureAbsMinute:outboundSlot.scheduledDepartureAbsMinute,arrivalAbsMinute:outboundSlot.arrivalAbsMinute,waitingMinutes:outboundSlot.departureAbsMinute-occurrence.departureAbsMinute+outboundSlot.waitingMinutes,edgeTimes:outboundSlot.edgeTimes,capacityReservationIds:shipmentMove.id?[shipmentMove.id]:[],postDeliveryAction,postDeliveryTargetCityId:postDelivery.targetCityId,postDeliveryDepartureAbsMinute:postDelivery.departureAbsMinute,postDeliveryArrivalAbsMinute:postDelivery.arrivalAbsMinute,postDeliveryReservationIds:postDelivery.capacityReservationIds,priority:occurrence.priority});
       if(returnMove) legs.push({id:`planned-return-${order.id}-${occurrence.day}`,type:'return',legKind:'return',status:'planned',orderId:order.id,tripId,outboundLegId:shipmentId,fromCityId:order.toCityId,toCityId:order.fromCityId,vehicleType:type,vehicleIds:selected.map(x=>x.vehicle.id),departureAbsMinute:returnMove.slot.departureAbsMinute,scheduledDepartureAbsMinute:returnMove.slot.scheduledDepartureAbsMinute,arrivalAbsMinute:returnMove.slot.arrivalAbsMinute,waitingMinutes:returnMove.slot.waitingMinutes,edgeTimes:returnMove.slot.edgeTimes,capacityReservationIds:returnMove.id?[returnMove.id]:[]});
       for(const item of selected) timelines.set(item.vehicle.id,{cityId:postDelivery.targetCityId,availableAbsMinute:postDelivery.arrivalAbsMinute});
       plannedStock.set(stockKey,plannedStock.get(stockKey)-amountKg);

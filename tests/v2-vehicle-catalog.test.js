@@ -33,6 +33,7 @@ test('Fluto Gianco ist mit Stammdaten und passenden PNG-Assets registriert', () 
   assert.equal(vehicle.brand, 'Fluto');
   assert.equal(vehicle.model, 'Gianco');
   assert.equal(vehicle.load, 2);
+  assert.equal(vehicle.palletSlots, 4);
 
   const window = {};
   load('v2/vehicle-assets.js', window);
@@ -47,6 +48,7 @@ test('Fluto Gianco FR ist ein eigenständiger Kühltransporter mit Hauptasset', 
   assert.notStrictEqual(vehicle, catalog['fluto-gianco']);
   assert.equal(vehicle.id, 'fluto-gianco-fr');
   assert.equal(vehicle.load, 1.7);
+  assert.equal(vehicle.palletSlots, 3);
   assert.equal(vehicle.refrigerated, true);
   const window = {};
   load('v2/vehicle-assets.js', window);

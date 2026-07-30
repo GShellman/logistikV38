@@ -14,6 +14,12 @@
   }
   function formatSpeed(value) { return `${Math.round(Number(value) || 0).toLocaleString('de-CH')} km/h`; }
   function formatDailyCost(vehicle) { return `${formatMoney(Number(vehicle.daily) || Math.round((Number(vehicle.kmCost) || 0) * 100))} / Tag`; }
+  function formatCapacity(item, vehicleType, count = 1) {
+    const cargo = item?.capacity || window.HFV2VehicleCapacity?.evaluate?.(vehicleType, [item], count);
+    if (!cargo?.usage || !cargo?.capacity) return '';
+    const tonnes = value => `${(Number(value || 0) / 1000).toLocaleString('de-CH', {minimumFractionDigits: 1, maximumFractionDigits: 1})} t`;
+    return `${tonnes(cargo.usage.grossKg)}/${tonnes(cargo.capacity.grossKg)} · ${cargo.usage.palletSlots}/${cargo.capacity.palletSlots} Paletten · ${cargo.limitingFactor === 'volume' ? 'Volumenlimitiert' : 'Gewichtslimitiert'}`;
+  }
   function citiesById() { return window.HFV2CitiesById || {}; }
   function cityById(cityId) { return citiesById()[cityId] || null; }
   function cityName(cityId) { return cityById(cityId)?.name || cityId || 'Unbekannt'; }
@@ -93,7 +99,7 @@
     const loaded = (plan.legs || []).filter(leg => leg.type === 'shipment' && leg.status === 'planned');
     const empty = (plan.legs || []).filter(leg => leg.type === 'repositioning' && leg.status === 'planned');
     const unplanned = plan.unplanned || [];
-    const rows = (items, kind) => items.map(item => { const order = orders.get(Number(item.orderId)); const from = item.fromCityId || order?.fromCityId; const to = item.toCityId || order?.toCityId; return `<li><b>${kind}</b><span>${escapeHtml(cityName(from))} → ${escapeHtml(cityName(to))}</span><time>${formatAbsMinute(item.departureAbsMinute)}</time>${item.reason ? `<strong>${escapeHtml(PLAN_REASONS[item.reason] || item.reason)}</strong>` : ''}</li>`; }).join('');
+    const rows = (items, kind) => items.map(item => { const order = orders.get(Number(item.orderId)); const from = item.fromCityId || order?.fromCityId; const to = item.toCityId || order?.toCityId; const capacity = item.type === 'shipment' ? formatCapacity(item, item.vehicleType, item.vehicleIds?.length || 1) : ''; return `<li><b>${kind}</b><span>${escapeHtml(cityName(from))} → ${escapeHtml(cityName(to))}${capacity ? `<small>${escapeHtml(capacity)}</small>` : ''}</span><time>${formatAbsMinute(item.departureAbsMinute)}</time>${item.reason ? `<strong>${escapeHtml(PLAN_REASONS[item.reason] || item.reason)}</strong>` : ''}</li>`; }).join('');
     return `<section class="hf-v2-fleet-plan" aria-label="Planungsvorschau"><div class="hf-v2-fleet-section-head"><span>Planungsvorschau</span><strong>${loaded.length} beladen · ${empty.length} leer · ${unplanned.length} nicht erfüllbar</strong></div><div class="hf-v2-fleet-plan-columns"><div><h4>Beladene Fahrten</h4><ul>${rows(loaded, 'Beladen') || '<li>Keine geplanten Fahrten.</li>'}</ul></div><div><h4>Notwendige Leerfahrten</h4><ul>${rows(empty, 'Leerfahrt') || '<li>Keine Leerfahrten notwendig.</li>'}</ul></div><div><h4>Nicht erfüllbare Aufträge</h4><ul>${rows(unplanned, 'Nicht erfüllbar') || '<li>Alle Aufträge erfüllbar.</li>'}</ul></div></div></section>`;
   }
 
@@ -108,7 +114,7 @@
       const vehicleName = vehicle.name || type;
       const depotContext = cityId ? `Depot ${cityName(cityId)}` : 'das gewählte Depot';
       const buyLabel = `${vehicleName} für ${formatMoney(vehicle.cost)} für ${depotContext} kaufen${canAfford ? '' : ' – nicht genug Kapital'}`;
-      return `<article class="hf-v2-fleet-card${canAfford ? '' : ' is-disabled'}"><div class="hf-v2-fleet-card__icon" aria-hidden="true">${vehicleVisual(type, vehicle)}</div><div class="hf-v2-fleet-card__main"><div class="hf-v2-fleet-card__head"><h4>${escapeHtml(vehicleName)}</h4><span class="hf-v2-fleet-owned">${Number(fleet[type] || 0).toLocaleString('de-CH')} zentral im Bestand</span></div><p>${escapeHtml(vehicle.desc || 'Kaufbares Fahrzeug für den zentral disponierten Fuhrpark.')}</p><dl class="hf-v2-fleet-stats"><div><dt>Kapazität</dt><dd>${formatLoad(vehicle.load)}</dd></div><div><dt>Kosten</dt><dd>${formatMoney(vehicle.cost)}</dd></div><div><dt>Tempo</dt><dd>${formatSpeed(vehicle.speed)}</dd></div><div><dt>Betriebskosten</dt><dd>${formatDailyCost(vehicle)}</dd></div></dl></div><button class="hf-v2-fleet-buy" type="button" data-action="buy-fleet-vehicle" data-vehicle-type="${escapeHtml(type)}" aria-label="${escapeHtml(buyLabel)}"${canAfford ? '' : ' disabled aria-disabled="true" title="Nicht genug Kapital"'}><span>Kaufen</span><i aria-hidden="true">→</i><strong>${formatMoney(vehicle.cost)}</strong></button></article>`;
+      return `<article class="hf-v2-fleet-card${canAfford ? '' : ' is-disabled'}"><div class="hf-v2-fleet-card__icon" aria-hidden="true">${vehicleVisual(type, vehicle)}</div><div class="hf-v2-fleet-card__main"><div class="hf-v2-fleet-card__head"><h4>${escapeHtml(vehicleName)}</h4><span class="hf-v2-fleet-owned">${Number(fleet[type] || 0).toLocaleString('de-CH')} zentral im Bestand</span></div><p>${escapeHtml(vehicle.desc || 'Kaufbares Fahrzeug für den zentral disponierten Fuhrpark.')}</p><dl class="hf-v2-fleet-stats"><div><dt>Kapazität</dt><dd>${formatLoad(vehicle.load)} · ${Number(vehicle.palletSlots || 0).toLocaleString('de-CH')} Paletten</dd></div><div><dt>Kosten</dt><dd>${formatMoney(vehicle.cost)}</dd></div><div><dt>Tempo</dt><dd>${formatSpeed(vehicle.speed)}</dd></div><div><dt>Betriebskosten</dt><dd>${formatDailyCost(vehicle)}</dd></div></dl></div><button class="hf-v2-fleet-buy" type="button" data-action="buy-fleet-vehicle" data-vehicle-type="${escapeHtml(type)}" aria-label="${escapeHtml(buyLabel)}"${canAfford ? '' : ' disabled aria-disabled="true" title="Nicht genug Kapital"'}><span>Kaufen</span><i aria-hidden="true">→</i><strong>${formatMoney(vehicle.cost)}</strong></button></article>`;
     }).join('');
   }
 
