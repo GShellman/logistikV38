@@ -164,3 +164,24 @@ test('Kreuzungen in der Stadtzufahrt bleiben eine durchgehende Straße bis ins Z
     'vom Zentrum darf pro Richtung nur ein Straßenabschnitt wegführen');
   assert.ok(api.findPath('centre', 'city-n-3', {state, mode:'road'}));
 });
+
+test('Wegpunkte sind reine Formkontrolle und deaktivierte Kandidaten bleiben unverbunden', () => {
+  const cities=[{id:'w',lat:0,lng:-1},{id:'e',lat:0,lng:1},{id:'s',lat:-1,lng:0},{id:'n',lat:1,lng:0}];
+  const {api,state}=setup(cities,[road('old','s','n',[[-1,0],[1,0]])]);
+  const project={...road('project','w','e',[[0,-1],[0,1]]),waypoints:[{lat:0,lng:-.5}]};
+  const candidates=api.findConnectionCandidates(project,state);
+  project.connectionPoints=candidates.map(point=>({...point,enabled:false}));
+  state.connections.push(...api.splitRoadsForAutomaticJunctions(project,state));
+  assert.equal(state.junctions.length,0,'Wegpunkt und deaktivierte Kreuzung dürfen keine Knoten erzeugen');
+  assert.equal(api.findPath('w','n',{state,mode:'road'}),null);
+});
+
+test('bestätigter Anschluss teilt beide Kanten an der ausgewählten Kreuzung', () => {
+  const cities=[{id:'w',lat:0,lng:-1},{id:'e',lat:0,lng:1},{id:'s',lat:-1,lng:0},{id:'n',lat:1,lng:0}];
+  const {api,state}=setup(cities,[road('old','s','n',[[-1,0],[1,0]])]);
+  const project=road('project','w','e',[[0,-1],[0,1]]);
+  project.connectionPoints=api.findConnectionCandidates(project,state);
+  const parts=api.splitRoadsForAutomaticJunctions(project,state); state.connections.push(...parts);
+  assert.equal(parts.length,2); assert.equal(state.connections.length,4); assert.equal(state.junctions.length,1);
+  assert.ok(api.findPath('w','n',{state,mode:'road'}));
+});

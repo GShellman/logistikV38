@@ -403,6 +403,25 @@
     return id;
   }
 
+  function connectionPointKey(hit, edge) {
+    return `${edge.id || `${edge.a}:${edge.b}`}@${hit.point[0].toFixed(6)},${hit.point[1].toFixed(6)}`;
+  }
+
+  function findConnectionCandidates(project, targetState = state) {
+    if (transportSpec(project.type).mode !== 'road') return [];
+    const geometry = project.geometry || [];
+    if (geometry.length < 2) return [];
+    const bounds = geometryBounds(geometry, JUNCTION_SNAP_KM / 110);
+    return (targetState.connections || []).filter(edge => isRoadType(edge.type)).flatMap(edge => {
+      const existing = edgeGeometry(edge, targetState);
+      if (!boundsOverlap(bounds, geometryBounds(existing, JUNCTION_SNAP_KM / 110))) return [];
+      return uniqueIntersections(geometryIntersections(geometry, existing)).map(hit => ({
+        id: connectionPointKey(hit, edge), edgeId: edge.id, point: hit.point,
+        lat: hit.point[0], lng: hit.point[1], automatic: false, enabled: true,
+      }));
+    }).filter((candidate, index, all) => all.findIndex(item => item.id === candidate.id) === index);
+  }
+
   function splitRoadsForAutomaticJunctions(project, targetState = state) {
     intersectionStats = {segmentChecks: 0, bboxRejects: 0};
     const projectSpec = transportSpec(project.type);
@@ -431,6 +450,9 @@
 
       const existingCuts = [];
       for (const hit of hits) {
+        const selectedPoints = Array.isArray(project.connectionPoints) ? project.connectionPoints : null;
+        if (selectedPoints && !selectedPoints.some(point => (point.enabled !== false) && (point.id === connectionPointKey(hit, edge)
+          || dist({lat: point.lat ?? point.point?.[0], lng: point.lng ?? point.point?.[1]}, {lat: hit.point[0], lng: hit.point[1]}) <= JUNCTION_SNAP_KM))) continue;
         if (hit.aOffset > JUNCTION_SNAP_KM && hit.aOffset < projectDistance - JUNCTION_SNAP_KM
           && (hit.aOffset < cityApproachDistance || hit.aOffset > projectDistance - cityApproachDistance)) continue;
         const projectAtStart = hit.aOffset <= INTERSECTION_EPS;
@@ -788,12 +810,18 @@
     }));
   }
 
-  async function fetchRoadRoute(a, b) {
+  async function fetchRoadRoute(points, options = {}) {
     if (!window.fetch) return null;
+    const routePoints = Array.isArray(points) ? points : [points, options.to].filter(Boolean);
+    if (routePoints.length < 2) return null;
     const controller = new AbortController();
+    const externalSignal = options.signal;
+    const abort = () => controller.abort();
+    externalSignal?.addEventListener?.('abort', abort, {once: true});
     const timer = setTimeout(() => controller.abort(), 14000);
     try {
-      const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson&steps=false`;
+      const coordinates = routePoints.map(point => `${point.lng},${point.lat}`).join(';');
+      const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=false`;
       const res = await fetch(url, {signal: controller.signal});
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -802,6 +830,7 @@
       return {distance: route.distance / 1000, duration: route.duration / 3600, geometry: simplifyRouteGeometry(route.geometry.coordinates.map(([lng, lat]) => [lat, lng]))};
     } finally {
       clearTimeout(timer);
+      externalSignal?.removeEventListener?.('abort', abort);
     }
   }
 
@@ -825,21 +854,30 @@
     return simplified;
   }
 
-  async function planConnection(fromId, toId, type) {
+  async function planConnection(fromId, toId, type, options = {}) {
     const from = citiesById[fromId];
     const to = citiesById[toId];
     const t = TRANSPORT_TYPES[type];
     const mode = t?.mode;
     if (!state || !from || !to || !t || dist(from, to) > MAX_CONNECTION_DISTANCE_KM || connectionExists(fromId, toId, mode)) return null;
     const fallback = mode === 'road' ? {distance: estimateRoadDistance(dist(from, to)), duration: estimateRoadDistance(dist(from, to)) / t.speed, geometry: null} : {distance: dist(from, to), duration: dist(from, to) / t.speed, geometry: null};
-    const route = mode === 'road' ? (await fetchRoadRoute(from, to).catch(() => null)) || fallback : fallback;
+    const waypoints = Array.isArray(options.waypoints) ? options.waypoints.filter(point => Number.isFinite(point?.lat) && Number.isFinite(point?.lng)).map(point => ({lat: point.lat, lng: point.lng})) : [];
+    const route = mode === 'road' ? (await fetchRoadRoute([from, ...waypoints, to], {signal: options.signal}).catch(error => {
+      if (error?.name === 'AbortError') throw error;
+      return null;
+    })) || fallback : fallback;
     const quote = buildQuote(type, route.distance);
     const cash = window.HFV2Save?.getCash?.() ?? STARTING_CASH;
     if (cash < quote.cost) {
       state.pendingProject = null;
       return {ok: false, reason: 'not-enough-cash', cost: quote.cost, cash};
     }
-    state.pendingProject = {kind: 'build', a: fromId, b: toId, type, distance: route.distance, duration: route.duration, geometry: route.geometry, cost: quote.cost, maintenance: quote.maintenance};
+    const project = {kind: 'build', a: fromId, b: toId, type, distance: route.distance, duration: route.duration, geometry: route.geometry, cost: quote.cost, maintenance: quote.maintenance, waypoints};
+    const candidates = findConnectionCandidates(project);
+    project.connectionPoints = Array.isArray(options.connectionPoints)
+      ? candidates.map(candidate => ({...candidate, enabled: options.connectionPoints.some(point => point.enabled !== false && point.id === candidate.id)}))
+      : candidates;
+    state.pendingProject = project;
     return state.pendingProject;
   }
 
@@ -865,5 +903,5 @@
     return edges[0];
   }
 
-  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, JUNCTION_SNAP_KM, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, getState, confirmProject, segmentIntersection, geometryIntersections, splitRoadsForAutomaticJunctions, getIntersectionStats: () => ({...intersectionStats}), simplifyRouteGeometry, getEdgeOccupancy, getEdgeSchedule, pathEdgeOccupations, pathCapacityStatus, findEarliestPathSlot, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
+  window.HFNetwork = {TRANSPORT_TYPES, ROAD_ORDER, STARTING_CASH, CAPACITY_WINDOW_MINUTES, JUNCTION_SNAP_KM, createNetworkState, configure, dist, estimateRoadDistance, buildQuote, connectionExists, findPath, isReachable, getCandidateTargets, getAvailableConnections: getCandidateTargets, openNetworkBuildMenu, nodeInfo, planConnection, fetchRoadRoute, findConnectionCandidates, getState, confirmProject, segmentIntersection, geometryIntersections, splitRoadsForAutomaticJunctions, getIntersectionStats: () => ({...intersectionStats}), simplifyRouteGeometry, getEdgeOccupancy, getEdgeSchedule, pathEdgeOccupations, pathCapacityStatus, findEarliestPathSlot, reservePathCapacity, releaseCapacityReservation, cleanupCapacityReservations};
 })();

@@ -4,6 +4,10 @@
   let networkLineLayer = null;
   let renderedConnections = [];
   let renderedCitiesById = {};
+  let networkMap = null;
+  let previewLayer = null;
+  let previewProject = null;
+  let previewCallbacks = {};
 
   function transportSpec(type) {
     return window.HFNetwork?.TRANSPORT_TYPES?.[type] || window.HFNetwork?.TRANSPORT_TYPES?.mainroad || {};
@@ -69,6 +73,7 @@
 
   function initNetworkLayer(map) {
     if (!map || !window.L) return null;
+    networkMap = map;
 
     if (networkLineLayer && networkLineLayer._map !== map) {
       networkLineLayer.remove();
@@ -83,6 +88,49 @@
     }
 
     return networkLineLayer;
+  }
+
+  function clearProjectPreview() {
+    if (previewLayer && networkMap?.hasLayer?.(previewLayer)) networkMap.removeLayer(previewLayer);
+    previewLayer = null;
+    previewProject = null;
+    networkMap?.off?.('click', handlePreviewMapClick);
+  }
+
+  function handlePreviewMapClick(event) {
+    if (!previewProject || event?.originalEvent?.target?.closest?.('.leaflet-marker-icon')) return;
+    previewCallbacks.onAddWaypoint?.({lat: event.latlng.lat, lng: event.latlng.lng});
+  }
+
+  function markerIcon(kind, label) {
+    return L.divIcon({className: `hf-v2-route-editor-marker is-${kind}`, html: `<span>${escapeHtml(label)}</span>`, iconSize: [30, 30], iconAnchor: [15, 15]});
+  }
+
+  function renderProjectPreview(project, callbacks = {}) {
+    clearProjectPreview();
+    if (!networkMap || !window.L || !project) return null;
+    previewProject = project;
+    previewCallbacks = callbacks;
+    previewLayer = L.layerGroup().addTo(networkMap);
+    const start = nodeInfo(project.a, renderedCitiesById);
+    const target = nodeInfo(project.b, renderedCitiesById);
+    const geometry = project.geometry?.length > 1 ? project.geometry : (start && target ? [[start.lat, start.lng], [target.lat, target.lng]] : []);
+    if (geometry.length) previewLayer.addLayer(L.polyline(geometry, {color: '#15a6a6', weight: 7, opacity: .9, dashArray: '12 8'}));
+    if (start) previewLayer.addLayer(L.marker([start.lat, start.lng], {icon: markerIcon('start', 'A'), draggable: false, title: 'Start'}));
+    if (target) previewLayer.addLayer(L.marker([target.lat, target.lng], {icon: markerIcon('target', 'Z'), draggable: false, title: 'Ziel'}));
+    (project.waypoints || []).forEach((point, index) => {
+      const marker = L.marker([point.lat, point.lng], {icon: markerIcon('waypoint', String(index + 1)), draggable: true, title: 'Wegpunkt (Rechtsklick zum Löschen)'});
+      marker.on('dragend', event => callbacks.onMoveWaypoint?.(index, event.target.getLatLng()));
+      marker.on('contextmenu', () => callbacks.onRemoveWaypoint?.(index));
+      previewLayer.addLayer(marker);
+    });
+    (project.connectionPoints || []).forEach(candidate => {
+      const marker = L.marker([candidate.lat, candidate.lng], {icon: markerIcon(candidate.enabled === false ? 'connection-off' : 'connection', candidate.automatic ? 'A' : 'K'), title: candidate.enabled === false ? 'Anschluss aktivieren' : 'Anschluss deaktivieren'});
+      marker.on('click', () => callbacks.onToggleConnection?.(candidate.id));
+      previewLayer.addLayer(marker);
+    });
+    networkMap.on?.('click', handlePreviewMapClick);
+    return previewLayer;
   }
 
   function clearNetworkLines() {
@@ -187,7 +235,7 @@
     if (!visible && map.hasLayer(networkLineLayer)) map.removeLayer(networkLineLayer);
   }
 
-  const api = {initNetworkLayer, renderNetworkLines, clearNetworkLines, setNetworkLayerVisible};
+  const api = {initNetworkLayer, renderNetworkLines, clearNetworkLines, setNetworkLayerVisible, renderProjectPreview, clearProjectPreview};
   window.HFNetworkLayer = api;
   window.HFNetwork = {...(window.HFNetwork || {}), ...api};
   window.addEventListener?.('hf:network:capacity-changed', refreshRenderedNetwork);

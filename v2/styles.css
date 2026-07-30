@@ -2935,3 +2935,11 @@ code {
 }
 .hf-v2-transport-group > header { background: var(--surface-instrument); color: var(--text-on-dark); }
 .hf-v2-transport-popup .leaflet-popup-close-button { background: var(--interaction-secondary) !important; border-radius: var(--radius-control) !important; color: var(--interaction-primary) !important; }
+
+/* Editable, not-yet-built network route */
+.hf-v2-route-editor__actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1rem; }
+.hf-v2-route-editor__actions button { padding: .65rem .85rem; border-radius: .65rem; border: 1px solid rgba(36,74,78,.3); cursor: pointer; }
+.hf-v2-route-editor-marker span { display: grid; place-items: center; width: 28px; height: 28px; border: 3px solid white; border-radius: 50%; background: #15a6a6; color: white; font-weight: 800; box-shadow: 0 2px 8px #17373f88; }
+.hf-v2-route-editor-marker.is-waypoint span { background: #ee8a2d; cursor: grab; }
+.hf-v2-route-editor-marker.is-connection span { background: #3478c5; }
+.hf-v2-route-editor-marker.is-connection-off span { background: #68757a; opacity: .65; }
