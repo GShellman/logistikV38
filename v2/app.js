@@ -580,7 +580,7 @@
     const hasProduction = (window.HFV2Factories?.getCityFactoryInstances?.(city.id) || window.HFV2Factories?.getCityFactories?.(city.id) || []).length > 0;
     return L.divIcon({
       className: '',
-      html: `<div id="mk-${city.id}" class="${classes}" data-map-layer="city" data-city-tier="${city.tier}"><span aria-hidden="true">${cityLabel(city)}</span><span class="hf-v2-city-state hf-v2-city-state--${state.id}" role="img" aria-label="Zustand: ${state.label}">${state.symbol}</span>${hasProduction ? '<span class="hf-v2-production-site" aria-hidden="true">🏭</span>' : ''}</div>`,
+      html: `<div id="mk-${city.id}" class="${classes}" data-map-layer="city"><span aria-hidden="true">${cityLabel(city)}</span><span class="hf-v2-city-state hf-v2-city-state--${state.id}" role="img" aria-label="Zustand: ${state.label}">${state.symbol}</span>${hasProduction ? '<span class="hf-v2-production-site" aria-hidden="true">🏭</span>' : ''}</div>`,
       iconSize: [size, size],
       iconAnchor: [anchor, anchor],
     });
@@ -600,7 +600,7 @@
     const state = cityMapState(city);
     marker.options.title = `${city.name} – ${state.label}`;
     marker.bindTooltip(`${escapeHtml(city.name)}<span class="hf-v2-city-label-state">${escapeHtml(state.symbol)} ${escapeHtml(state.label)}</span>`, {
-      permanent: city.id === selectedId || city.tier >= 3 || (map?.getZoom?.() >= 10 && city.tier >= 2) || map?.getZoom?.() >= 12,
+      permanent: city.tier >= 3 || city.id === selectedId,
       direction: 'top',
       offset: [0, -13],
       className: 'city-label',
@@ -681,24 +681,6 @@
       bindCityTooltip(marker, city);
       markerById.set(city.id, marker);
     }
-    updateMapZoomPresentation(cities);
-  }
-
-  function updateMapZoomPresentation(cities) {
-    if (!map) return;
-    const zoom = map.getZoom();
-    const detail = zoom >= 11 ? 'detail' : (zoom >= 9 ? 'regional' : 'country');
-    const container = map.getContainer();
-    container.dataset.mapDetail = detail;
-    container.setAttribute('aria-description', detail === 'country' ? 'Landesansicht mit Hauptknoten und Transportströmen' : (detail === 'regional' ? 'Regionalansicht mit Städten und Netzwerkdetails' : 'Detailansicht mit Produktionsstätten, Terminals und Statusdaten'));
-    for (const city of cities) {
-      const marker = markerById.get(city.id);
-      if (!marker) continue;
-      const visible = city.id === selectedId || zoom >= 9 || city.tier >= 2;
-      marker.setOpacity(visible ? 1 : 0);
-      marker.getElement()?.classList.toggle('hf-v2-marker-hidden', !visible);
-      bindCityTooltip(marker, city);
-    }
   }
 
   function addMapControls() {
@@ -706,7 +688,7 @@
       options: {position: 'bottomleft'},
       onAdd() {
         const container = L.DomUtil.create('div', 'hf-v2-map-tools leaflet-bar');
-        container.innerHTML = `<div class="hf-v2-map-tools__heading"><span>HF / KARTENFILTER</span><strong>OPERATIVE LAGE</strong></div><details open><summary>Kartenanzeige</summary><div class="hf-v2-layer-control" role="group" aria-label="Kartenebenen">${[
+        container.innerHTML = `<details open><summary>Kartenanzeige</summary><div class="hf-v2-layer-control" role="group" aria-label="Kartenebenen">${[
           ['network', 'Netzwerk'], ['goods', 'Warenlage'], ['production', 'Produktion'], ['vehicles', 'Fahrzeuge'],
         ].map(([id, label]) => `<label><input type="checkbox" data-hf-map-layer="${id}" checked> ${label}</label>`).join('')}</div></details><details><summary>Legende</summary><div class="hf-v2-map-legend"><span><i class="legend-city">◆</i>Stadt</span><span><i>🏭</i>Produktionsort</span><span><i class="legend-road"></i>Strasse</span><span><i class="legend-rail"></i>Schiene</span><span><i>➤</i>Aktiver Transport</span><span><i>⚠</i>Warnung</span><span><i>◆</i>Engpass</span><hr><span>✓ Normal</span><span>■ Volles Lager</span><span>× Produktionsstillstand</span><span>↓ Offene Lieferung</span></div></details>`;
         L.DomEvent.disableClickPropagation(container);
@@ -722,27 +704,6 @@
       },
     });
     new Control().addTo(map);
-
-    const Navigation = L.Control.extend({
-      options: {position: 'topright'},
-      onAdd() {
-        const container = L.DomUtil.create('nav', 'hf-v2-map-navigation');
-        container.setAttribute('aria-label', 'Kartensteuerung');
-        container.innerHTML = '<button type="button" data-map-nav="in" aria-label="Hineinzoomen">＋</button><button type="button" data-map-nav="out" aria-label="Herauszoomen">−</button><button type="button" data-map-nav="home" aria-label="Landesansicht wiederherstellen">⌂</button><span class="hf-v2-map-navigation__level" aria-live="polite"></span>';
-        L.DomEvent.disableClickPropagation(container);
-        container.addEventListener('click', event => {
-          const action = event.target.closest('[data-map-nav]')?.dataset.mapNav;
-          if (action === 'in') map.zoomIn();
-          if (action === 'out') map.zoomOut();
-          if (action === 'home') map.fitBounds(L.latLngBounds(SWISS_BOUNDS), {padding: [16, 16], animate: false});
-        });
-        const update = () => { container.querySelector('.hf-v2-map-navigation__level').textContent = `ZOOM ${map.getZoom()}`; };
-        map.on('zoomend', update);
-        update();
-        return container;
-      },
-    });
-    new Navigation().addTo(map);
   }
 
   function bootMap(cities) {
@@ -754,7 +715,7 @@
 
     const bounds = L.latLngBounds(SWISS_BOUNDS);
     map = L.map('hfV2Map', {
-      zoomControl: false,
+      zoomControl: true,
       minZoom: 7,
       maxZoom: 13,
       preferCanvas: true,
@@ -767,7 +728,7 @@
     window.HFV2Map = map;
     window.HFV2CitiesById = citiesById;
 
-    L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       minZoom: 7,
       maxZoom: 13,
       maxNativeZoom: 18,
@@ -777,8 +738,7 @@
       updateWhenIdle: true,
       updateWhenZooming: false,
       detectRetina: false,
-      attribution: 'Kartendaten © OpenStreetMap-Mitwirkende · Relief © OpenTopoMap (CC-BY-SA)',
-      className: 'hf-v2-relief-tiles',
+      attribution: '© OpenStreetMap-Mitwirkende',
     }).addTo(map);
 
     window.initCityActionMenu?.({
@@ -802,7 +762,6 @@
     window.HFNetwork?.initNetworkLayer?.(map);
     window.HFV2LogisticsLayer?.initLogisticsLayer?.(map);
     addMapControls();
-    map.on('zoomend', () => updateMapZoomPresentation(cities));
     if (networkState) {
       window.HFNetwork?.renderNetworkLines?.(networkState.connections, citiesById);
     }
@@ -1261,7 +1220,6 @@
     window.addEventListener('hf:v2:state-changed', refreshChangedStateView);
     window.addEventListener('hf:v2:state-changed', renderHud);
     window.addEventListener('hf:v2:state-changed', feedbackForStateChange);
-    window.addEventListener('hf:v2:map-zoom-changed', renderActiveShipments);
     if (!bootMap(cities)) return;
     const zurich = cities.find(city => city.id === 'zurich');
     if (zurich) selectCity(zurich, cities);

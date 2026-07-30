@@ -70,11 +70,6 @@
   function initNetworkLayer(map) {
     if (!map || !window.L) return null;
 
-    if (typeof map.on === 'function' && !map._hfV2NetworkZoomBound) {
-      map.on('zoomend', refreshRenderedNetwork);
-      map._hfV2NetworkZoomBound = true;
-    }
-
     if (networkLineLayer && networkLineLayer._map !== map) {
       networkLineLayer.remove();
     }
@@ -101,7 +96,6 @@
     renderedConnections = connections;
     renderedCitiesById = citiesById;
 
-    const zoom = networkLineLayer._map?.getZoom ? networkLineLayer._map.getZoom() : 10;
     connections.forEach(connection => {
       const start = nodeInfo(connection.a, citiesById);
       const target = nodeInfo(connection.b, citiesById);
@@ -118,26 +112,25 @@
         dashArray: isRail ? '2 8' : (spec.dashArray || null),
         lineCap: 'round',
         lineJoin: 'round',
-        className: `hf-v2-network-line hf-v2-network-line--${isRail ? 'rail' : 'road'}`,
       };
       const glow = L.polyline(coords, {
         ...lineOptions,
         color: spec.color || '#3d6fae',
-        weight: baseWeight + (zoom < 9 ? 14 : 11),
+        weight: baseWeight + 12,
         opacity: .22,
         interactive: false,
       });
       const casing = L.polyline(coords, {
         ...lineOptions,
         color: '#fffdf7',
-        weight: baseWeight + (zoom < 9 ? 8 : 6),
+        weight: baseWeight + 7,
         opacity: .96,
         interactive: false,
       });
       const line = L.polyline(coords, {
         ...lineOptions,
         color: spec.color || '#3d6fae',
-        weight: baseWeight + (zoom < 9 ? 4 : 2),
+        weight: baseWeight + 3,
         opacity: .98,
       });
 
@@ -146,13 +139,13 @@
         `Typ: ${escapeHtml(typeName)}`,
         `Distanz: ${escapeHtml(formatKm(connection.distance))}`,
         `Kapazität: ${escapeHtml(capacity)}`,
-      ].join('<br>'), {className: 'hf-v2-map-tooltip', sticky: true});
+      ].join('<br>'));
 
       networkLineLayer.addLayer(glow);
       networkLineLayer.addLayer(casing);
       networkLineLayer.addLayer(line);
 
-      if (!isRail && zoom >= 10) {
+      if (!isRail) {
         const occupancy = window.HFNetwork?.getEdgeOccupancy?.(connection) || {used: 0, capacity: Number(connection.capacity ?? spec.capacity) || 0};
         const label = `Belegung ${start.name} nach ${target.name}: ${occupancy.used} von ${occupancy.capacity}`;
         const bubble = L.marker(geometryMidpoint(coords), {
@@ -170,7 +163,7 @@
       }
     });
 
-    const junctions = zoom >= 10 ? (window.HFNetwork?.getState?.().junctions || []) : [];
+    const junctions = window.HFNetwork?.getState?.().junctions || [];
     for (const junction of junctions) {
       if (!junction?.isJunction) continue;
       networkLineLayer.addLayer(L.marker([junction.lat, junction.lng], {
