@@ -51,6 +51,11 @@
     return String(value || '').trim();
   }
 
+  function cargoMetrics(goodId, amountKg) {
+    return window.HFV2LoadCarrierCatalog?.metrics?.(goodId, amountKg)
+      || {loadCarrier: 'loose', carrierCount: 0, netKg: Math.max(0, Number(amountKg) || 0), tareKg: 0, grossKg: Math.max(0, Number(amountKg) || 0), stackable: false};
+  }
+
   function normalizeWeekday(value, frequency = 'weekly') {
     if (frequency !== 'weekly') return null;
     const weekday = Math.trunc(Number(value));
@@ -87,6 +92,7 @@
       departureMinute,
       vehicleType: normalizeId(order.vehicleType) || null,
       amountKg,
+      ...cargoMetrics(goodId, amountKg),
       enabled: order.enabled !== false,
       lastDispatchedDay: Number.isFinite(Number(order.lastDispatchedDay)) ? Math.trunc(Number(order.lastDispatchedDay)) : null,
     };
@@ -124,6 +130,7 @@
         toCityId: normalizeId(stop?.toCityId),
         goodId: normalizeId(stop?.goodId),
         amountKg,
+        ...cargoMetrics(normalizeId(stop?.goodId), amountKg),
         orderId: positiveInteger(stop?.orderId, null),
         arrivalAbsMinute: Number.isFinite(stopArrivalAbsMinute) ? stopArrivalAbsMinute : null,
         status,
@@ -133,7 +140,7 @@
     }).filter(stop => stop.toCityId && stop.goodId && stop.amountKg > 0 && stop.orderId) : null;
     const shipmentSemantics = normalizeId(shipment.shipmentSemantics) || 'legacy-return-v1';
     const costs = shipment.costs && typeof shipment.costs === 'object' ? {...shipment.costs, booked: shipment.costs.booked === true} : undefined;
-    return {...shipment, id, orderId, fromCityId, toCityId, goodId, amountKg, vehicleIds, vehicleCount, pathNodeIds, pathEdgeIds, geometry, routeGeometry: geometry, returnGeometry, departureAbsMinute, arrivalAbsMinute, returnDepartureAbsMinute, returnArrivalAbsMinute, status, createdAtAbsMinute, shipmentSemantics, ...(costs ? {costs} : {}), ...(stops ? {stops} : {})};
+    return {...shipment, id, orderId, fromCityId, toCityId, goodId, amountKg, ...cargoMetrics(goodId, amountKg), vehicleIds, vehicleCount, pathNodeIds, pathEdgeIds, geometry, routeGeometry: geometry, returnGeometry, departureAbsMinute, arrivalAbsMinute, returnDepartureAbsMinute, returnArrivalAbsMinute, status, createdAtAbsMinute, shipmentSemantics, ...(costs ? {costs} : {}), ...(stops ? {stops} : {})};
   }
 
   function normalizeAssignment(assignment) {
@@ -378,7 +385,8 @@
     const capacityKg = Number.isFinite(load) && load > 0 ? (load >= 100 ? load : load * 1000) : 0;
     if (capacityKg <= 0) return {ok: false, reason: 'capacity-invalid'};
 
-    const vehicleCount = Math.ceil(Math.max(0, Number(amountKg) || 0) / capacityKg);
+    const grossKg = cargoMetrics(goodId, amountKg).grossKg;
+    const vehicleCount = Math.ceil(grossKg / capacityKg);
     if (vehicleCount <= 0) return {ok: false, reason: 'capacity-invalid'};
     if (vehicleCount > availableVehicles.length) return {ok: false, reason: 'not-enough-vehicles', path, capacityKg, vehicleCount};
 
@@ -387,7 +395,7 @@
     const capacityStatus = window.HFNetwork?.pathCapacityStatus?.(path, {startAbsMinute, endAbsMinute, units: vehicleCount, reservationId, vehicleType, vehicleSpeed: vehicle.speed});
     if (capacityStatus && capacityStatus.ok === false) return {ok: false, reason: capacityStatus.reason || 'route-overloaded', path, capacityKg, vehicleCount, arrivalAbsMinute: endAbsMinute, capacityStatus};
 
-    return {ok: true, path, capacityKg, vehicleCount, departureAbsMinute: startAbsMinute, arrivalAbsMinute: endAbsMinute};
+    return {ok: true, path, capacityKg, vehicleCount, grossKg, departureAbsMinute: startAbsMinute, arrivalAbsMinute: endAbsMinute};
   }
 
   function compatibleBundles(candidate, departureAbsMinute, capacityKg) {
@@ -396,7 +404,7 @@
       && Math.abs(nextOrderDueAbsMinute(order, currentTime()) - departureAbsMinute) <= bundleWindowMinutes());
     const bundles = [];
     for (const order of candidates) {
-      if (Number(order.amountKg) + Number(candidate.amountKg) > capacityKg) continue;
+      if (cargoMetrics(order.goodId, order.amountKg).grossKg + cargoMetrics(candidate.goodId, candidate.amountKg).grossKg > capacityKg) continue;
       const route = buildMultiStopRoute(candidate.fromCityId, [candidate, order].map(item => ({toCityId: item.toCityId, goodId: item.goodId, amountKg: item.amountKg, orderId: item.id})), {vehicleType: candidate.vehicleType, departureAbsMinute});
       if (!route) continue;
       const utilization = (Number(order.amountKg) + Number(candidate.amountKg)) / capacityKg;
@@ -418,7 +426,7 @@
     const amountKg = Number(options.amountKg) > 0 ? Number(options.amountKg) : plannedOrderAmountKg(toCityId, goodId, frequency);
     if (!vehicleCanTransportGood(vehicleType, goodId)) return {ok: false, reason: 'refrigeration-required'};
     const capacityKg = vehicleCapacityKg(vehicleType);
-    const vehicleCount = capacityKg > 0 ? Math.ceil(amountKg / capacityKg) : 0;
+    const vehicleCount = capacityKg > 0 ? Math.ceil(cargoMetrics(goodId, amountKg).grossKg / capacityKg) : 0;
     const path = window.HFNetwork?.findPath?.(fromCityId, toCityId, {mode: 'road'});
     if (!path?.reachable) return {ok: false, reason: 'no-route'};
     const vehicles = window.HFFleet?.getState?.().vehicles || [];
@@ -487,7 +495,7 @@
     if (!schedule.ok) { const error = new Error(schedule.reason); error.reason = schedule.reason; throw error; }
     const departureHour = Math.floor((schedule.departureAbsMinute % MINUTES_PER_DAY) / 60);
     const departureMinute = schedule.departureAbsMinute % 60;
-    const order = {id: state.nextOrderId++, fromCityId, toCityId, goodId, frequency, weekday, plannedDepartureAbsMinute: schedule.departureAbsMinute, plannedArrivalAbsMinute: schedule.arrivalAbsMinute, plannedVehicleCount: schedule.vehicleCount, departureHour, departureMinute, vehicleType, amountKg, enabled: true, lastDispatchedDay: null};
+    const order = {id: state.nextOrderId++, fromCityId, toCityId, goodId, frequency, weekday, plannedDepartureAbsMinute: schedule.departureAbsMinute, plannedArrivalAbsMinute: schedule.arrivalAbsMinute, plannedVehicleCount: schedule.vehicleCount, departureHour, departureMinute, vehicleType, amountKg, ...cargoMetrics(goodId, amountKg), enabled: true, lastDispatchedDay: null};
     state.orders.push(order);
     window.HFV2FleetDispatch?.invalidate?.('order-created');
     window.HFV2Save?.dispatchStateChanged?.('logistics-order-created');
@@ -808,6 +816,7 @@
       toCityId: order.toCityId,
       goodId: order.goodId,
       amountKg,
+      ...cargoMetrics(order.goodId, amountKg),
       vehicleType,
       vehicleIds: assigned.map(vehicle => vehicle.id),
       vehicleCount: assigned.length,
@@ -868,7 +877,8 @@
     }
     if (dispatches.length < 2) return false;
     const amountKg = Math.round(dispatches.reduce((total, dispatch) => total + dispatch.amountKg, 0) * 1000) / 1000;
-    if (amountKg > capacityKg) return false;
+    const bundledGrossKg = dispatches.reduce((total, dispatch) => total + cargoMetrics(dispatch.order.goodId, dispatch.amountKg).grossKg, 0);
+    if (bundledGrossKg > capacityKg) return false;
 
     const dispatchedOrders = dispatches.map(dispatch => dispatch.order);
     // Bundling may only combine trips whose persisted post-delivery decision is
@@ -924,6 +934,10 @@
       toCityId: routeStops[routeStops.length - 1].toCityId,
       goodId: routeStops[0].goodId,
       amountKg,
+      netKg: amountKg,
+      tareKg: Math.max(0, bundledGrossKg - amountKg),
+      grossKg: bundledGrossKg,
+      carrierCount: dispatches.reduce((total, dispatch) => total + cargoMetrics(dispatch.order.goodId, dispatch.amountKg).carrierCount, 0),
       vehicleType,
       vehicleIds: assigned.map(vehicle => vehicle.id),
       vehicleCount: assigned.length,
@@ -992,7 +1006,7 @@
     }
     const disposition=trip.disposition||{action:'stay',targetCityId:trip.stops.at(-1).toCityId,departureAbsMinute:trip.arrivalAbsMinute,arrivalAbsMinute:trip.arrivalAbsMinute};
     const shipment={id:state.nextShipmentId++,tripId:trip.id,orderId:trip.orderIds[0],fromCityId:trip.fromCityId,toCityId:trip.stops.at(-1).toCityId,
-      goodId:trip.stops[0].goodId,amountKg:trip.loadKg,vehicleType:trip.vehicleType,vehicleIds:[...trip.vehicleIds],vehicleCount:trip.vehicleIds.length,
+      goodId:trip.stops[0].goodId,amountKg:trip.loadKg,netKg:trip.loadKg,tareKg:trip.tareKg||0,grossKg:trip.grossKg||trip.loadKg,carrierCount:trip.carrierCount||0,vehicleType:trip.vehicleType,vehicleIds:[...trip.vehicleIds],vehicleCount:trip.vehicleIds.length,
       stops:trip.stops.map(stop=>({...stop})),routeStops:trip.stops.map(stop=>({...stop})),segments:trip.segments.map(segment=>({...segment})),edgeTimes:[...(trip.edgeTimes||[])],
       pathNodeIds,pathEdgeIds,geometry,routeGeometry:geometry,departureAbsMinute:trip.departureAbsMinute,arrivalAbsMinute:trip.arrivalAbsMinute,
       reservationIds:[...(consumed.capacityReservationIds||[])],plannedReturnReservationIds:[...(consumed.plannedReturn?.capacityReservationIds||[])],
@@ -1297,5 +1311,5 @@
     return completed;
   }
 
-  window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, createRepositioningAssignment, absoluteMinute, orderDueToday, nextOrderDueAbsMinute, getOutgoingProductionDemandMap, vehicleCapacityKg, splitIntoVehicleLoads, plannedOrderAmountKg, validateRoadShipment, findOrderSchedule, buildMultiStopRoute};
+  window.HFV2Logistics = {createLogisticsState, configure, getState, createOrder, cancelOrder, setOrderEnabled, tick, advanceShipments, createRepositioningAssignment, absoluteMinute, orderDueToday, nextOrderDueAbsMinute, getOutgoingProductionDemandMap, vehicleCapacityKg, splitIntoVehicleLoads, cargoMetrics, plannedOrderAmountKg, validateRoadShipment, findOrderSchedule, buildMultiStopRoute};
 })();

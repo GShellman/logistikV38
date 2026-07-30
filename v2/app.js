@@ -407,13 +407,23 @@
     }[code] || code;
   }
 
+  function cargoSummary(record, goodId = record?.goodId) {
+    const cargo = Number.isFinite(Number(record?.grossKg))
+      ? record
+      : window.HFV2LoadCarrierCatalog?.metrics?.(goodId, record?.amountKg);
+    const netKg = Number(cargo?.netKg ?? record?.amountKg) || 0;
+    const count = Math.max(0, Math.trunc(Number(cargo?.carrierCount) || 0));
+    const carrier = count ? ` · ${count.toLocaleString('de-CH')} ${count === 1 ? 'Palette' : 'Paletten'}` : '';
+    return `${formatWeightKg(netKg)}${carrier} · ${formatWeightKg(cargo?.grossKg ?? netKg)} brutto`;
+  }
+
   function orderCardMarkup(order) {
     const good = goodById(order.goodId);
     const dispatchResult = order.lastDispatchResult || 'wartet';
     const dispatchAbsMinute = Number(order.lastDispatchAbsMinute);
     const dispatchTimeMarkup = Number.isFinite(dispatchAbsMinute) ? `<span><small>Letzter Versuch</small>${formatAbsMinute(dispatchAbsMinute)}</span>` : '';
     const warningClass = dispatchResult === 'stock-limited' ? ' hf-v2-logistics-row--warning' : '';
-    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row${warningClass}"><b>${escapeHtml(cityName(order.fromCityId))} → ${escapeHtml(cityName(order.toCityId))}</b><span><small>Ware</small>${escapeHtml(good.name || order.goodId)}</span><span><small>Menge</small>${formatGoodAmount(order.goodId, order.amountKg)} · ${formatWeightKg(order.amountKg)}</span><span><small>Frequenz</small>${order.frequency === 'weekly' ? 'wöchentlich' : 'täglich'}</span><span><small>Uhrzeit</small>${formatClockTime(order.departureHour, order.departureMinute)}</span><span><small>Fahrzeugtyp</small>${escapeHtml(vehicleLabel(order.vehicleType))}</span><span><small>Status</small>${order.enabled === false ? 'Inaktiv' : 'Aktiv'}</span><span><small>Versand</small>${escapeHtml(dispatchResultLabel(dispatchResult))}</span>${dispatchTimeMarkup}<span><small>Aktion</small><button type="button" data-hf-v2-order-toggle="${order.id}">${order.enabled === false ? 'Aktivieren' : 'Deaktivieren'}</button> <button class="hf-v2-action-danger" type="button" data-hf-v2-order-delete="${order.id}">Löschen</button></span></article>`;
+    return `<article class="hf-v2-production-debug-row hf-v2-logistics-row${warningClass}"><b>${escapeHtml(cityName(order.fromCityId))} → ${escapeHtml(cityName(order.toCityId))}</b><span><small>Ware</small>${escapeHtml(good.name || order.goodId)}</span><span><small>Menge</small>${cargoSummary(order)}</span><span><small>Frequenz</small>${order.frequency === 'weekly' ? 'wöchentlich' : 'täglich'}</span><span><small>Uhrzeit</small>${formatClockTime(order.departureHour, order.departureMinute)}</span><span><small>Fahrzeugtyp</small>${escapeHtml(vehicleLabel(order.vehicleType))}</span><span><small>Status</small>${order.enabled === false ? 'Inaktiv' : 'Aktiv'}</span><span><small>Versand</small>${escapeHtml(dispatchResultLabel(dispatchResult))}</span>${dispatchTimeMarkup}<span><small>Aktion</small><button type="button" data-hf-v2-order-toggle="${order.id}">${order.enabled === false ? 'Aktivieren' : 'Deaktivieren'}</button> <button class="hf-v2-action-danger" type="button" data-hf-v2-order-delete="${order.id}">Löschen</button></span></article>`;
   }
 
   function shipmentStatusLabel(shipment) {
@@ -440,7 +450,7 @@
   function stopAmountsMarkup(stops, separator = '<br>') {
     return stops.map(stop => {
       const good = goodById(stop.goodId);
-      return `${escapeHtml(cityName(stop.toCityId))}: ${escapeHtml(good.name || stop.goodId)} · ${formatGoodAmount(stop.goodId, stop.amountKg)}`;
+      return `${escapeHtml(cityName(stop.toCityId))}: ${escapeHtml(good.name || stop.goodId)} · ${cargoSummary(stop)}`;
     }).join(separator);
   }
 
@@ -453,7 +463,7 @@
     const arrivalAbsMinute = isReturnTrip ? shipment.returnArrivalAbsMinute : shipment.arrivalAbsMinute;
     const arrivalLabel = isReturnTrip ? 'Rückkehr' : 'Ankunft';
     const title = isBundled ? 'Sammellieferung' : escapeHtml(good.name || shipment.goodId);
-    const amountMarkup = isBundled ? stopAmountsMarkup(stops) : `${formatGoodAmount(shipment.goodId, shipment.amountKg)} · ${formatWeightKg(shipment.amountKg)}`;
+    const amountMarkup = isBundled ? stopAmountsMarkup(stops) : `${cargoSummary(shipment)}`;
     const routeMarkup = isBundled ? `<span><small>Route</small>${escapeHtml(shipmentRouteLabel(shipment))}</span>` : '';
     return `<article class="hf-v2-production-debug-row hf-v2-logistics-row"><b>${title}</b>${routeMarkup}<span><small>${isBundled ? 'Stopps' : 'Menge'}</small>${amountMarkup}</span><span><small>Fahrzeuge</small>${(Number(shipment.vehicleCount) || 0).toLocaleString('de-CH')} × ${escapeHtml(vehicleLabel(shipment.vehicleType))}</span><span><small>Fortschritt</small>${progress.toLocaleString('de-CH', {maximumFractionDigits: 0})}%</span><span><small>${arrivalLabel}</small>${formatAbsMinute(arrivalAbsMinute)}</span><span><small>Status</small>${escapeHtml(shipmentStatusLabel(shipment))}</span></article>`;
   }
