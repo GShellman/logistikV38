@@ -74,3 +74,52 @@ test('Reservierungen wandern auf Teilkanten und Zustand bleibt speicherbar/repro
   assert.equal(JSON.stringify(again),JSON.stringify(saved));
   assert.ok(api.findPath('s','e',{state:saved}));
 });
+
+test('lange OSRM-artige Geometrien werden mit linear begrenzten Segmentprüfungen aufgeteilt', () => {
+  const projectGeometry = Array.from({length: 1201}, (_, index) => [0, -2 + 4 * index / 1200]);
+  const cities = [{id:'west',lat:0,lng:-2},{id:'east',lat:0,lng:2}];
+  const existing = [];
+  for (const [index, lng] of [-1, 0, 1].entries()) {
+    const south = `s${index}`, north = `n${index}`;
+    cities.push({id:south,lat:-1,lng},{id:north,lat:1,lng});
+    const geometry = Array.from({length: 601}, (_, part) => [-1 + 2 * part / 600, lng]);
+    existing.push(road(`cross-${index}`, south, north, geometry));
+  }
+  // Real networks also contain many roads whose overall bounding boxes cannot
+  // touch the project. They must be rejected without scanning their segments.
+  for (let index = 0; index < 20; index++) {
+    const a = `far-a-${index}`, b = `far-b-${index}`, lat = 5 + index / 10;
+    cities.push({id:a,lat,lng:-2},{id:b,lat,lng:2});
+    existing.push(road(`far-${index}`, a, b,
+      Array.from({length: 401}, (_, part) => [lat, -2 + 4 * part / 400])));
+  }
+
+  const {api,state} = setup(cities, existing);
+  const parts = build(api, state, 'west', 'east', projectGeometry);
+  const stats = api.getIntersectionStats();
+  assert.equal(parts.length, 4);
+  assert.equal(state.junctions.length, 3);
+  assert.ok(api.findPath('west', 'n2', {state, mode:'road'}));
+  assert.ok(stats.segmentChecks < 100,
+    `Bounding-Box-Filter führte unerwartet ${stats.segmentChecks} genaue Segmentprüfungen aus`);
+  assert.ok(stats.bboxRejects > 1000000, 'Segment-Bounding-Boxen sollten den kartesischen Vergleich früh verwerfen');
+});
+
+test('nahe parallele OSRM-Geometrien erzeugen keine Kette aus Miniabschnitten', () => {
+  const points = 801;
+  const existingGeometry = Array.from({length: points}, (_, index) => [0.0002, index / (points - 1) * 2]);
+  const projectGeometry = Array.from({length: points + 801}, (_, index) => [0, -1 + index / (points + 800) * 4]);
+  const cities = [
+    {id:'west',lat:0,lng:-1}, {id:'east',lat:0,lng:3},
+    {id:'parallel-west',lat:0.0002,lng:0}, {id:'parallel-east',lat:0.0002,lng:2},
+  ];
+  const {api,state} = setup(cities, [road('parallel', 'parallel-west', 'parallel-east', existingGeometry)]);
+
+  const parts = build(api, state, 'west', 'east', projectGeometry);
+  // The middle project part has the same graph endpoints as the existing road
+  // and is intentionally discarded as a duplicate.
+  assert.equal(parts.length, 2, 'nur die beiden Endpunkte der bestehenden Straße dürfen einrasten');
+  assert.equal(state.connections.length, 3);
+  assert.equal(state.junctions.length, 0);
+  assert.ok(api.findPath('west', 'parallel-east', {state, mode:'road'}));
+});
