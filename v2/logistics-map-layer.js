@@ -179,6 +179,10 @@
 
   function initLogisticsLayer(map) {
     if (!map || !window.L) return null;
+    if (typeof map.on === 'function' && !map._hfV2LogisticsZoomBound) {
+      map.on('zoomend', () => window.dispatchEvent(new CustomEvent('hf:v2:map-zoom-changed')));
+      map._hfV2LogisticsZoomBound = true;
+    }
     if (logisticsVehicleLayer && logisticsVehicleLayer._map !== map) logisticsVehicleLayer.remove();
     if (!logisticsVehicleLayer) logisticsVehicleLayer = L.layerGroup();
     if (!logisticsVehicleLayer._map) logisticsVehicleLayer.addTo(map);
@@ -495,7 +499,8 @@
       entries.push({id, shipment, fromCity, toCity, coords, position, progress, title, zIndexOffset: 700, interactive: true});
     });
 
-    vehicles.filter(vehicle => vehicle?.status === 'available' && vehicle?.currentCityId && citiesById[vehicle.currentCityId]).forEach(vehicle => {
+    const zoom = logisticsVehicleLayer._map?.getZoom ? logisticsVehicleLayer._map.getZoom() : 10;
+    vehicles.filter(vehicle => zoom >= 10 && vehicle?.status === 'available' && vehicle?.currentCityId && citiesById[vehicle.currentCityId]).forEach(vehicle => {
       const id = `waiting-${vehicle.id}`;
       const city = citiesById[vehicle.currentCityId];
       const position = cityCoordinates(city);
@@ -506,7 +511,7 @@
 
     isReconcilingSelection = true;
     const renderedGroups = [];
-    groupNearbyShipments(entries, logisticsVehicleLayer._map).forEach(group => {
+    groupNearbyShipments(entries, logisticsVehicleLayer._map, zoom < 9 ? 64 : (zoom < 11 ? 44 : SHIPMENT_GROUP_DISTANCE_PX)).forEach(group => {
       const grouped = group.length > 1;
       const representative = [...group].sort((a, b) => (a.shipment.type === 'waiting') - (b.shipment.type === 'waiting') || (a.shipment.type === 'repositioning') - (b.shipment.type === 'repositioning'))[0];
       const id = grouped ? `group-${group.map(entry => entry.id).sort().join('|')}` : representative.id;
