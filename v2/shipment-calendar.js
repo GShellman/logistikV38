@@ -58,7 +58,7 @@
         const segment=trip.segments[index];
         if((segment.fromCityId!==cityId&&segment.toCityId!==cityId)||Number(segment.arrivalAbsMinute)<=Number(segment.departureAbsMinute)) continue;
         const stop=trip.stops?.[index]||{};
-        result.push({...segment,id:`trip-${trip.id}-stop-${index+1}`,tripId:trip.id,kind:'planned',status:'Geplant',vehicleType:trip.vehicleType,
+        result.push({...segment,departureAbsMinute:index===0?(trip.loadingStartAbsMinute??segment.departureAbsMinute):segment.departureAbsMinute,arrivalAbsMinute:stop.unloadingEndAbsMinute??segment.arrivalAbsMinute,id:`trip-${trip.id}-stop-${index+1}`,tripId:trip.id,kind:'planned',status:index===0?'Wird beladen → Unterwegs → Wird entladen':'Unterwegs → Wird entladen',vehicleType:trip.vehicleType,
           vehicleIds:trip.vehicleIds,vehicleCount:trip.vehicleIds?.length||0,goodId:stop.goodId,amountKg:stop.amountKg,netKg:stop.netKg,tareKg:stop.tareKg,grossKg:stop.grossKg,carrierCount:stop.carrierCount,orderId:stop.orderId,sortAbsMinute:Number(segment.departureAbsMinute)});
       }
       const disposition=trip.disposition;

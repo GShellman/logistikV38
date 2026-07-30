@@ -1080,7 +1080,7 @@
     const shipment={id:state.nextShipmentId++,tripId:trip.id,orderId:trip.orderIds[0],fromCityId:trip.fromCityId,toCityId:trip.stops.at(-1).toCityId,
       goodId:trip.stops[0].goodId,amountKg:trip.loadKg,netKg:trip.loadKg,tareKg:trip.tareKg||0,grossKg:trip.grossKg||trip.loadKg,carrierCount:trip.carrierCount||0,vehicleType:trip.vehicleType,vehicleIds:[...trip.vehicleIds],vehicleCount:trip.vehicleIds.length,
       stops:trip.stops.map(stop=>({...stop})),routeStops:trip.stops.map(stop=>({...stop})),segments:trip.segments.map(segment=>({...segment})),edgeTimes:[...(trip.edgeTimes||[])],
-      pathNodeIds,pathEdgeIds,geometry,routeGeometry:geometry,departureAbsMinute:trip.departureAbsMinute,arrivalAbsMinute:trip.arrivalAbsMinute,
+      pathNodeIds,pathEdgeIds,geometry,routeGeometry:geometry,loadingStartAbsMinute:trip.loadingStartAbsMinute,departureAbsMinute:trip.departureAbsMinute,arrivalAbsMinute:trip.arrivalAbsMinute,unloadingEndAbsMinute:trip.unloadingEndAbsMinute,
       reservationIds:[...(consumed.capacityReservationIds||[])],plannedReturnReservationIds:[...(consumed.plannedReturn?.capacityReservationIds||[])],
       plannedReturnDepartureAbsMinute:consumed.plannedReturn?.departureAbsMinute??null,plannedReturnArrivalAbsMinute:consumed.plannedReturn?.arrivalAbsMinute??null,
       postDeliveryAction:disposition.action,postDeliveryTargetCityId:disposition.targetCityId,postDeliveryDepartureAbsMinute:disposition.departureAbsMinute,
@@ -1110,7 +1110,7 @@
       if(created.length) window.HFV2Save?.dispatchStateChanged?.('logistics-shipments-created');
       return created;
     }
-    const dueTrips=(plan?.trips||[]).filter(trip=>trip.status==='planned'&&trip.departureAbsMinute<=nowAbsMinute
+    const dueTrips=(plan?.trips||[]).filter(trip=>trip.status==='planned'&&(trip.loadingStartAbsMinute??trip.departureAbsMinute)<=nowAbsMinute
       && trip.orderIds?.some(id=>state.orders.some(order=>order.id===id&&orderDueToday(order,time))));
     for(const trip of dueTrips) executePlannedTrip(trip,time,nowAbsMinute,created);
 
@@ -1120,7 +1120,7 @@
     if(uncovered.length) {
       window.HFV2FleetDispatch?.invalidate?.('due-order-not-in-plan',nowAbsMinute);
       const fallback=window.HFV2FleetDispatch?.buildPlan?.({state,fromAbsMinute:nowAbsMinute});
-      for(const trip of fallback?.trips||[]) if(trip.status==='planned'&&trip.departureAbsMinute<=nowAbsMinute&&trip.orderIds.some(id=>uncovered.some(order=>order.id===id))) executePlannedTrip(trip,time,nowAbsMinute,created);
+      for(const trip of fallback?.trips||[]) if(trip.status==='planned'&&(trip.loadingStartAbsMinute??trip.departureAbsMinute)<=nowAbsMinute&&trip.orderIds.some(id=>uncovered.some(order=>order.id===id))) executePlannedTrip(trip,time,nowAbsMinute,created);
     }
     if(created.length) window.HFV2Save?.dispatchStateChanged?.('logistics-shipments-created');
     return created;
@@ -1334,7 +1334,8 @@
           for (const stop of shipment.stops) {
             const stopStatus = ['delivered', 'failed', 'partial'].includes(stop.status) ? stop.status : 'pending';
             const arrivalAbsMinute = Number.isFinite(Number(stop.arrivalAbsMinute)) ? Number(stop.arrivalAbsMinute) : Number(shipment.arrivalAbsMinute);
-            if (stopStatus === 'pending' && Number.isFinite(arrivalAbsMinute) && arrivalAbsMinute <= nowAbsMinute) {
+            const unloadingEndAbsMinute = Number.isFinite(Number(stop.unloadingEndAbsMinute)) ? Number(stop.unloadingEndAbsMinute) : arrivalAbsMinute;
+            if (stopStatus === 'pending' && Number.isFinite(unloadingEndAbsMinute) && unloadingEndAbsMinute <= nowAbsMinute) {
               stop.status = 'processing';
               const stopIndex = shipment.stops.indexOf(stop);
               const delivery = markStopDelivered(stop, nowAbsMinute);
@@ -1346,7 +1347,7 @@
           }
           if (processedStop) refreshShipmentDeliveryTotals(shipment);
           const finalStop = shipment.stops[shipment.stops.length - 1];
-          const finalArrivalAbsMinute = Number.isFinite(Number(finalStop?.arrivalAbsMinute)) ? Number(finalStop.arrivalAbsMinute) : Number(shipment.arrivalAbsMinute);
+          const finalArrivalAbsMinute = Number.isFinite(Number(finalStop?.unloadingEndAbsMinute)) ? Number(finalStop.unloadingEndAbsMinute) : (Number.isFinite(Number(finalStop?.arrivalAbsMinute)) ? Number(finalStop.arrivalAbsMinute) : Number(shipment.arrivalAbsMinute));
           const allStopsProcessed = shipment.stops.every(stop => ['delivered', 'failed', 'partial'].includes(stop.status));
           if (allStopsProcessed && Number.isFinite(finalArrivalAbsMinute) && finalArrivalAbsMinute <= nowAbsMinute) {
             shipment.deliveredAbsMinute = nowAbsMinute;

@@ -412,3 +412,35 @@ test('kanonischer Mehrstopp-Trip wird mit identischen Stopps, Zeiten, Reservieru
   assert.equal(shipment.plannedReturnArrivalAbsMinute, trip.disposition.arrivalAbsMinute);
   assert.deepEqual(Array.from(shipment.plannedReturnReservationIds), Array.from(trip.disposition.capacityReservationIds));
 });
+
+test('Abfertigungszeiten verschieben Abfahrt und Folgesegmente und blockieren Fahrzeuge bis zum Entladeende', () => {
+  const reserved = [];
+  const vehicles = [{id: 1, vehicleType: 'van', currentCityId: 'a', availableAbsMinute: 0}];
+  const {window, state} = logisticsHarness({stock: 300, vehicles});
+  window.HFV2GoodsCatalog = [{id: 'food', category: 'processed_food', packaging: {loadCarrier: 'euro-pallet', maxNetKgPerCarrier: 100}}];
+  window.HFNetwork.reservePathCapacity = (_path, options) => { reserved.push({...options}); return {ok: true, reservationId: options.reservationId}; };
+  window.HFNetwork.releaseCapacityReservation = () => {};
+  window.HFV2PostDeliveryPlanning = {decide: () => 'stay'};
+  load('v2/load-carrier-catalog.js', window);
+  load('v2/fleet-dispatch-logic.js', window);
+  state.orders = [dueOrder(1, 100, 'b'), dueOrder(2, 100, 'c')];
+  window.HFV2FleetDispatch.configure({state});
+
+  const plan = window.HFV2FleetDispatch.buildPlan({state, horizonDays: 3});
+  const trip = plan.trips.find(item => item.orderIds.length === 2);
+
+  assert.ok(trip);
+  assert.equal(trip.departureAbsMinute, trip.loadingStartAbsMinute + 16, '10 Minuten Grundzeit plus zwei Paletten zu je 3 Minuten');
+  assert.equal(trip.stops[0].unloadingEndAbsMinute, trip.stops[0].arrivalAbsMinute + 12);
+  assert.equal(trip.segments[1].departureAbsMinute, trip.stops[0].unloadingEndAbsMinute);
+  assert.equal(trip.unloadingEndAbsMinute, trip.stops[1].unloadingEndAbsMinute);
+  const tripRoadSlots = reserved.filter(slot => String(slot.tripId) === trip.id);
+  assert.ok(tripRoadSlots.length > 0 && tripRoadSlots.every(slot => slot.startAbsMinute >= trip.departureAbsMinute), 'Straßen werden nicht während des Beladens reserviert');
+
+  state.orders = [dueOrder(3, 100, 'b'), {...dueOrder(4, 100, 'c'), departureHour: 2}];
+  const chained = window.HFV2FleetDispatch.buildPlan({state, horizonDays: 3, reserveCapacity: false});
+  const first = chained.trips.find(item => item.orderIds.includes(3));
+  const second = chained.trips.find(item => item.orderIds.includes(4));
+  assert.ok(first && second);
+  assert.ok(second.loadingStartAbsMinute >= first.unloadingEndAbsMinute, 'das Fahrzeug wird erst nach der Entladung wieder verfügbar');
+});

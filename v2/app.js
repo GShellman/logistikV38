@@ -439,6 +439,12 @@
   }
 
   function shipmentStatusLabel(shipment) {
+    const now = window.HFV2Logistics?.absoluteMinute?.(currentTimeState()) || 0;
+    if (shipment?.status === 'active') {
+      if (Number.isFinite(Number(shipment.loadingStartAbsMinute)) && now < Number(shipment.departureAbsMinute)) return 'Wird beladen';
+      const unloadingStop = shipmentStops(shipment).find(stop => now >= Number(stop.arrivalAbsMinute) && now < Number(stop.unloadingEndAbsMinute));
+      if (unloadingStop || (now >= Number(shipment.arrivalAbsMinute) && now < Number(shipment.unloadingEndAbsMinute))) return 'Wird entladen';
+    }
     return {
       active: 'Unterwegs',
       returning: 'Rückfahrt',
